@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    "engine/rust/crates/*"
+]
+resolver = "2"
+
+# TODO: Dependencies will be added.
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+lto = true

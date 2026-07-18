@@ -1,0 +1,38 @@
+# Default behaviour: Adapt according to the OS but keep LF in repo.
+* text=auto
+
+# Core code files have to LF in any OS every time.
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.rs text eol=lf
+*.go text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+
+# Special bethics according to OS
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Coreverse Engine Special Formats and Binaries - Git mustn't touch
+*.cobj binary
+*.canim binary
+*.crig binary
+*.cimage binary
+*.cmusic binary
+*.cvideo binary
+
+# Standart Binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ttf binary
+*.wav binary
+*.mp3 binary
+*.fbx binary
+*.obj binary
