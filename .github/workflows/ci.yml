@@ -1,0 +1,22 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/rust.yml
+
+  cpp:
+    uses: ./.github/workflows/cpp.yml
+
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  format:
+    uses: ./.github/workflows/formatting.yml

@@ -1,0 +1,46 @@
+name: Performance Issue
+description: Report performance problems.
+title: "[Performance]: "
+labels:
+  - performance
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Performance Issue
+      description: Describe the slowdown.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to Reproduce
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+
+  - type: input
+    id: cpu
+    attributes:
+      label: CPU
+
+  - type: textarea
+    id: profiling
+    attributes:
+      label: Profiling Data (optional)
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information

@@ -1,0 +1,23 @@
+# Default owner
+* @KING-MASTER2012
+
+# Documentation
+/docs/ @KING-MASTER2012
+
+# Engine Core
+/crates/core/ @KING-MASTER2012
+
+# Renderer
+/crates/renderer/ @KING-MASTER2012
+
+# Physics
+/crates/physics/ @KING-MASTER2012
+
+# Audio
+/crates/audio/ @KING-MASTER2012
+
+# Editor
+/editor/ @KING-MASTER2012
+
+# CI
+/.github/ @KING-MASTER2012

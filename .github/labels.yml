@@ -1,0 +1,75 @@
+- name: bug
+  color: d73a4a
+  description: Something is not working
+
+- name: enhancement
+  color: a2eeef
+  description: New feature or request
+
+- name: documentation
+  color: 0075ca
+  description: Documentation improvements
+
+- name: performance
+  color: fbca04
+  description: Performance related
+
+- name: question
+  color: d876e3
+  description: General question
+
+- name: security
+  color: b60205
+  description: Security related
+
+- name: good first issue
+  color: 7057ff
+  description: Good for newcomers
+
+- name: help wanted
+  color: 008672
+  description: Extra help is needed
+
+- name: breaking-change
+  color: 000000
+  description: Introduces breaking changes
+
+- name: ci
+  color: 1d76db
+  description: Continuous Integration
+
+- name: dependencies
+  color: 0366d6
+  description: Dependency updates
+
+- name: rust
+  color: dea584
+  description: Rust related
+
+- name: cpp
+  color: 00599c
+  description: C++ related
+
+- name: renderer
+  color: e99695
+  description: Rendering system
+
+- name: physics
+  color: c5def5
+  description: Physics system
+
+- name: audio
+  color: f9d0c4
+  description: Audio system
+
+- name: networking
+  color: 5319e7
+  description: Networking
+
+- name: editor
+  color: 0e8a16
+  description: Editor
+
+- name: ui
+  color: c2e0c6
+  description: User Interface

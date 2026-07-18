@@ -1,0 +1,32 @@
+changelog:
+  categories:
+    - title: 🚀 Features
+      labels:
+        - enhancement
+
+    - title: 🐛 Bug Fixes
+      labels:
+        - bug
+
+    - title: ⚡ Performance
+      labels:
+        - performance
+
+    - title: 📚 Documentation
+      labels:
+        - documentation
+
+    - title: 🔧 Maintenance
+      labels:
+        - ci
+        - dependencies
+
+    - title: 💥 Breaking Changes
+      labels:
+        - breaking-change
+
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - wontfix

@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/Coreverse/Coreverse-Engine/discussions
+    about: Ask questions or discuss ideas with the community.
+
+  - name: 📖 Documentation
+    url: https://coreverse.dev/docs
+    about: Check the official documentation before opening an issue.
+
+  - name: 🔒 Security Report
+    url: https://github.com/Coreverse/Coreverse-Engine/security/policy
+    about: Please report security vulnerabilities privately.

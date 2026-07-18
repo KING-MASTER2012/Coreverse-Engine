@@ -1,0 +1,16 @@
+name: Formatting
+
+on:
+  workflow_call:
+
+jobs:
+  formatting:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
