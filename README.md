@@ -1,6 +1,12 @@
 <div style="text-align: center;">
 
-# 🌌 Coreverse Engine
+<img
+src="assets/emblems/coreverse-engine-emblem.svg",
+alt = "Coreverse Logo",
+width = "200",
+height = "200"
+/>
+#  Coreverse Engine
 ### Core & Universe
 
 **Build Worlds Without Limits. Made with Rust, C++, and passion.**
@@ -213,7 +219,7 @@ You are free to use, modify, and distribute this software in accordance with the
 
 <div style="text-align: center;">
 
-**🌌 Coreverse Engine**
+**Coreverse Engine**
 *Core & Universe — Build Worlds Without Limits.*
 
 </div>

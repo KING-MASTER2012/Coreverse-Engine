@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <linearGradient id="cyberGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2196f3" /> <stop offset="50%" stop-color="#00e5ff" /> <stop offset="100%" stop-color="#64ffda" /> </linearGradient>
+
+    <radialGradient id="coreSphere" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#64ffda" />
+      <stop offset="30%" stop-color="#00b0ff" />
+      <stop offset="75%" stop-color="#0056b3" />
+      <stop offset="100%" stop-color="#0a121c" />
+    </radialGradient>
+
+    <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="coreGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="15" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="500" height="500" fill="url(#bgGrad)" />
+
+  <g transform="translate(250, 250)">
+
+    <circle cx="0" cy="0" r="60" fill="#00e5ff" opacity="0.15" filter="url(#coreGlow)" />
+
+    <g stroke="url(#cyberGrad)" stroke-width="4.5" fill="none" opacity="0.85" filter="url(#neonGlow)">
+      <ellipse rx="170" ry="75" transform="rotate(0)" />
+      <ellipse rx="170" ry="75" transform="rotate(45)" />
+      <ellipse rx="170" ry="75" transform="rotate(90)" />
+      <ellipse rx="170" ry="75" transform="rotate(135)" />
+    </g>
+
+    <circle cx="0" cy="0" r="52" fill="url(#coreSphere)" filter="url(#coreGlow)" />
+
+    <g fill="#64ffda" filter="url(#neonGlow)">
+      <circle cx="170" cy="0" r="8" />
+      <circle cx="-170" cy="0" r="8" />
+
+      <circle cx="170" cy="0" r="8" transform="rotate(45)" />
+      <circle cx="-170" cy="0" r="8" transform="rotate(45)" />
+
+      <circle cx="170" cy="0" r="8" transform="rotate(90)" />
+      <circle cx="-170" cy="0" r="8" transform="rotate(90)" />
+
+      <circle cx="170" cy="0" r="8" transform="rotate(135)" />
+      <circle cx="-170" cy="0" r="8" transform="rotate(135)" />
+    </g>
+  </g>
+</svg>
