@@ -1,12 +1,39 @@
 [workspace]
 members = [
-    "engine/rust/crates/*"
+    "engine/rust/crates/*",
+    "engine/rust/macros/*",
 ]
-resolver = "2"
+resolver = "3"
 
-# TODO: Dependencies will be added.
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+rust-version = "1.90"
+license = "GPL-3.0"
+
+[workspace.dependencies]
+syn = { version = "3.0.0", features = ["full", "extra-traits"] }
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+camino = "1.2.4"
+
+[workspace.lib]
+proc-macro = true
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "warn"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+
 [profile.dev]
 opt-level = 1
+incremental = true
 
 [profile.release]
-lto = true
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

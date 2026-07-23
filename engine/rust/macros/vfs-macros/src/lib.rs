@@ -1,14 +1,25 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use proc_macro::TokenStream;
+
+mod file;
+mod path;
+mod metadata;
+
+#[proc_macro]
+pub fn path(input: TokenStream) -> TokenStream {
+    path::path_impl(input.into()).into()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[proc_macro]
+pub fn file(input: TokenStream) -> TokenStream {
+    file::file_impl(input.into()).into()
+}
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+#[proc_macro]
+pub fn file_bytes(input: TokenStream) -> TokenStream {
+    file::file_bytes_impl(input.into()).into()
+}
+ 
+#[proc_macro]
+pub fn metadata(input: TokenStream) -> TokenStream {
+    metadata::metadata_impl(input.into()).into()
 }

@@ -3,5 +3,159 @@
 version = 4
 
 [[package]]
+name = "acse"
+version = "0.1.0"
+
+[[package]]
 name = "animation"
 version = "0.1.0"
+
+[[package]]
+name = "aose"
+version = "0.1.0"
+
+[[package]]
+name = "asset"
+version = "0.1.0"
+
+[[package]]
+name = "audio"
+version = "0.1.0"
+
+[[package]]
+name = "camino"
+version = "1.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f2d30e4173c4026932d51d31d6b0613b1fd3014bf3f9f8943d4ba139c437ba0"
+
+[[package]]
+name = "core"
+version = "0.1.0"
+dependencies = [
+ "camino",
+]
+
+[[package]]
+name = "ecs"
+version = "0.1.0"
+
+[[package]]
+name = "event"
+version = "0.1.0"
+
+[[package]]
+name = "logger"
+version = "0.1.0"
+
+[[package]]
+name = "math"
+version = "0.1.0"
+
+[[package]]
+name = "memory"
+version = "0.1.0"
+
+[[package]]
+name = "networking"
+version = "0.1.0"
+
+[[package]]
+name = "physics"
+version = "0.1.0"
+
+[[package]]
+name = "platform"
+version = "0.1.0"
+
+[[package]]
+name = "plugin"
+version = "0.1.0"
+
+[[package]]
+name = "proc-macro2"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
+dependencies = [
+ "unicode-ident",
+]
+
+[[package]]
+name = "profiler"
+version = "0.1.0"
+
+[[package]]
+name = "quote"
+version = "1.0.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
+dependencies = [
+ "proc-macro2",
+]
+
+[[package]]
+name = "reflection"
+version = "0.1.0"
+
+[[package]]
+name = "resource"
+version = "0.1.0"
+
+[[package]]
+name = "runtime"
+version = "0.1.0"
+
+[[package]]
+name = "scripting"
+version = "0.1.0"
+
+[[package]]
+name = "serialization"
+version = "0.1.0"
+
+[[package]]
+name = "syn"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2fac314a64dc9a36e61a9eb4261a5e9bbfbc922b27e518af97bc32b926cf967"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "threading"
+version = "0.1.0"
+
+[[package]]
+name = "ui"
+version = "0.1.0"
+
+[[package]]
+name = "unicode-ident"
+version = "1.0.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "utilities"
+version = "0.1.0"
+
+[[package]]
+name = "vfs"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "vfs-macros",
+]
+
+[[package]]
+name = "vfs-macros"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
