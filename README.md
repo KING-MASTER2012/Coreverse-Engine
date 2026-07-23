@@ -1,11 +1,6 @@
 <div style="text-align: center;">
 
-<img
-src="assets/emblems/coreverse-engine-emblem.svg",
-alt = "Coreverse Logo",
-width = "200",
-height = "200"
-/>
+![Logo](assets/emblems/coreverse-engine-emblem.svg)
 #  Coreverse Engine
 ### Core & Universe
 
