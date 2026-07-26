@@ -1,0 +1,50 @@
+use root::Root;
+
+/// Compile-time declared behavior for a single [`Root`].
+///
+/// Any crate (engine core, an editor plugin, a mod-loader crate, ...) can
+/// contribute its own descriptor with `inventory::submit!` at the bottom of
+/// this file's pattern - [`crate::context::VfsContext::init`] simply
+/// collects every descriptor that exists in the final binary at startup.
+/// That's what makes this "cross-crate": no central list has to know about
+/// every root ahead of time.
+#[derive(Debug, Clone, Copy)]
+pub struct RootDescriptor {
+    /// Which [`Root`] this descriptor configures.
+    pub root: Root,
+
+    /// Path relative to the project root, used whenever this root is
+    /// backed by real files on disk: always in `Development` mode, and
+    /// always (as the overlay) when `packed == true` in `Release` mode too.
+    pub dev_path: &'static str,
+
+    /// If `true`, this root's contents are baked into the `.coreproject`
+    /// archive at export time and served from it (read-only, memory-mapped)
+    /// in `Release` mode - with the loose `dev_path` still available on top
+    /// as a writable overlay for mod/patch overrides.
+    ///
+    /// If `false`, the root is *always* real files on disk regardless of
+    /// mode. Use this for anything that changes after shipping: save data,
+    /// logs, downloaded mods, temp scratch files, build artifacts.
+    pub packed: bool,
+}
+
+inventory::collect!(RootDescriptor);
+
+// Default descriptors for the engine's built-in `Root` variants.
+//
+// These are defaults, not law: if some other crate submits its own
+// `RootDescriptor` for the same `Root`, `VfsContext::init` will end up
+// using whichever one it inserts last while walking `inventory::iter`
+// (insertion order there is not guaranteed across crates). If you need a
+// hard override, prefer removing/adjusting the entry here rather than
+// fighting iteration order.
+inventory::submit! { RootDescriptor { root: Root::Assets,   dev_path: "assets",   packed: true  } }
+inventory::submit! { RootDescriptor { root: Root::Source,  dev_path: "source",  packed: true  } }
+inventory::submit! { RootDescriptor { root: Root::Packages, dev_path: "packages", packed: true  } }
+inventory::submit! { RootDescriptor { root: Root::Build,    dev_path: "build",    packed: false } }
+inventory::submit! { RootDescriptor { root: Root::Cache,    dev_path: "cache",    packed: false } }
+inventory::submit! { RootDescriptor { root: Root::Config,    dev_path: "config",    packed: false } }
+inventory::submit! { RootDescriptor { root: Root::Logs,     dev_path: "logs",     packed: false } }
+inventory::submit! { RootDescriptor { root: Root::Mods,     dev_path: "mods",     packed: false } }
+inventory::submit! { RootDescriptor { root: Root::Temp,     dev_path: "temp",     packed: false } }

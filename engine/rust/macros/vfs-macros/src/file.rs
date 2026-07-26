@@ -3,7 +3,7 @@ use std::env;
 use camino::Utf8PathBuf;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, Error, LitStr};
+use syn::{Error, LitStr, parse2};
 
 use crate::path::resolve;
 
@@ -24,7 +24,7 @@ pub fn resolve_full_path(input: TokenStream) -> Result<Utf8PathBuf, TokenStream>
                 &path,
                 "CARGO_MANIFEST_DIR is not set; cannot resolve VFS path at compile time.",
             )
-                .to_compile_error())
+            .to_compile_error());
         }
     };
     let full_path = Utf8PathBuf::from(manifest_dir).join(&relative);

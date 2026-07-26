@@ -1,8 +1,8 @@
 use proc_macro::TokenStream;
 
 mod file;
-mod path;
 mod metadata;
+mod path;
 
 #[proc_macro]
 pub fn path(input: TokenStream) -> TokenStream {
@@ -18,7 +18,7 @@ pub fn file(input: TokenStream) -> TokenStream {
 pub fn file_bytes(input: TokenStream) -> TokenStream {
     file::file_bytes_impl(input.into()).into()
 }
- 
+
 #[proc_macro]
 pub fn metadata(input: TokenStream) -> TokenStream {
     metadata::metadata_impl(input.into()).into()

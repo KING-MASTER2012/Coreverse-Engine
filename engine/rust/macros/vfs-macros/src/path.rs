@@ -1,40 +1,39 @@
 use camino::Utf8PathBuf;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, Error, LitStr};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Root {
-    Assets,
-    Build,
-    Core,
-    Logs,
-    Mods,
-    Scripts,
-}
-
+use syn::{Error, LitStr, parse2};
+use root::Root;
 const INVALID_ROOT_MSG: &str = "Invalid VFS Root.\n\
 Supported Roots:\n\
 - assets://\n\
 - build://\n\
-- core://\n\
+- cache://\n\
+- config://\n\
 - logs://\n\
 - mods://\n\
-- scripts://";
+- packages://\n\
+- source://\n\
+- temp//";
 
 pub(crate) fn resolve(value: &str) -> Result<Utf8PathBuf, &'static str> {
     let (root, relative_path) = if let Some(rest) = value.strip_prefix("assets://") {
         (Root::Assets, rest)
     } else if let Some(rest) = value.strip_prefix("build://") {
         (Root::Build, rest)
-    } else if let Some(rest) = value.strip_prefix("core://") {
-        (Root::Core, rest)
+    } else if let Some(rest) = value.strip_prefix("cache://") {
+        (Root::Cache, rest)
+    } else if let Some(rest) = value.strip_prefix("config://") {
+        (Root::Config, rest)
     } else if let Some(rest) = value.strip_prefix("logs://") {
         (Root::Logs, rest)
     } else if let Some(rest) = value.strip_prefix("mods://") {
         (Root::Mods, rest)
-    } else if let Some(rest) = value.strip_prefix("scripts://") {
-        (Root::Scripts, rest)
+    } else if let Some(rest) = value.strip_prefix("packages://") {
+        (Root::Packages, rest)
+    } else if let Some(rest) = value.strip_prefix("source://") {
+        (Root::Source, rest)
+    } else if let Some(rest) = value.strip_prefix("temp://") {
+        (Root::Temp, rest)
     } else {
         return Err(INVALID_ROOT_MSG);
     };
@@ -42,10 +41,13 @@ pub(crate) fn resolve(value: &str) -> Result<Utf8PathBuf, &'static str> {
     let resolved = match root {
         Root::Assets => format!("assets/{relative_path}"),
         Root::Build => format!("build/{relative_path}"),
-        Root::Core => format!("core/{relative_path}"),
+        Root::Cache => format!("cache/{relative_path}"),
+        Root::Config => format!("config/{relative_path}"),
         Root::Logs => format!("logs/{relative_path}"),
         Root::Mods => format!("mods/{relative_path}"),
-        Root::Scripts => format!("scripts/{relative_path}"),
+        Root::Packages => format!("packages/{relative_path}"),
+        Root::Source => format!("source/{relative_path}"),
+        Root::Temp => format!("temp/{relative_path}"),
     };
 
     Ok(Utf8PathBuf::from(resolved))
