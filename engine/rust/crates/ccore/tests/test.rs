@@ -4,7 +4,7 @@ use ccore::project_generator as generator;
 
 /// Test function.
 #[test]
-pub fn test_project() {
+fn test_project() {
     let options = generator::ProjectOptions::new("MyProject")
         .with_description("A space adventure game")
         .with_author("Talha");
