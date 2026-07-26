@@ -1,0 +1,13 @@
+[package]
+name = "fs"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+camino.workspace = true
+memmap2.workspace = true
+
+[lints]
+workspace = true

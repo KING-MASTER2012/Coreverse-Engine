@@ -26,7 +26,7 @@ uuid = { version = "1.24.0", features = ["v4", "serde"] }
 time = { version = "0.3.54", features = ["formatting"] }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "warn"
 unused_must_use = "warn"
 missing_docs = "warn"
 

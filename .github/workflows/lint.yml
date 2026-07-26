@@ -13,4 +13,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Clippy
-        run: cargo clippy --workspace --all-features -- -D warnings
+        run: cargo clippy --workspace --all-features

@@ -74,6 +74,14 @@ name = "event"
 version = "0.1.0"
 
 [[package]]
+name = "fs"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "memmap2",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
