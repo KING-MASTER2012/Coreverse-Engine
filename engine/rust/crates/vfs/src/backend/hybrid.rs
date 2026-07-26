@@ -4,7 +4,7 @@ use root::Root;
 
 use crate::error::VfsError;
 
-use super::{loose::LooseBackend, packed::PackedBackend, Backend, VfsMetadata};
+use super::{Backend, VfsMetadata, loose::LooseBackend, packed::PackedBackend};
 
 /// Packed archive as the read-only base, with a loose directory as a
 /// writable overlay on top.

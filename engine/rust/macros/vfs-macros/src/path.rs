@@ -1,8 +1,8 @@
 use camino::Utf8PathBuf;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Error, LitStr, parse2};
 use root::Root;
+use syn::{Error, LitStr, parse2};
 const INVALID_ROOT_MSG: &str = "Invalid VFS Root.\n\
 Supported Roots:\n\
 - assets://\n\

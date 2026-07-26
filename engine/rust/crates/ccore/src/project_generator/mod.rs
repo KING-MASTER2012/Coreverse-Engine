@@ -28,15 +28,22 @@ const KEEP_TRACKED_DIRS: &[&str] = &["Assets", "Config", "Mods", "Packages", "So
 /// beyond the defaults.
 #[derive(Debug, Clone)]
 pub struct ProjectOptions {
+    /// Project name
     pub name: String,
+    ///Project description
     pub description: String,
+    /// Project owner
     pub author: Option<String>,
+    /// Engine version
     pub engine_version: String,
+    /// Project's supported platforms
     pub platforms: Vec<Platform>,
+    /// Overwritable for another project
     pub overwrite: bool,
 }
 
 impl ProjectOptions {
+    /// New project create function
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -47,27 +54,27 @@ impl ProjectOptions {
             overwrite: false,
         }
     }
-
+    /// Add description the project
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = description.into();
         self
     }
-
+    /// Add owner the project
     pub fn with_author(mut self, author: impl Into<String>) -> Self {
         self.author = Some(author.into());
         self
     }
-
+    /// Add engine version
     pub fn with_engine_version(mut self, version: impl Into<String>) -> Self {
         self.engine_version = version.into();
         self
     }
-
+    /// Ad supported platforms
     pub fn with_platforms(mut self, platforms: Vec<Platform>) -> Self {
         self.platforms = platforms;
         self
     }
-
+    /// Change project's overwritable
     pub fn overwrite(mut self, overwrite: bool) -> Self {
         self.overwrite = overwrite;
         self
@@ -145,10 +152,15 @@ pub fn generate(
     fs::write(&gitignore_path, templates::GITIGNORE).map_err(|e| io_err(&gitignore_path, e))?;
 
     let readme_path = project_root.join("README.md");
-    let readme = templates::render_readme(&options.name, &options.description, &options.engine_version);
+    let readme =
+        templates::render_readme(&options.name, &options.description, &options.engine_version);
     fs::write(&readme_path, readme).map_err(|e| io_err(&readme_path, e))?;
 
-    let manifest = CProjectManifest::new(&options.name, &options.engine_version, options.author.clone());
+    let manifest = CProjectManifest::new(
+        &options.name,
+        &options.engine_version,
+        options.author.clone(),
+    );
     let manifest_path = project_root.join(format!("{}.cproject", options.name));
     manifest.write(&manifest_path)?;
 

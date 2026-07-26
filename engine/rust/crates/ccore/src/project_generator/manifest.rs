@@ -13,15 +13,22 @@ const FORMAT_VERSION: u32 = 1;
 /// diff-friendly in version control.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CProjectManifest {
+    /// Manifest format version
     pub format_version: u32,
+    /// Uuid
     pub id: Uuid,
+    /// Manifest name
     pub name: String,
+    /// Engine version
     pub engine_version: String,
+    /// The owner
     pub author: Option<String>,
+    /// Time of creating the manifest
     pub created_at: String,
 }
 
 impl CProjectManifest {
+    /// New manifest function
     pub fn new(name: &str, engine_version: &str, author: Option<String>) -> Self {
         Self {
             format_version: FORMAT_VERSION,
@@ -34,7 +41,7 @@ impl CProjectManifest {
                 .unwrap_or_default(),
         }
     }
-
+    /// Write Function
     pub fn write(&self, path: &Utf8Path) -> Result<(), ProjectGeneratorError> {
         let json = serde_json::to_string_pretty(self)?;
         fs::write(path, json).map_err(|e| ProjectGeneratorError::Io {

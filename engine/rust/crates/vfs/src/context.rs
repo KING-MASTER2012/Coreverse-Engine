@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use root::Root;
 
-use crate::backend::{hybrid::HybridBackend, loose::LooseBackend, packed::PackedBackend, Backend};
+use crate::backend::{Backend, hybrid::HybridBackend, loose::LooseBackend, packed::PackedBackend};
 use crate::error::VfsError;
 use crate::root_registry::RootDescriptor;
 

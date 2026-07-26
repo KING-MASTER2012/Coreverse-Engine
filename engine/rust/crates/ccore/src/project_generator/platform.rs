@@ -5,10 +5,15 @@ use serde::{Deserialize, Serialize};
 /// `macOS`, `iOS`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Platform {
+    /// Most using OS for computers
     Windows,
+    /// Open-Source OS for computers
     Linux,
+    /// Apple's OS for computers
     MacOS,
+    /// Most using OS
     Android,
+    /// Apple's OS for smartphones
     IOS,
 }
 

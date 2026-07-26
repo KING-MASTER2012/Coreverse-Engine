@@ -47,11 +47,15 @@ pub fn write_bytes(path: &VfsPath, data: &[u8]) -> Result<(), VfsError> {
 }
 
 pub fn exists(path: &VfsPath) -> Result<bool, VfsError> {
-    Ok(VfsContext::global()?.backend(path.root())?.exists(path.rel()))
+    Ok(VfsContext::global()?
+        .backend(path.root())?
+        .exists(path.rel()))
 }
 
 pub fn remove(path: &VfsPath) -> Result<(), VfsError> {
-    VfsContext::global()?.backend(path.root())?.remove(path.rel())
+    VfsContext::global()?
+        .backend(path.root())?
+        .remove(path.rel())
 }
 
 pub fn list_dir(path: &VfsPath) -> Result<Vec<VfsPath>, VfsError> {
