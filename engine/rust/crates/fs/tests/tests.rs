@@ -2,7 +2,7 @@
 use camino::Utf8Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use fs::{OsFileSystem, FileSystem};
+use fs::{FileSystem, OsFileSystem};
 
 fn temp_dir() -> std::path::PathBuf {
     let nanos = SystemTime::now()

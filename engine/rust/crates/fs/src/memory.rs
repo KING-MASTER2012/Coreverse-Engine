@@ -112,7 +112,10 @@ impl FileSystem for MemoryFileSystem {
             });
         }
         if self.dirs.read().unwrap().contains(path) {
-            return Ok(FsMetadata { len: 0, is_dir: true });
+            return Ok(FsMetadata {
+                len: 0,
+                is_dir: true,
+            });
         }
         Err(Self::not_found(path))
     }

@@ -18,7 +18,7 @@ jobs:
         run: cargo check --workspace --all-features
 
       - name: Cargo Test
-        run: cargo tests --workspace --all-features
+        run: cargo test --workspace --all-features
 
       - name: Clippy
         run: cargo clippy --workspace --all-features
