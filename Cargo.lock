@@ -493,8 +493,8 @@ name = "vfs"
 version = "0.1.0"
 dependencies = [
  "camino",
+ "fs",
  "inventory",
- "memmap2",
  "root",
  "thiserror",
  "vfs-macros",

@@ -1,14 +1,18 @@
 use camino::Utf8Path;
 
+use fs::FsMetadata;
 use root::Root;
 
-use crate::backend::VfsMetadata;
 use crate::context::VfsContext;
 use crate::error::VfsError;
 use crate::path::VfsPath;
 
 /// Matches the original `add_file(src, root_type)` signature: copies `src`
 /// into `root_type`'s top level, keeping the source file name.
+///
+/// Note: `src` is read directly via `std::fs` here, not through the VFS -
+/// it's expected to be a real path outside the project (e.g. a file the
+/// user picked in an OS file dialog), not a VFS path.
 pub fn add_file(src: &Utf8Path, root_type: Root) -> Result<(), VfsError> {
     let file_name = src
         .file_name()
@@ -19,8 +23,13 @@ pub fn add_file(src: &Utf8Path, root_type: Root) -> Result<(), VfsError> {
 
 /// Same as [`add_file`], but lets you choose exactly where inside the root
 /// it lands (e.g. a subfolder, or a renamed file).
+///
+/// `src` is read through the same [`fs::FileSystem`] the VFS was
+/// initialized with, not `std::fs` directly - so this keeps working
+/// against a [`fs::MemoryFileSystem`] in tests, same as everything else.
 pub fn add_file_to(src: &Utf8Path, dest: &VfsPath) -> Result<(), VfsError> {
-    let data = std::fs::read(src).map_err(|e| VfsError::Io {
+    let ctx = VfsContext::global()?;
+    let data = ctx.fs().read_bytes(src).map_err(|e| VfsError::Io {
         root: dest.root(),
         path: src.to_path_buf(),
         source: e,
@@ -47,15 +56,11 @@ pub fn write_bytes(path: &VfsPath, data: &[u8]) -> Result<(), VfsError> {
 }
 
 pub fn exists(path: &VfsPath) -> Result<bool, VfsError> {
-    Ok(VfsContext::global()?
-        .backend(path.root())?
-        .exists(path.rel()))
+    Ok(VfsContext::global()?.backend(path.root())?.exists(path.rel()))
 }
 
 pub fn remove(path: &VfsPath) -> Result<(), VfsError> {
-    VfsContext::global()?
-        .backend(path.root())?
-        .remove(path.rel())
+    VfsContext::global()?.backend(path.root())?.remove(path.rel())
 }
 
 pub fn list_dir(path: &VfsPath) -> Result<Vec<VfsPath>, VfsError> {
@@ -68,7 +73,7 @@ pub fn list_dir(path: &VfsPath) -> Result<Vec<VfsPath>, VfsError> {
         .collect()
 }
 
-pub fn metadata(path: &VfsPath) -> Result<VfsMetadata, VfsError> {
+pub fn metadata(path: &VfsPath) -> Result<FsMetadata, VfsError> {
     VfsContext::global()?
         .backend(path.root())?
         .metadata(path.rel())

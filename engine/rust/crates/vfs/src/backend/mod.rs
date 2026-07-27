@@ -4,24 +4,20 @@ pub mod packed;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use crate::error::VfsError;
+use fs::FsMetadata;
 
-/// Metadata about a single VFS entry. Kept intentionally small - the
-/// `metadata!` macro in `vfs-macros` produces a compile-time constant
-/// version of this for assets baked at build time; this is the runtime
-/// equivalent, used for anything resolved at runtime (mods, cache, saves).
-#[derive(Debug, Clone, Copy)]
-pub struct VfsMetadata {
-    pub len: u64,
-    pub is_dir: bool,
-}
+use crate::error::VfsError;
 
 /// A storage backend for a single root.
 ///
-/// Implementations: [`loose::LooseBackend`] (real files on disk,
-/// read/write), [`packed::PackedBackend`] (memory-mapped `.coreproject`
-/// slice, read-only), and [`hybrid::HybridBackend`] (packed base + loose
-/// writable overlay, used in `Release` mode for packed roots).
+/// Implementations: [`loose::LooseBackend`] (files via an injected
+/// [`fs::FileSystem`], read/write), [`packed::PackedBackend`] (memory-mapped
+/// `.coreproject` slice, read-only), and [`hybrid::HybridBackend`] (packed
+/// base + loose writable overlay, used in `Release` mode for packed roots).
+///
+/// Metadata uses [`fs::FsMetadata`] directly rather than a duplicate VFS-level
+/// type - "how big is this / is it a directory" is already an FS-layer
+/// concept, no need to wrap it again here.
 pub trait Backend: Send + Sync {
     fn read_bytes(&self, rel: &Utf8Path) -> Result<Vec<u8>, VfsError>;
 
@@ -37,7 +33,7 @@ pub trait Backend: Send + Sync {
 
     fn exists(&self, rel: &Utf8Path) -> bool;
 
-    fn metadata(&self, rel: &Utf8Path) -> Result<VfsMetadata, VfsError>;
+    fn metadata(&self, rel: &Utf8Path) -> Result<FsMetadata, VfsError>;
 
     fn list_dir(&self, rel: &Utf8Path) -> Result<Vec<Utf8PathBuf>, VfsError>;
 

@@ -1,8 +1,8 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufWriter, Read, Seek, Write};
+use std::io::{BufWriter, Write};
 
+use fs::FileSystem;
 use root::Root;
 
 use crate::error::VfsError;
@@ -50,12 +50,30 @@ pub struct PackedEntry {
     pub data: Vec<u8>,
 }
 
+fn io_err(path: &Utf8Path, source: std::io::Error) -> VfsError {
+    // Root here is only used for error display; write_archive/read_index
+    // aren't scoped to a single root, so `Assets` is just a placeholder.
+    VfsError::Io {
+        root: Root::Assets,
+        path: path.to_path_buf(),
+        source,
+    }
+}
+
 /// On-disk layout:
 /// `[magic:4][version:u32][count:u32]` then `count` header rows
 /// `[root_id:u8][path_len:u16][path bytes][offset:u64][len:u64]`,
 /// then the raw data section (entries concatenated in header order).
-pub fn write_archive(entries: &[PackedEntry], out_path: &Utf8Path) -> Result<(), VfsError> {
-    let file = File::create(out_path).map_err(|e| io_err(out_path, e))?;
+///
+/// Goes through `fs` (not `std::fs` directly) like everything else that
+/// touches disk in this engine - this is the export-time tool, not
+/// something the running game calls.
+pub fn write_archive(
+    fs: &dyn FileSystem,
+    entries: &[PackedEntry],
+    out_path: &Utf8Path,
+) -> Result<(), VfsError> {
+    let file = fs.open_write(out_path).map_err(|e| io_err(out_path, e))?;
     let mut w = BufWriter::new(file);
 
     w.write_all(MAGIC).map_err(|e| io_err(out_path, e))?;
@@ -95,16 +113,6 @@ pub fn write_archive(entries: &[PackedEntry], out_path: &Utf8Path) -> Result<(),
     w.flush().map_err(|e| io_err(out_path, e))
 }
 
-fn io_err(path: &Utf8Path, source: std::io::Error) -> VfsError {
-    // Root here is only used for error display; write_archive/read_index
-    // aren't scoped to a single root, so `Assets` is just a placeholder.
-    VfsError::Io {
-        root: Root::Assets,
-        path: path.to_path_buf(),
-        source,
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct PackedIndexEntry {
     pub offset: u64,
@@ -113,17 +121,17 @@ pub struct PackedIndexEntry {
 
 /// Parsed archive header + index, plus the byte offset where the data
 /// section begins (needed to translate an entry's `offset` into an
-/// absolute position in the mmap'd file).
+/// absolute position in the mapped file).
 pub struct PackedIndex {
     pub entries: HashMap<(Root, Utf8PathBuf), PackedIndexEntry>,
     pub data_start: u64,
 }
 
 /// Reads and parses just the header/index of a `.coreproject` file - does
-/// not touch the (potentially large) data section. Callers mmap the file
-/// separately (see [`crate::backend::packed::PackedBackend`]).
-pub fn read_index(path: &Utf8Path) -> Result<PackedIndex, VfsError> {
-    let mut file = File::open(path).map_err(|e| io_err(path, e))?;
+/// not touch the (potentially large) data section. [`crate::backend::packed::PackedBackend`]
+/// maps that separately via `fs.mmap_read`.
+pub fn read_index(fs: &dyn FileSystem, path: &Utf8Path) -> Result<PackedIndex, VfsError> {
+    let mut file = fs.open_read(path).map_err(|e| io_err(path, e))?;
 
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic).map_err(|e| io_err(path, e))?;
@@ -131,15 +139,22 @@ pub fn read_index(path: &Utf8Path) -> Result<PackedIndex, VfsError> {
         return Err(VfsError::CorruptArchive(format!("bad magic in '{path}'")));
     }
 
-    let version = read_u32(&mut file, path)?;
+    let mut u32_buf = [0u8; 4];
+
+    file.read_exact(&mut u32_buf).map_err(|e| io_err(path, e))?;
+    let version = u32::from_le_bytes(u32_buf);
     if version != VERSION {
         return Err(VfsError::CorruptArchive(format!(
             "'{path}' has archive version {version}, this build expects {VERSION}"
         )));
     }
 
-    let count = read_u32(&mut file, path)?;
+    file.read_exact(&mut u32_buf).map_err(|e| io_err(path, e))?;
+    let count = u32::from_le_bytes(u32_buf);
+
     let mut entries = HashMap::with_capacity(count as usize);
+    let mut u16_buf = [0u8; 2];
+    let mut u64_buf = [0u8; 8];
 
     for _ in 0..count {
         let mut root_id_buf = [0u8; 1];
@@ -147,17 +162,21 @@ pub fn read_index(path: &Utf8Path) -> Result<PackedIndex, VfsError> {
             .map_err(|e| io_err(path, e))?;
         let root = id_to_root(root_id_buf[0])?;
 
-        let path_len = read_u16(&mut file, path)?;
+        file.read_exact(&mut u16_buf).map_err(|e| io_err(path, e))?;
+        let path_len = u16::from_le_bytes(u16_buf);
+
         let mut path_bytes = vec![0u8; path_len as usize];
         file.read_exact(&mut path_bytes)
             .map_err(|e| io_err(path, e))?;
-        let rel = Utf8PathBuf::from(
-            String::from_utf8(path_bytes)
-                .map_err(|e| VfsError::CorruptArchive(format!("non-utf8 path in archive: {e}")))?,
-        );
+        let rel = Utf8PathBuf::from(String::from_utf8(path_bytes).map_err(|e| {
+            VfsError::CorruptArchive(format!("non-utf8 path in archive: {e}"))
+        })?);
 
-        let offset = read_u64(&mut file, path)?;
-        let len = read_u64(&mut file, path)?;
+        file.read_exact(&mut u64_buf).map_err(|e| io_err(path, e))?;
+        let offset = u64::from_le_bytes(u64_buf);
+
+        file.read_exact(&mut u64_buf).map_err(|e| io_err(path, e))?;
+        let len = u64::from_le_bytes(u64_buf);
 
         entries.insert((root, rel), PackedIndexEntry { offset, len });
     }
@@ -168,22 +187,4 @@ pub fn read_index(path: &Utf8Path) -> Result<PackedIndex, VfsError> {
         entries,
         data_start,
     })
-}
-
-fn read_u16(file: &mut File, path: &Utf8Path) -> Result<u16, VfsError> {
-    let mut buf = [0u8; 2];
-    file.read_exact(&mut buf).map_err(|e| io_err(path, e))?;
-    Ok(u16::from_le_bytes(buf))
-}
-
-fn read_u32(file: &mut File, path: &Utf8Path) -> Result<u32, VfsError> {
-    let mut buf = [0u8; 4];
-    file.read_exact(&mut buf).map_err(|e| io_err(path, e))?;
-    Ok(u32::from_le_bytes(buf))
-}
-
-fn read_u64(file: &mut File, path: &Utf8Path) -> Result<u64, VfsError> {
-    let mut buf = [0u8; 8];
-    file.read_exact(&mut buf).map_err(|e| io_err(path, e))?;
-    Ok(u64::from_le_bytes(buf))
 }

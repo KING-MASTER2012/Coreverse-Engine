@@ -21,7 +21,7 @@ fn write_and_read_bytes() {
     let fs = OsFileSystem;
 
     let root = temp_dir();
-    let file = root.join("hello.txt");
+    let file = root.join("test.txt");
 
     let path = Utf8Path::from_path(file.as_path()).unwrap();
 

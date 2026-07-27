@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 vfs-macros = {path = "../../macros/vfs-macros"}
 root = { path = "../../common/root"}
+fs = { path = "../fs" }
 camino.workspace = true
 inventory.workspace = true
 thiserror.workspace = true
-memmap2.workspace = true

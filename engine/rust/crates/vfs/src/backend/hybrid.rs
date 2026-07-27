@@ -1,10 +1,11 @@
 use camino::{Utf8Path, Utf8PathBuf};
 
+use fs::FsMetadata;
 use root::Root;
 
 use crate::error::VfsError;
 
-use super::{Backend, VfsMetadata, loose::LooseBackend, packed::PackedBackend};
+use super::{loose::LooseBackend, packed::PackedBackend, Backend};
 
 /// Packed archive as the read-only base, with a loose directory as a
 /// writable overlay on top.
@@ -52,7 +53,7 @@ impl Backend for HybridBackend {
         self.overlay.exists(rel) || self.packed.exists(rel)
     }
 
-    fn metadata(&self, rel: &Utf8Path) -> Result<VfsMetadata, VfsError> {
+    fn metadata(&self, rel: &Utf8Path) -> Result<FsMetadata, VfsError> {
         if self.overlay.exists(rel) {
             self.overlay.metadata(rel)
         } else {

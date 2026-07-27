@@ -1,35 +1,35 @@
 use camino::{Utf8Path, Utf8PathBuf};
-use memmap2::Mmap;
-use std::fs::File;
+use std::sync::Arc;
 
+use fs::{FileSystem, FsMetadata, MmapHandle};
 use root::Root;
 
 use crate::error::VfsError;
 use crate::format::{self, PackedIndex};
 
-use super::{Backend, VfsMetadata};
+use super::Backend;
 
 /// Read-only backend serving files straight out of a memory-mapped
 /// `.coreproject` archive. Used in `Release` mode for every root whose
 /// [`crate::root_registry::RootDescriptor::packed`] is `true`.
+///
+/// The actual memory-mapping is delegated to the injected [`FileSystem`]
+/// (`fs.mmap_read`) - this backend doesn't know or care whether that's a
+/// real `memmap2::Mmap` or an in-memory buffer used in tests.
 pub struct PackedBackend {
     root: Root,
-    mmap: Mmap,
+    mmap: MmapHandle,
     index: PackedIndex,
 }
 
 impl PackedBackend {
-    pub fn open(root: Root, archive_path: &Utf8Path) -> Result<Self, VfsError> {
-        let index = format::read_index(archive_path)?;
-        let file = File::open(archive_path).map_err(|e| VfsError::Io {
-            root,
-            path: archive_path.to_path_buf(),
-            source: e,
-        })?;
-        // Safety: the archive is treated as immutable engine data for the
-        // whole process lifetime; nothing else in this process writes to
-        // it while it stays mapped.
-        let mmap = unsafe { Mmap::map(&file) }.map_err(|e| VfsError::Io {
+    pub fn open(
+        root: Root,
+        archive_path: &Utf8Path,
+        fs: Arc<dyn FileSystem>,
+    ) -> Result<Self, VfsError> {
+        let index = format::read_index(&*fs, archive_path)?;
+        let mmap = fs.mmap_read(archive_path).map_err(|e| VfsError::Io {
             root,
             path: archive_path.to_path_buf(),
             source: e,
@@ -77,7 +77,7 @@ impl Backend for PackedBackend {
             .contains_key(&(self.root, rel.to_path_buf()))
     }
 
-    fn metadata(&self, rel: &Utf8Path) -> Result<VfsMetadata, VfsError> {
+    fn metadata(&self, rel: &Utf8Path) -> Result<FsMetadata, VfsError> {
         let entry = self
             .index
             .entries
@@ -86,7 +86,7 @@ impl Backend for PackedBackend {
                 root: self.root,
                 path: rel.to_path_buf(),
             })?;
-        Ok(VfsMetadata {
+        Ok(FsMetadata {
             len: entry.len,
             is_dir: false,
         })
