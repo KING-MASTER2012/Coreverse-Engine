@@ -100,7 +100,7 @@ impl ProjectOptions {
 /// Scaffolds a brand new project inside `parent_dir`: the project itself
 /// gets its own folder, `parent_dir.join(&options.name)` - full directory
 /// layout, per-platform `Build.toml`, `.gitignore`, `README.md`, and the
-/// `<Name>.cproject` manifest go inside that folder. Returns the resulting
+/// `<Name>.coreproject` manifest go inside that folder. Returns the resulting
 /// project root path.
 ///
 /// Only that project folder needs to be empty (or missing) - `parent_dir`
@@ -161,7 +161,7 @@ pub fn generate(
         &options.engine_version,
         options.author.clone(),
     );
-    let manifest_path = project_root.join(format!("{}.cproject", options.name));
+    let manifest_path = project_root.join(format!("{}.coreproject", options.name));
     manifest.write(&manifest_path)?;
 
     Ok(project_root)

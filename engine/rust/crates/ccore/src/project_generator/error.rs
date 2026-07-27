@@ -29,6 +29,6 @@ pub enum ProjectGeneratorError {
     #[error("failed to parse build config: {0}")]
     TomlDe(#[from] toml::de::Error),
     /// Error of no manifest
-    #[error("no .cproject file found in '{0}'")]
+    #[error("no .coreproject file found in '{0}'")]
     ManifestNotFound(Utf8PathBuf),
 }

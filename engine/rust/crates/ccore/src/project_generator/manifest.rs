@@ -8,7 +8,7 @@ use super::error::ProjectGeneratorError;
 
 const FORMAT_VERSION: u32 = 1;
 
-/// Contents of the top-level `<ProjectName>.cproject` file - the project's
+/// Contents of the top-level `<ProjectName>.coreproject` file - the project's
 /// equivalent of Unreal's `.uproject`. Plain JSON on purpose: readable and
 /// diff-friendly in version control.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ impl CProjectManifest {
         })
     }
 
-    /// Finds the single `*.cproject` file directly inside `project_root`
+    /// Finds the single `*.coreproject` file directly inside `project_root`
     /// and parses it. Used when opening an existing project rather than
     /// scaffolding a new one.
     pub fn find_and_read(project_root: &Utf8Path) -> Result<Self, ProjectGeneratorError> {
@@ -63,7 +63,7 @@ impl CProjectManifest {
             .find(|e| {
                 e.path()
                     .extension()
-                    .map(|ext| ext == "cproject")
+                    .map(|ext| ext == "coreproject")
                     .unwrap_or(false)
             })
             .ok_or_else(|| ProjectGeneratorError::ManifestNotFound(project_root.to_path_buf()))?;
