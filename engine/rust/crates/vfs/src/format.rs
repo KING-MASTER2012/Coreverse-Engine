@@ -168,9 +168,10 @@ pub fn read_index(fs: &dyn FileSystem, path: &Utf8Path) -> Result<PackedIndex, V
         let mut path_bytes = vec![0u8; path_len as usize];
         file.read_exact(&mut path_bytes)
             .map_err(|e| io_err(path, e))?;
-        let rel = Utf8PathBuf::from(String::from_utf8(path_bytes).map_err(|e| {
-            VfsError::CorruptArchive(format!("non-utf8 path in archive: {e}"))
-        })?);
+        let rel = Utf8PathBuf::from(
+            String::from_utf8(path_bytes)
+                .map_err(|e| VfsError::CorruptArchive(format!("non-utf8 path in archive: {e}")))?,
+        );
 
         file.read_exact(&mut u64_buf).map_err(|e| io_err(path, e))?;
         let offset = u64::from_le_bytes(u64_buf);

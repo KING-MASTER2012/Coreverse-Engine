@@ -3,14 +3,7 @@ use std::sync::Arc;
 use camino::Utf8Path;
 use fs::MemoryFileSystem;
 use vfs::{
-    FileSystem,
-    FsMetadata,
-    OsFileSystem,
-    Root,
-    RootDescriptor,
-    VfsContext,
-    VfsError,
-    VfsMode,
+    FileSystem, FsMetadata, OsFileSystem, Root, RootDescriptor, VfsContext, VfsError, VfsMode,
     VfsPath,
 };
 
@@ -37,12 +30,7 @@ fn memory_filesystem_is_a_filesystem() {
 fn init_with_memory_filesystem() {
     let fs = Arc::new(MemoryFileSystem::default());
 
-    let result = VfsContext::init_with_fs(
-        Utf8Path::new("."),
-        None,
-        VfsMode::Development,
-        fs,
-    );
+    let result = VfsContext::init_with_fs(Utf8Path::new("."), None, VfsMode::Development, fs);
 
     assert!(result.is_ok());
 
