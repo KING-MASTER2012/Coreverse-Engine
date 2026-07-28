@@ -1,7 +1,9 @@
 [workspace]
-members = ["engine/rust/common/root",
+members = [
+    "engine/rust/common/*",
     "engine/rust/crates/*",
     "engine/rust/macros/*",
+    "engine/rust/ffi/*",
 ]
 resolver = "3"
 

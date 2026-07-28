@@ -15,7 +15,7 @@
 
 use log_core::{DiagnosticBuilder, Severity};
 use log_sinks::{ConsoleSink, FileSink, Logger, NativeLogVfs};
-use std::ffi::{c_char, c_int, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_int};
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 
@@ -36,7 +36,9 @@ unsafe fn cstr_to_str<'a>(ptr: *const c_char) -> Result<&'a str, c_int> {
     if ptr.is_null() {
         return Err(CV_ERR_NULL_ARG);
     }
-    CStr::from_ptr(ptr).to_str().map_err(|_| CV_ERR_INVALID_UTF8)
+    CStr::from_ptr(ptr)
+        .to_str()
+        .map_err(|_| CV_ERR_INVALID_UTF8)
 }
 
 /// Same as `cstr_to_str` but treats a null pointer as "no value" (`Ok(None)`)
@@ -45,7 +47,10 @@ unsafe fn cstr_to_opt_str<'a>(ptr: *const c_char) -> Result<Option<&'a str>, c_i
     if ptr.is_null() {
         return Ok(None);
     }
-    CStr::from_ptr(ptr).to_str().map(Some).map_err(|_| CV_ERR_INVALID_UTF8)
+    CStr::from_ptr(ptr)
+        .to_str()
+        .map(Some)
+        .map_err(|_| CV_ERR_INVALID_UTF8)
 }
 
 fn guard<F: FnOnce() -> c_int>(f: F) -> c_int {
@@ -70,7 +75,9 @@ pub unsafe extern "C" fn cv_log_init(project_root: *const c_char) -> *mut CvLogg
                 logger.add_sink(Box::new(file_sink));
             }
         }
-        Some(Box::into_raw(Box::new(CvLogger { logger: Arc::new(logger) })))
+        Some(Box::into_raw(Box::new(CvLogger {
+            logger: Arc::new(logger),
+        })))
     }));
     result.ok().flatten().unwrap_or(std::ptr::null_mut())
 }
@@ -112,7 +119,9 @@ pub unsafe extern "C" fn cv_log_set_min_severity(handle: *mut CvLogger, severity
         if handle.is_null() {
             return CV_ERR_NULL_ARG;
         }
-        let Some(sev) = Severity::from_u8(severity) else { return CV_ERR_INVALID_SEVERITY };
+        let Some(sev) = Severity::from_u8(severity) else {
+            return CV_ERR_INVALID_SEVERITY;
+        };
         (*handle).logger.set_min_severity(sev);
         CV_OK
     })
@@ -184,7 +193,9 @@ pub unsafe extern "C" fn cv_log_emit(
             Ok(v) => v,
             Err(e) => return e,
         };
-        let Some(sev) = Severity::from_u8(severity) else { return CV_ERR_INVALID_SEVERITY };
+        let Some(sev) = Severity::from_u8(severity) else {
+            return CV_ERR_INVALID_SEVERITY;
+        };
 
         let mut builder = DiagnosticBuilder::new(producer, category, number, sev, message);
         match cstr_to_opt_str(language) {

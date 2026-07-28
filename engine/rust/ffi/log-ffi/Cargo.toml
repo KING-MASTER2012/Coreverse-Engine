@@ -6,8 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-log-core = { path = "../log-core" }
-log-sinks = { path = "../log-sinks" }
+log-core = { path = "../../crates/log-core" }
+log-sinks = { path = "../../crates/log-sinks" }
 
 [lints]
 workspace = true

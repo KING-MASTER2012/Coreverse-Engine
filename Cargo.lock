@@ -165,8 +165,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
-name = "logger"
+name = "log-core"
 version = "0.1.0"
+dependencies = [
+ "inventory",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "log-ffi"
+version = "0.1.0"
+dependencies = [
+ "log-core",
+ "log-sinks",
+]
+
+[[package]]
+name = "log-sinks"
+version = "0.1.0"
+dependencies = [
+ "log-core",
+]
 
 [[package]]
 name = "math"
@@ -243,6 +263,19 @@ dependencies = [
 [[package]]
 name = "profiler"
 version = "0.1.0"
+
+[[package]]
+name = "project-system"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "toml",
+ "uuid",
+]
 
 [[package]]
 name = "quote"
