@@ -1,0 +1,12 @@
+[package]
+name = "log-sinks"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+log-core = { path = "../log-core"}
+
+[lints]
+workspace = true

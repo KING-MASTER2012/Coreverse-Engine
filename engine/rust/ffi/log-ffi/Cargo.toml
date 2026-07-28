@@ -1,0 +1,13 @@
+[package]
+name = "log-ffi"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+log-core = { path = "../log-core" }
+log-sinks = { path = "../log-sinks" }
+
+[lints]
+workspace = true

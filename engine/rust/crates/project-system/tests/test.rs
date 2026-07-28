@@ -1,6 +1,6 @@
 //! Project generator tested in this file.
 use camino::Utf8Path;
-use ccore::project_generator as generator;
+use project_system::project_generator as generator;
 
 /// Test function.
 #[test]
