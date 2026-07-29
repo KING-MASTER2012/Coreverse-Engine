@@ -17,7 +17,7 @@ license = "GPL-3.0"
 syn = { version = "3.0.3", features = ["full", "extra-traits"] }
 quote = "1.0.47"
 proc-macro2 = "1.0.107"
-camino = "1.2.4"
+camino = "1.2.5"
 inventory = "0.3.24"
 thiserror = "2.0.19"
 memmap2 = "0.9.11"
