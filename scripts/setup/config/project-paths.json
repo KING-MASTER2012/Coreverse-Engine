@@ -1,9 +1,13 @@
 {
-  "cargoWorkspaceRoot": ".",
-  "npmProjects": ["launcher"],
+  "cargoWorkspaceRoot": "../../../",
+  "npmProjects": ["applications/launcher"],
   "goModules": ["server"],
-  "vcpkgManifestDir": ".",
-  "vcpkgInstallDir": "vendor/vcpkg",
-  "cmakeSourceDir": ".",
-  "cmakeBuildDir": "build"
+
+  "cmakeSourceDir": "../../../",
+  "cmakeBuildDir": "build",
+
+  "vcpkgManifestDir": "../../../",
+
+  "vcpkgRoot": "vcpkg",
+  "vcpkgInstalledDir": "vcpkg_installed"
 }

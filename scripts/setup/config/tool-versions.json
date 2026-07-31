@@ -1,12 +1,12 @@
 {
-  "rustup":  { "minVersion": "1.27.0", "displayName": "Rustup" },
-  "cargo":   { "minVersion": "1.82.0", "displayName": "Cargo" },
-  "git":     { "minVersion": "2.40.0", "displayName": "Git" },
-  "llvm":    { "minVersion": "17.0.0", "displayName": "LLVM/Clang" },
-  "cmake":   { "minVersion": "3.28.0", "displayName": "CMake" },
-  "ninja":   { "minVersion": "1.11.0", "displayName": "Ninja" },
-  "go":      { "minVersion": "1.22.0", "displayName": "Go" },
-  "node":    { "minVersion": "20.0.0", "displayName": "Node.js" },
-  "npm":     { "minVersion": "10.0.0", "displayName": "npm" },
-  "vcpkg":   { "minVersion": "0.0.0",  "displayName": "vcpkg (proje-lokal, her zaman en guncel commit cekilir)" }
+  "rustup":  { "minVersion": "1.29.0", "displayName": "Rustup" },
+  "cargo":   { "minVersion": "1.97.1", "displayName": "Cargo" },
+  "git":     { "minVersion": "2.55.0", "displayName": "Git" },
+  "llvm":    { "minVersion": "22.1.8", "displayName": "LLVM/Clang" },
+  "cmake":   { "minVersion": "4.4.0", "displayName": "CMake" },
+  "ninja":   { "minVersion": "1.13.1", "displayName": "Ninja" },
+  "go":      { "minVersion": "1.26.5", "displayName": "Go" },
+  "node":    { "minVersion": "24.18.0", "displayName": "Node.js" },
+  "npm":     { "minVersion": "11.16.0", "displayName": "npm" },
+  "vcpkg":   { "minVersion": "26.06.24",  "displayName": "vcpkg" }
 }

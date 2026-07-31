@@ -23,6 +23,10 @@ install_manifest.txt
 Makefile
 *.cmake.user
 
+# vcpkg
+/vcpkg/installed/
+/vcpkg_installed/
+
 # Ninja
 .ninja_deps
 .ninja_log
