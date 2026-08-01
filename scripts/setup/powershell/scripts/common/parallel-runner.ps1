@@ -19,7 +19,9 @@
 
 function Invoke-TaskGraph {
     param(
-        [Parameter(Mandatory)][array]$Tasks,
+        [Parameter(Mandatory)]
+        [array]$Tasks,
+
         [int]$ThrottleLimit = [Environment]::ProcessorCount
     )
 
@@ -28,72 +30,168 @@ function Invoke-TaskGraph {
     $remaining = @($Tasks)
 
     while ($remaining.Count -gt 0) {
-        $runnable = @($remaining | Where-Object {
-            $deps = $_.DependsOn
-            if (-not $deps -or $deps.Count -eq 0) { return $true }
-            $unmet = @($deps | Where-Object { -not $completed.ContainsKey($_) })
-            return ($unmet.Count -eq 0)
-        })
 
-        if ($runnable.Count -eq 0) {
-            $stuckNames = ($remaining | ForEach-Object { $_.Name }) -join ', '
-            throw "An unsolvable or cyclical addiction was detected: $stuckNames"
-        }
+        $runnable = @(
+        $remaining | Where-Object {
 
-        $layerResults = $runnable | ForEach-Object -Parallel {
-            $task = $_
-            $params = if ($task.Arguments) { $task.Arguments } else { @{} }
-            try {
-                $output = @(& $task.ScriptPath @params)
-                $output = $output |
-                    Where-Object {
-                        $_ -is [psobject] -and $_.PSObject.Properties['Tool']
-                    } |
-                    Select-Object -Last 1
-                [PSCustomObject]@{
-                    Name    = $task.Name
-                    Success = $true
-                    Result  = $output
-                    Error   = $null
-                }
-            } catch {
-                [PSCustomObject]@{
-                    Name    = $task.Name
-                    Success = $false
-                    Result  = $null
-                    Error   = $_.Exception.Message
+            if (-not $_.DependsOn -or $_.DependsOn.Count -eq 0) {
+                return $true
+            }
+
+            foreach ($dep in $_.DependsOn) {
+                if (-not $completed.ContainsKey($dep)) {
+                    return $false
                 }
             }
-        } -ThrottleLimit $ThrottleLimit
 
-        foreach ($r in $layerResults) { $completed[$r.Name] = $true }
-        $results += $layerResults
+            return $true
+        }
+        )
 
-        $runnableNames = @($runnable | ForEach-Object { $_.Name })
-        $remaining = @($remaining | Where-Object { $_.Name -notin $runnableNames })
+        if ($runnable.Count -eq 0) {
+            throw "Circular dependency detected."
+        }
+
+        $jobs = foreach ($task in $runnable) {
+
+            Start-ThreadJob -Name $task.Name -ArgumentList $task -ScriptBlock {
+
+                param($task)
+
+                try {
+
+                    $params = if ($task.Arguments) {
+                        $task.Arguments
+                    }
+                    else {
+                        @{}
+                    }
+
+                    $result = & $task.ScriptPath @params
+
+                    if ($null -eq $result) {
+                        throw "Script returned no object."
+                    }
+
+                    [PSCustomObject]@{
+                        Name    = $task.Name
+                        Success = $true
+                        Result  = $result
+                        Error   = $null
+                    }
+
+                }
+                catch {
+
+                    [PSCustomObject]@{
+                        Name    = $task.Name
+                        Success = $false
+                        Result  = $null
+                        Error   = $_ | Out-String
+                    }
+
+                }
+
+            }
+
+        }
+
+        Wait-Job $jobs | Out-Null
+
+        $layer = foreach ($job in $jobs) {
+
+            $r = Receive-Job $job
+
+            Remove-Job $job
+
+            $r
+
+        }
+
+        foreach ($r in $layer) {
+
+            if ($r.Success) {
+                $completed[$r.Name] = $true
+            }
+
+        }
+
+        $results += $layer
+
+        $remaining = @(
+        $remaining | Where-Object {
+            $_.Name -notin $runnable.Name
+        }
+        )
     }
 
     return $results
 }
 
 function Invoke-ParallelTasks {
-    <#
-        A simple parallel runner for completely independent tasks with no dependencies.
-        # (e.g., cargo/npm/go/vcpkg installations don't wait for each other during the dependency-parse phase)
-    #>
+
     param(
-        [Parameter(Mandatory)][array]$Tasks,
+        [Parameter(Mandatory)]
+        [array]$Tasks,
+
         [int]$ThrottleLimit = [Environment]::ProcessorCount
     )
 
-    return $Tasks | ForEach-Object -Parallel {
-        $task = $_
-        $params = if ($task.Arguments) { $task.Arguments } else { @{} }
-        try {
-            $output = & $task.ScriptPath @params
-            [PSCustomObject]@{ Name = $task.Name; Success = $true; Result = $output; Error = $null }
-        } catch {
-            [PSCustomObject]@{ Name = $task.Name; Success = $false; Result = $null; Error = $_.Exception.Message }
+    $jobs = foreach ($task in $Tasks) {
+
+        Start-ThreadJob -Name $task.Name -ArgumentList $task -ScriptBlock {
+
+            param($task)
+
+            try {
+
+                $params = if ($task.Arguments) {
+                    $task.Arguments
+                }
+                else {
+                    @{}
+                }
+
+                $result = & $task.ScriptPath @params
+
+                if ($null -eq $result) {
+                    throw "Script returned no object."
+                }
+
+                [PSCustomObject]@{
+                    Name    = $task.Name
+                    Success = $true
+                    Result  = $result
+                    Error   = $null
+                }
+
+            }
+            catch {
+
+                [PSCustomObject]@{
+                    Name    = $task.Name
+                    Success = $false
+                    Result  = $null
+                    Error   = $_ | Out-String
+                }
+
+            }
+
         }
-    } -ThrottleLimit $ThrottleLimit
+
+    }
+
+    Wait-Job $jobs | Out-Null
+
+    $results = foreach ($job in $jobs) {
+
+        $r = Receive-Job $job
+
+        Remove-Job $job
+
+        $r
+
+    }
+
+    return $results
 }

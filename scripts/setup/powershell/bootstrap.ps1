@@ -119,43 +119,42 @@ $absNpmProjects = $projectPaths.npmProjects | ForEach-Object { ConvertTo-Absolut
 $absGoModules   = $projectPaths.goModules | ForEach-Object { ConvertTo-AbsolutePath $_ }
 
 function ConvertTo-FlatResults {
-    param([array]$GraphResults)
+
+    param(
+        [array]$GraphResults
+    )
 
     $flat = @()
 
     foreach ($r in $GraphResults) {
 
         if (-not $r.Success) {
+
+            Write-ErrorLog -Message "$($r.Name): $($r.Error)"
+
             $flat += [PSCustomObject]@{
                 Tool         = $r.Name
                 FinalVersion = $null
                 Status       = 'Failed'
-                Detail       = $r.Error
             }
+
             continue
         }
 
-        $result = $r.Result
+        if ($null -eq $r.Result) {
 
-        # Eğer script birden fazla obje döndürdüyse,
-        # Tool özelliği olan gerçek sonucu seç.
-        if ($result -is [System.Array]) {
-            $result = $result | Where-Object {
-                $_ -is [psobject] -and $_.PSObject.Properties['Tool']
-            } | Select-Object -Last 1
-        }
+            Write-ErrorLog -Message "$($r.Name): No result returned."
 
-        if ($null -eq $result) {
             $flat += [PSCustomObject]@{
                 Tool         = $r.Name
                 FinalVersion = $null
                 Status       = 'Failed'
-                Detail       = 'Task returned no result.'
             }
+
+            continue
         }
-        else {
-            $flat += $result
-        }
+
+        $flat += $r.Result
     }
 
     return $flat

@@ -86,4 +86,4 @@ try {
     Write-ErrorLog -Source $ToolName -Message "Failed to prepare vcpkg submodule. $($_.Exception.Message)"
 }
 
-return $result
+$result
