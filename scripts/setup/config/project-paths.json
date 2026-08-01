@@ -8,6 +8,6 @@
 
   "vcpkgManifestDir": "../../../",
 
-  "vcpkgRoot": "vcpkg",
+  "vcpkgRoot": "third_party/vcpkg",
   "vcpkgInstalledDir": "vcpkg_installed"
 }

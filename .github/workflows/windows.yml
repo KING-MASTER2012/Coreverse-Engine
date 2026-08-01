@@ -1,0 +1,21 @@
+name: Windows
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Windows Setup
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Windows environment
+        shell: pwsh
+        run: |
+          scripts/setup/powershell/bootstrap.ps1

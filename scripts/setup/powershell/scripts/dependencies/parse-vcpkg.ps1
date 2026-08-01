@@ -17,7 +17,7 @@
 
 param(
     [string]$ManifestDir = ".",
-    [string]$VcpkgRoot = "vendor/vcpkg",
+    [string]$VcpkgRoot = "third_party/vcpkg",
     [string]$InstalledDir = "vcpkg_installed",
     [switch]$DryRun
 )

@@ -1,0 +1,22 @@
+name: macOS
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: macOS Setup
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup macOS environment
+        shell: bash
+        run: |
+          chmod +x scripts/setup/shell/bootstrap.sh
+          scripts/setup/shell/bootstrap.sh

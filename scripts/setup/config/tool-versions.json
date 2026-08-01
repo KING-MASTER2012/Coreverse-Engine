@@ -1,12 +1,62 @@
 {
-  "rustup":  { "minVersion": "1.29.0", "displayName": "Rustup" },
-  "cargo":   { "minVersion": "1.97.1", "displayName": "Cargo" },
-  "git":     { "minVersion": "2.55.0", "displayName": "Git" },
-  "llvm":    { "minVersion": "22.1.8", "displayName": "LLVM/Clang" },
-  "cmake":   { "minVersion": "4.4.0", "displayName": "CMake" },
-  "ninja":   { "minVersion": "1.13.1", "displayName": "Ninja" },
-  "go":      { "minVersion": "1.26.5", "displayName": "Go" },
-  "node":    { "minVersion": "24.18.0", "displayName": "Node.js" },
-  "npm":     { "minVersion": "11.16.0", "displayName": "npm" },
-  "vcpkg":   { "minVersion": "26.06.24",  "displayName": "vcpkg" }
+  "rustup": {
+    "minVersion": "1.29.0",
+    "displayName": "Rustup",
+    "docsUrl": "https://www.rust-lang.org/tools/install",
+    "pkg": {}
+  },
+  "cargo": {
+    "minVersion": "1.97.1",
+    "displayName": "Cargo",
+    "docsUrl": "https://www.rust-lang.org/tools/install",
+    "pkg": {}
+  },
+  "git": {
+    "minVersion": "2.55.0",
+    "displayName": "Git",
+    "docsUrl": "https://git-scm.com/downloads",
+    "pkg": { "pacman": "git", "apt": "git", "dnf": "git", "zypper": "git", "brew": "git" }
+  },
+  "llvm": {
+    "minVersion": "22.1.8",
+    "displayName": "LLVM/Clang",
+    "docsUrl": "https://releases.llvm.org/download.html",
+    "pkg": { "pacman": "clang llvm", "apt": "clang llvm", "dnf": "clang llvm-devel", "zypper": "clang llvm", "brew": "llvm" }
+  },
+  "cmake": {
+    "minVersion": "4.4.0",
+    "displayName": "CMake",
+    "docsUrl": "https://cmake.org/download/",
+    "pkg": { "pacman": "cmake", "apt": "cmake", "dnf": "cmake", "zypper": "cmake", "brew": "cmake" }
+  },
+  "ninja": {
+    "minVersion": "1.13.1",
+    "displayName": "Ninja",
+    "docsUrl": "https://github.com/ninja-build/ninja/releases",
+    "pkg": { "pacman": "ninja", "apt": "ninja-build", "dnf": "ninja-build", "zypper": "ninja", "brew": "ninja" }
+  },
+  "go": {
+    "minVersion": "1.26.5",
+    "displayName": "Go",
+    "docsUrl": "https://go.dev/dl/",
+    "pkg": { "pacman": "go", "apt": "golang-go", "dnf": "golang", "zypper": "go", "brew": "go" }
+  },
+  "node": {
+    "minVersion": "24.18.0",
+    "displayName": "Node.js",
+    "docsUrl": "https://nodejs.org/en/download",
+    "pkg": { "pacman": "nodejs npm", "apt": "nodejs npm", "dnf": "nodejs npm", "zypper": "nodejs npm", "brew": "node" }
+  },
+  "npm": {
+    "minVersion": "11.16.0",
+    "displayName": "npm",
+    "docsUrl": "https://nodejs.org/en/download",
+    "pkg": {}
+  },
+  "vcpkg": {
+    "minVersion": "26.06.24",
+    "displayName": "vcpkg (project-local, always fetches latest commit)",
+    "docsUrl": "https://learn.microsoft.com/vcpkg/get_started/overview",
+    "pkg": {}
+  }
 }

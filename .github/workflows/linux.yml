@@ -1,0 +1,22 @@
+name: Linux
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Linux Setup
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Linux environment
+        shell: bash
+        run: |
+          chmod +x scripts/setup/shell/bootstrap.sh
+          scripts/setup/shell/bootstrap.sh
