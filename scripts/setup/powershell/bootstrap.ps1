@@ -119,19 +119,45 @@ $absNpmProjects = $projectPaths.npmProjects | ForEach-Object { ConvertTo-Absolut
 $absGoModules   = $projectPaths.goModules | ForEach-Object { ConvertTo-AbsolutePath $_ }
 
 function ConvertTo-FlatResults {
-    <#
-        Converts the output (Name/Success/Result/Error) of Invoke-TaskGraph / Invoke-ParallelTasks
-        to a flat {Tool;FinalVersion;Status} list as expected by Show-SummaryTable.
-    #>
     param([array]$GraphResults)
+
     $flat = @()
+
     foreach ($r in $GraphResults) {
-        if ($r.Success -and $null -ne $r.Result) {
-            $flat += $r.Result
-        } elseif (-not $r.Success) {
-            $flat += [PSCustomObject]@{ Tool = $r.Name; FinalVersion = $null; Status = 'Failed'; Detail = $r.Error }
+
+        if (-not $r.Success) {
+            $flat += [PSCustomObject]@{
+                Tool         = $r.Name
+                FinalVersion = $null
+                Status       = 'Failed'
+                Detail       = $r.Error
+            }
+            continue
+        }
+
+        $result = $r.Result
+
+        # Eğer script birden fazla obje döndürdüyse,
+        # Tool özelliği olan gerçek sonucu seç.
+        if ($result -is [System.Array]) {
+            $result = $result | Where-Object {
+                $_ -is [psobject] -and $_.PSObject.Properties['Tool']
+            } | Select-Object -Last 1
+        }
+
+        if ($null -eq $result) {
+            $flat += [PSCustomObject]@{
+                Tool         = $r.Name
+                FinalVersion = $null
+                Status       = 'Failed'
+                Detail       = 'Task returned no result.'
+            }
+        }
+        else {
+            $flat += $result
         }
     }
+
     return $flat
 }
 

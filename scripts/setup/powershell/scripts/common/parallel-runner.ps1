@@ -44,7 +44,12 @@ function Invoke-TaskGraph {
             $task = $_
             $params = if ($task.Arguments) { $task.Arguments } else { @{} }
             try {
-                $output = & $task.ScriptPath @params
+                $output = @(& $task.ScriptPath @params)
+                $output = $output |
+                    Where-Object {
+                        $_ -is [psobject] -and $_.PSObject.Properties['Tool']
+                    } |
+                    Select-Object -Last 1
                 [PSCustomObject]@{
                     Name    = $task.Name
                     Success = $true
