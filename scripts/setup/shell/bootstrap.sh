@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CoreVerse Bootstrap - Linux/macOS entry point.
+# Coreverse Bootstrap - Linux/macOS entry point.
 #
 # Automates toolchain detection/installation, project dependency installation,
 # and CMake configuration in a single command. Independent tools run in
@@ -11,7 +11,7 @@
 #   ./bootstrap.sh --dry-run
 #   ./bootstrap.sh --yes
 #
-# Must be run from the CoreVerse Engine repository root (see setup/config/README.md).
+# Must be run from the Coreverse Engine repository root (see setup/config/README.md).
 
 set -uo pipefail
 
@@ -58,7 +58,7 @@ done
 DRY_RUN_FLAG=""
 [ "$DRY_RUN" = "true" ] && DRY_RUN_FLAG="--dry-run"
 
-log_banner "CoreVerse Bootstrap (Linux/macOS)"
+log_banner "Coreverse Bootstrap (Linux/macOS)"
 
 # --- 1. Prerequisite: curl must exist (everything else bootstraps from it) ---
 if ! command -v curl >/dev/null 2>&1; then

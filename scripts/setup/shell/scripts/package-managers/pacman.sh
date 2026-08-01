@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CoreVerse Bootstrap - pacman wrapper (Arch and Arch-based distros).
+# Coreverse Bootstrap - pacman wrapper (Arch and Arch-based distros).
 # Sourced by every script that may need it; do not execute directly.
 
 pacman_update_index() {

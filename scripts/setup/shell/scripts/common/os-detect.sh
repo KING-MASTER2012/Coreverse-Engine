@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CoreVerse Bootstrap - OS platform, Linux distro family, and architecture detection.
+# Coreverse Bootstrap - OS platform, Linux distro family, and architecture detection.
 # Sets global variables: OS_PLATFORM, OS_DISTRO, OS_ARCH, PKG_MANAGER.
 # Sourced by every script; do not execute directly.
 

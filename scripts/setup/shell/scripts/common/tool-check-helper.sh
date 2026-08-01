@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CoreVerse Bootstrap - shared check/install flow used by every toolchain/check-*.sh
+# Coreverse Bootstrap - shared check/install flow used by every toolchain/check-*.sh
 # script. Implements the hybrid version strategy:
 #   1) Already on PATH and version sufficient?  -> leave it alone.
 #   2) Not sufficient: try the distro/Homebrew package manager.

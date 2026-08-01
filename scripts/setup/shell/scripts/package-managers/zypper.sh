@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CoreVerse Bootstrap - zypper wrapper (openSUSE).
+# Coreverse Bootstrap - zypper wrapper (openSUSE).
 # Sourced by every script that may need it; do not execute directly.
 
 zypper_update_index() {

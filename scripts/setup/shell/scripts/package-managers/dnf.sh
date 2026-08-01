@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CoreVerse Bootstrap - dnf wrapper (Fedora, RHEL, Rocky Linux, AlmaLinux).
+# Coreverse Bootstrap - dnf wrapper (Fedora, RHEL, Rocky Linux, AlmaLinux).
 # Falls back to yum on older RHEL/CentOS releases where dnf is unavailable.
 # Sourced by every script that may need it; do not execute directly.
 

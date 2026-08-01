@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CoreVerse Bootstrap - apt wrapper (Debian and Debian-based distros, incl. Kali).
+# Coreverse Bootstrap - apt wrapper (Debian and Debian-based distros, incl. Kali).
 # Sourced by every script that may need it; do not execute directly.
 
 apt_update_index() {

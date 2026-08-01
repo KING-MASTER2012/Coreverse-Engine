@@ -3,18 +3,34 @@ name: C++
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
+        include:
+          - os: ubuntu-latest
+            shell: bash
+            setup: |
+              chmod +x scripts/setup/shell/bootstrap.sh
+              scripts/setup/shell/bootstrap.sh
+
+          - os: windows-latest
+            shell: pwsh
+            setup: |
+              scripts/setup/powershell/bootstrap.ps1
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Bootstrap
+        shell: ${{ matrix.shell }}
+        run: ${{ matrix.setup }}
 
       - name: Configure
         run: cmake -B build
