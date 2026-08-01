@@ -265,7 +265,7 @@ name = "profiler"
 version = "0.1.0"
 
 [[package]]
-name = "project-system"
+name = "project-generator"
 version = "0.1.0"
 dependencies = [
  "camino",
@@ -276,6 +276,10 @@ dependencies = [
  "toml",
  "uuid",
 ]
+
+[[package]]
+name = "project-system"
+version = "0.1.0"
 
 [[package]]
 name = "quote"

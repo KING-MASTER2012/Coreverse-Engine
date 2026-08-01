@@ -87,22 +87,20 @@ $projectPaths = Get-Content "$ScriptsRoot/config/project-paths.json" -Raw | Conv
 $commonArgs = @{ DryRun = [bool]$DryRun }
 
 # Centralized Absolute Path Resolution
-# Calculate EngineRoot by going 3 levels up from coreverse-engine/scripts/setup/powershell/
-$EngineRoot = (Resolve-Path "$PSRoot\..\..\..\").Path
+# Calculate EngineRoot by going 4 levels up from coreverse-engine/devkit/scripts/setup/powershell/
+$EngineRoot = (Resolve-Path "$PSRoot\..\..\..\..\").Path
 
 function ConvertTo-AbsolutePath {
     param([string]$RelPath)
 
+    if ([string]::IsNullOrWhiteSpace($RelPath)) {
+        return $null
+    }
+
     if ([System.IO.Path]::IsPathRooted($RelPath)) {
         return $RelPath
     }
-
-    # If authored as relative to the setup scripts in project-paths.json (e.g., "../../../")
-    if ($RelPath.StartsWith("..")) {
-        return (Resolve-Path (Join-Path $PSRoot $RelPath)).Path
-    }
-
-    # Otherwise, assume it is relative to EngineRoot (e.g., "vcpkg", "build")
+    
     return [System.IO.Path]::GetFullPath((Join-Path $EngineRoot $RelPath))
 }
 

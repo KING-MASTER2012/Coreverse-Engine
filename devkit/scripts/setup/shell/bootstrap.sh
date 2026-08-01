@@ -129,32 +129,41 @@ if [ "$DRY_RUN" = "true" ]; then
 fi
 
 # --- 5. jq (needed to read the shared JSON config) ---
-if ! command -v jq >/dev/null 2>&1; then
-    log_warning "jq not found, installing it (needed to read config files)..."
-    pkg_update_index
-    pkg_install jq >/dev/null 2>&1
-fi
-if ! command -v jq >/dev/null 2>&1; then
-    log_error "jq could not be installed automatically. Please install jq manually and re-run."
-    exit 1
-fi
-
 PROJECT_PATHS_JSON="$CONFIG_DIR/project-paths.json"
 
-# NOTE: toolchain min-versions and per-manager package names are no longer
-# read here - each toolchain/check-*.sh script reads them directly from
-# tool-versions.json itself (see read_config_min_version/read_config_pkg_name
-# in common/tool-check-helper.sh). This keeps the config as the single source
-# of truth even when a check-*.sh is run standalone, outside of bootstrap.sh.
+ENGINE_ROOT="$(cd "$SCRIPT_DIR/../../../../" && pwd)"
 
-CARGO_WORKSPACE_ROOT=$(jq -r '.cargoWorkspaceRoot' "$PROJECT_PATHS_JSON")
-NPM_PROJECTS=$(jq -r '.npmProjects | join(",")' "$PROJECT_PATHS_JSON")
-GO_MODULES=$(jq -r '.goModules | join(",")' "$PROJECT_PATHS_JSON")
-VCPKG_MANIFEST_DIR=$(jq -r '.vcpkgManifestDir' "$PROJECT_PATHS_JSON")
-VCPKG_ROOT=$(jq -r '.vcpkgRoot' "$PROJECT_PATHS_JSON")
-VCPKG_INSTALLED_DIR=$(jq -r '.vcpkgInstalledDir // empty' "$PROJECT_PATHS_JSON")
-CMAKE_SOURCE_DIR=$(jq -r '.cmakeSourceDir' "$PROJECT_PATHS_JSON")
-CMAKE_BUILD_DIR=$(jq -r '.cmakeBuildDir' "$PROJECT_PATHS_JSON")
+to_abs_path() {
+    local rel_path="$1"
+    if [ -z "$rel_path" ] || [ "$rel_path" = "null" ]; then
+        echo ""
+    elif [[ "$rel_path" = /* ]]; then
+        echo "$rel_path"
+    else
+        echo "$ENGINE_ROOT/$rel_path"
+    fi
+}
+
+CARGO_WORKSPACE_ROOT=$(to_abs_path "$(jq -r '.cargoWorkspaceRoot' "$PROJECT_PATHS_JSON")")
+VCPKG_MANIFEST_DIR=$(to_abs_path "$(jq -r '.vcpkgManifestDir' "$PROJECT_PATHS_JSON")")
+VCPKG_ROOT=$(to_abs_path "$(jq -r '.vcpkgRoot' "$PROJECT_PATHS_JSON")")
+VCPKG_INSTALLED_DIR=$(to_abs_path "$(jq -r '.vcpkgInstalledDir // empty' "$PROJECT_PATHS_JSON")")
+CMAKE_SOURCE_DIR=$(to_abs_path "$(jq -r '.cmakeSourceDir' "$PROJECT_PATHS_JSON")")
+CMAKE_BUILD_DIR=$(to_abs_path "$(jq -r '.cmakeBuildDir' "$PROJECT_PATHS_JSON")")
+
+NPM_PROJECTS_RAW=$(jq -r '.npmProjects[]?' "$PROJECT_PATHS_JSON")
+NPM_PROJECTS=""
+for proj in $NPM_PROJECTS_RAW; do
+    abs_p=$(to_abs_path "$proj")
+    NPM_PROJECTS="${NPM_PROJECTS:+$NPM_PROJECTS,}$abs_p"
+done
+
+GO_MODULES_RAW=$(jq -r '.goModules[]?' "$PROJECT_PATHS_JSON")
+GO_MODULES=""
+for mod in $GO_MODULES_RAW; do
+    abs_m=$(to_abs_path "$mod")
+    GO_MODULES="${GO_MODULES:+$GO_MODULES,}$abs_m"
+done
 
 RESULTS_DIR=$(mktemp -d)
 

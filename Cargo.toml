@@ -3,7 +3,7 @@ members = [
     "engine/rust/common/*",
     "engine/rust/crates/*",
     "engine/rust/macros/*",
-    "engine/rust/ffi/*",
+    "engine/rust/ffi/*", "tools/project-generator",
 ]
 resolver = "3"
 
