@@ -7,30 +7,34 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            shell: bash
-            setup: |
-              chmod +x scripts/setup/shell/bootstrap.sh
-              scripts/setup/shell/bootstrap.sh
-
-          - os: windows-latest
-            shell: pwsh
-            setup: |
-              scripts/setup/powershell/bootstrap.ps1
-
-    runs-on: ${{ matrix.os }}
+  linux:
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v5
 
       - name: Bootstrap
-        shell: ${{ matrix.shell }}
-        run: ${{ matrix.setup }}
+        shell: bash
+        run: |
+          chmod +x scripts/setup/shell/bootstrap.sh
+          scripts/setup/shell/bootstrap.sh
+
+      - name: Configure
+        run: cmake -B build
+
+      - name: Build
+        run: cmake --build build --config Release
+
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Bootstrap
+        shell: pwsh
+        run: |
+          scripts/setup/powershell/bootstrap.ps1
 
       - name: Configure
         run: cmake -B build
