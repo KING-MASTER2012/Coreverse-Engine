@@ -25,14 +25,19 @@ get_version_raw() {
 }
 
 upstream_install() {
-    # rustup's official installer script works identically on Linux and macOS.
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile default
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable --profile default
 
     local cargo_bin="$HOME/.cargo/bin"
+
     if [ -d "$cargo_bin" ]; then
         export PATH="$PATH:$cargo_bin"
         add_to_shell_profile "$cargo_bin"
     fi
+
+    rustup self update || return 1
+    rustup default stable || return 1
+    rustup update stable || return 1
 }
 
 # add_to_shell_profile <dir>

@@ -1,9 +1,10 @@
 #Requires -Version 7.0
 <#
 .NOTES
-    This task depends on the 'Rustup' task in the task graph (DependsOn = @('Rustup')).
-    # Cargo comes with rustup; there is no separate winget/upstream setup.
+    Depends on Rustup.
+    Cargo is installed together with Rustup.
 #>
+
 param(
     [string]$RequiredVersion = '1.82.0',
     [switch]$DryRun
@@ -13,17 +14,33 @@ param(
 
 $getVersion = {
     $cmd = Get-Command cargo -ErrorAction SilentlyContinue
-    if ($cmd) { (& cargo --version) 2>&1 } else { $null }
+
+    if ($cmd) {
+        (& cargo --version) 2>&1
+    }
+    else {
+        $null
+    }
 }
 
 $upstreamInstall = {
-    $rustupCmd = Get-Command rustup -ErrorAction SilentlyContinue
-    if (-not $rustupCmd) {
-        throw 'Rustup could not be found. Cargo arrives via Rustup; Rustup must have been established first.'
+
+    if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+        throw "Rustup is missing."
     }
-    & rustup default stable | Out-Null
-    & rustup update stable | Out-Null
+
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+        throw "Cargo is missing even though Rustup is installed."
+    }
+
+    # Cargo is shipped with Rustup.
+    # Rustup update is handled by check-rustup.ps1.
 }
 
-Invoke-ToolCheck -ToolName 'Cargo' -RequiredVersion $RequiredVersion -DryRun:$DryRun `
-    -WingetId $null -GetVersionRaw $getVersion -UpstreamInstall $upstreamInstall
+Invoke-ToolCheck `
+    -ToolName 'Cargo' `
+    -RequiredVersion $RequiredVersion `
+    -DryRun:$DryRun `
+    -WingetId $null `
+    -GetVersionRaw $getVersion `
+    -UpstreamInstall $upstreamInstall

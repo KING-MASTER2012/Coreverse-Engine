@@ -129,20 +129,28 @@ invoke_tool_check() {
     log_warning "Package manager was not enough, falling back to upstream." "$tool_name"
 
     if "$upstream_install_func"; then
+
         raw=$("$get_version_func" 2>/dev/null)
 
         if [ -n "$raw" ] && version_ge "$raw" "$required_version"; then
             log_success "Installed/upgraded via upstream: $raw" "$tool_name"
             write_result "$result_file" "$tool_name" "Installed" "$raw"
+
         elif [ -n "$raw" ]; then
             log_warning "Installed but below the required version: $raw (required >= $required_version). Continuing." "$tool_name"
             write_result "$result_file" "$tool_name" "Warning" "$raw"
+
         else
             log_error "Tool is still not found on PATH after installation." "$tool_name"
             write_result "$result_file" "$tool_name" "Failed" ""
         fi
+
     else
-        log_error "Upstream installation failed." "$tool_name"
+        exit_code=$?
+
+        log_error "Upstream installation failed (exit code: $exit_code)." "$tool_name"
         write_result "$result_file" "$tool_name" "Failed" ""
     fi
+
+    return 0
 }

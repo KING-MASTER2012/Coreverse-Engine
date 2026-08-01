@@ -29,12 +29,18 @@ get_version_raw() {
 }
 
 upstream_install() {
+
     if ! command -v rustup >/dev/null 2>&1; then
-        log_error "Rustup not found. Cargo ships with rustup; install Rustup first." "$TOOL_NAME"
+        log_error "Rustup not found. Cargo ships with Rustup." "$TOOL_NAME"
         return 1
     fi
-    rustup default stable
-    rustup update stable
+
+    if ! command -v cargo >/dev/null 2>&1; then
+        log_error "Cargo not found although Rustup is installed." "$TOOL_NAME"
+        return 1
+    fi
+    
+    return 0
 }
 
 invoke_tool_check "$TOOL_NAME" "$REQUIRED_VERSION" "" get_version_raw upstream_install "$DRY_RUN" "$RESULT_FILE"
