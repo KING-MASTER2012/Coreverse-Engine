@@ -16,8 +16,8 @@ jobs:
       - name: Bootstrap
         shell: bash
         run: |
-          chmod +x scripts/setup/shell/bootstrap.sh
-          scripts/setup/shell/bootstrap.sh
+          chmod +x devkit/scripts/setup/shell/bootstrap.sh
+          devkit/scripts/setup/shell/bootstrap.sh
 
       - uses: Swatinem/rust-cache@v2
 

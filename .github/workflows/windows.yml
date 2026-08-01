@@ -18,4 +18,4 @@ jobs:
       - name: Setup Windows environment
         shell: pwsh
         run: |
-          scripts/setup/powershell/bootstrap.ps1
+          devkit/scripts/setup/powershell/bootstrap.ps1

@@ -16,8 +16,8 @@ jobs:
       - name: Bootstrap
         shell: bash
         run: |
-          chmod +x scripts/setup/shell/bootstrap.sh
-          scripts/setup/shell/bootstrap.sh
+          chmod +x devkit/scripts/setup/shell/bootstrap.sh
+          devkit/scripts/setup/shell/bootstrap.sh
 
       - name: Configure
         run: cmake -B build
@@ -34,7 +34,7 @@ jobs:
       - name: Bootstrap
         shell: pwsh
         run: |
-          scripts/setup/powershell/bootstrap.ps1
+          dev/scripts/setup/powershell/bootstrap.ps1
 
       - name: Configure
         run: cmake -B build
