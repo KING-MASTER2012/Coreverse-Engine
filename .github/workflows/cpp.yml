@@ -34,7 +34,7 @@ jobs:
       - name: Bootstrap
         shell: pwsh
         run: |
-          dev/scripts/setup/powershell/bootstrap.ps1
+          devkit/scripts/setup/powershell/bootstrap.ps1
 
       - name: Configure
         run: cmake -B build
