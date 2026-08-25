@@ -1,0 +1,276 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VCPKG_MANIFEST_MODE": "ON",
+        "VCPKG_MANIFEST_DIR": "${sourceDir}"
+      }
+    },
+
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+
+    {
+      "name": "macos-base",
+      "hidden": true,
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+
+    {
+      "name": "windows-msvc",
+      "hidden": true,
+      "inherits": "windows-base",
+      "displayName": "Windows x64 - MSVC",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+
+    {
+      "name": "windows-clang",
+      "hidden": true,
+      "inherits": "windows-base",
+      "displayName": "Windows x64 - Clang",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+
+    {
+      "name": "windows-clang-gnu",
+      "hidden": true,
+      "inherits": "windows-base",
+      "displayName": "Windows x64 - Clang GNU",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-dynamic"
+      }
+    },
+
+    {
+      "name": "linux-gcc",
+      "hidden": true,
+      "inherits": "linux-base",
+      "displayName": "Linux x64 - GCC",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "VCPKG_TARGET_TRIPLET": "x64-linux"
+      }
+    },
+
+    {
+      "name": "linux-clang",
+      "hidden": true,
+      "inherits": "linux-base",
+      "displayName": "Linux x64 - Clang",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "VCPKG_TARGET_TRIPLET": "x64-linux"
+      }
+    },
+
+    {
+      "name": "macos-clang",
+      "hidden": true,
+      "inherits": "macos-base",
+      "displayName": "macOS - Apple Clang",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx"
+      }
+    },
+
+    {
+      "name": "windows-x64",
+      "inherits": "windows-msvc",
+      "displayName": "Windows x64 (MSVC)"
+    },
+
+    {
+      "name": "windows-x64-clang",
+      "inherits": "windows-clang",
+      "displayName": "Windows x64 (Clang/LLVM)"
+    },
+
+    {
+      "name": "windows-x64-clang-gnu",
+      "inherits": "windows-clang-gnu",
+      "displayName": "Windows x64 (Clang GNU)"
+    },
+
+    {
+      "name": "linux-x64-gcc",
+      "inherits": "linux-gcc",
+      "displayName": "Linux x64 (GCC)"
+    },
+
+    {
+      "name": "linux-x64-clang",
+      "inherits": "linux-clang",
+      "displayName": "Linux x64 (Clang/LLVM)"
+    },
+
+    {
+      "name": "macos-arm64-clang",
+      "inherits": "macos-clang",
+      "displayName": "macOS arm64 (Apple Clang)"
+    },
+
+    {
+      "name": "windows-x64-static",
+      "inherits": "windows-msvc",
+      "displayName": "Windows x64 (MSVC, Static CRT)",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    {
+      "name": "windows-msvc-debug",
+      "displayName": "Windows x64 Debug (MSVC)",
+      "configurePreset": "windows-x64",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-msvc-release",
+      "displayName": "Windows x64 Release (MSVC)",
+      "configurePreset": "windows-x64",
+      "configuration": "Release"
+    },
+
+    {
+      "name": "windows-clang-debug",
+      "displayName": "Windows x64 Debug (Clang)",
+      "configurePreset": "windows-x64-clang",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-clang-release",
+      "displayName": "Windows x64 Release (Clang)",
+      "configurePreset": "windows-x64-clang",
+      "configuration": "Release"
+    },
+
+    {
+      "name": "windows-clang-gnu-debug",
+      "displayName": "Windows x64 Debug (Clang GNU)",
+      "configurePreset": "windows-x64-clang-gnu",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-clang-gnu-release",
+      "displayName": "Windows x64 Release (Clang GNU)",
+      "configurePreset": "windows-x64-clang-gnu",
+      "configuration": "Release"
+    },
+
+    {
+      "name": "linux-gcc-debug",
+      "displayName": "Linux x64 Debug (GCC)",
+      "configurePreset": "linux-x64-gcc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "linux-gcc-release",
+      "displayName": "Linux x64 Release (GCC)",
+      "configurePreset": "linux-x64-gcc",
+      "configuration": "Release"
+    },
+
+    {
+      "name": "linux-clang-debug",
+      "displayName": "Linux x64 Debug (Clang)",
+      "configurePreset": "linux-x64-clang",
+      "configuration": "Debug"
+    },
+    {
+      "name": "linux-clang-release",
+      "displayName": "Linux x64 Release (Clang)",
+      "configurePreset": "linux-x64-clang",
+      "configuration": "Release"
+    },
+
+    {
+      "name": "macos-arm64-debug",
+      "displayName": "macOS arm64 Debug (Apple Clang)",
+      "configurePreset": "macos-arm64-clang",
+      "configuration": "Debug"
+    },
+    {
+      "name": "macos-arm64-release",
+      "displayName": "macOS arm64 Release (Apple Clang)",
+      "configurePreset": "macos-arm64-clang",
+      "configuration": "Release"
+    },
+
+    {
+      "name": "windows-msvc-static-debug",
+      "displayName": "Windows x64 Debug (MSVC, Static CRT)",
+      "configurePreset": "windows-x64-static",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-msvc-static-release",
+      "displayName": "Windows x64 Release (MSVC, Static CRT)",
+      "configurePreset": "windows-x64-static",
+      "configuration": "Release"
+    }
+  ]
+}

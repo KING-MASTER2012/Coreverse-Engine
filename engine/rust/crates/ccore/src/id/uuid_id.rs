@@ -68,6 +68,7 @@ macro_rules! define_persistent_id {
         pub struct $name($crate::__private::Uuid);
 
         impl $name {
+            /// Function that creates uuid for impl
             pub fn new() -> Self {
                 Self($crate::__private::Uuid::new_v4())
             }

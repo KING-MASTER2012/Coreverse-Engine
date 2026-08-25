@@ -1,6 +1,6 @@
 <div style="text-align: center;">
 
-<img src="assets/emblems/coreverse-engine-emblem.svg" width = 250 alt = "Logo">
+<img src="assets/emblems/coreverse-emblem.svg" width = 250 alt = "Logo">
 
 #  Coreverse Engine
 ### Core & Universe
@@ -9,7 +9,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](https://www.gnu.org/licenses/gpl-3.0)
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
-[![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&logo=c%2B%2B)](https://isocpp.org/)
+[![C++](https://img.shields.io/badge/C%2B%2B-23-00599C?style=for-the-badge&logo=c%2B%2B)](https://isocpp.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0-24C8DB?style=for-the-badge&logo=tauri)](https://tauri.app/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-success?style=for-the-badge)](#-supported-platforms)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-yellow?style=for-the-badge)](#-roadmap)
@@ -71,20 +71,20 @@ By bridging the absolute memory safety and modern concurrency of **Rust** with t
 ## 💻 Supported Platforms
 
 ### Operating Systems
-| Platform          |      Status       | Notes                                       |
-|:------------------|:-----------------:|:--------------------------------------------|
+| Platform          |       Status       | Notes                                       |
+|:------------------|:------------------:|:--------------------------------------------|
 | **Windows**       | ✅ Fully Supported | Windows 10/11 (x64)                         |
 | **Linux**         | ✅ Fully Supported | Tested on Ubuntu 22.04+ / Arch Linux        |
-| **macOS**         |  🚧 In Progress   | Apple Silicon (M-Series) & Intel support    |
-| **Android / iOS** |    🔮 Planned     | Mobile deployment via Vulkan/Metal backends |
+| **macOS**         |   🚧 In Progress   | Apple Silicon (M-Series) & Intel support    |
+| **Android / iOS** |     🔮 Planned     | Mobile deployment via Vulkan/Metal backends |
 
 ### Graphics APIs
-| API            |   Status    | Target Platforms              |
-|:---------------|:-----------:|:------------------------------|
-| **Vulkan 1.3** |  ✅ Primary  | Windows, Linux, Android       |
-| **OpenGL 4.6** | ✅ Supported | Cross-platform legacy support |
-| **DirectX 12** | 🔮 Planned  | Windows, Xbox                 |
-| **Metal 3**    | 🔮 Planned  | macOS, iOS                    |
+| API                |    Status     | Target Platforms                |
+|:-------------------|:-------------:|:--------------------------------|
+| **Vulkan 1.3**     |  ✅ Primary   | Windows, Linux, Android         |
+| **OpenGL 4.6**     | ✅ Supported  | Cross-platform legacy support   |
+| **DirectX 12**     |  🔮 Planned   | Windows, Xbox                   |
+| **Metal 3**        |  🔮 Planned   | macOS, iOS                      |
 
 ---
 

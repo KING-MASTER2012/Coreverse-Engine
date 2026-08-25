@@ -1,3 +1,6 @@
+//! Project generator is a tool for engine.
+//! It works integrated with the project system crate
+//! and gives ready templates(.gitignore etc.).
 mod build_config;
 mod error;
 mod manifest;
