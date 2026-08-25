@@ -1,221 +1,664 @@
-<div style="text-align: center;">
+<div style = "text-align: center">
 
-<img src="assets/emblems/coreverse-emblem.svg" width = 250 alt = "Logo">
+<img src="assets/emblems/coreverse-emblem.svg" width="250" alt="Coreverse Engine Logo">
 
-#  Coreverse Engine
-### Core & Universe
+<h1>Coreverse Engine</h1>
 
-**Build Worlds Without Limits. Made with Rust, C++, and passion.**
+<h3>Core & Universe</h3>
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](https://www.gnu.org/licenses/gpl-3.0)
-[![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
-[![C++](https://img.shields.io/badge/C%2B%2B-23-00599C?style=for-the-badge&logo=c%2B%2B)](https://isocpp.org/)
-[![Tauri](https://img.shields.io/badge/Tauri-2.0-24C8DB?style=for-the-badge&logo=tauri)](https://tauri.app/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-success?style=for-the-badge)](#-supported-platforms)
-[![Status](https://img.shields.io/badge/Status-Active%20Development-yellow?style=for-the-badge)](#-roadmap)
+<p><strong>Build Worlds Without Limits.</strong><br>
+A native, open-source game engine built around Rust, C++, Qt, Vulkan, and modern cross-platform tooling.</p>
+
+<p>
+  <a href="https://www.gnu.org/licenses/gpl-3.0">
+    <img src="https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge" alt="License: GPL v3">
+  </a>
+  <a href="https://www.rust-lang.org/">
+    <img src="https://img.shields.io/badge/Rust-2024-orange.svg?style=for-the-badge&logo=rust" alt="Rust 2024">
+  </a>
+  <a href="https://isocpp.org/">
+    <img src="https://img.shields.io/badge/C%2B%2B-23-00599C.svg?style=for-the-badge&logo=c%2B%2B" alt="C++23">
+  </a>
+  <a href="https://www.qt.io/">
+    <img src="https://img.shields.io/badge/Qt-6-41CD52.svg?style=for-the-badge&logo=qt" alt="Qt 6">
+  </a>
+  <a href="https://cmake.org/">
+    <img src="https://img.shields.io/badge/CMake-Ninja-064F8C.svg?style=for-the-badge&logo=cmake" alt="CMake + Ninja">
+  </a>
+  <a href="https://vcpkg.io/">
+    <img src="https://img.shields.io/badge/Dependencies-vcpkg-16437E.svg?style=for-the-badge" alt="vcpkg">
+  </a>
+</p>
 
 </div>
 
 ---
 
-## 📖 About
+## 🎨 Project Status Legend
 
-**Coreverse Engine** is a next-generation, open-source game development ecosystem engineered for uncompromised **performance**, **modular scalability**, and **developer ergonomics**.
+| Color  | Meaning                                                                           |
+|:------:| :-------------------------------------------------------------------------------- |
+|   🟢   | **Active / Current** — Implemented or actively maintained                         |
+|   🔵   | **Target / Planned** — Part of the intended architecture or roadmap               |
+|   🟡   | **Development / Experimental** — Under active implementation or subject to change |
+|   ⚪   | **External / Separate Repository** — Deliberately outside this repository         |
 
-By bridging the absolute memory safety and modern concurrency of **Rust** with the raw computational power and industry-standard ecosystem of **C++**, Coreverse delivers a hybrid architecture capable of powering everything from lightweight 2D indie titles to complex, high-fidelity 3D simulations.
-
----
-
-## ✨ Key Features
-
-### ⚙️ Core Architecture & Performance
-- **🦀 Rust + C++ Hybrid Core:** Critical path memory safety combined with zero-overhead C++ rendering and physics execution.
-- **🧱 Data-Oriented ECS:** High-performance Entity Component System built for CPU cache locality and parallel processing.
-- **🔄 Asynchronous Event Queue:** Thread-safe, non-blocking message passing across engine subsystems.
-- **📦 Virtual File System (VFS):** Seamless asset packaging, mounting, and streaming with full UTF-8 filesystem support.
-
-### 🎨 Rendering & Graphics
-- **⚡ Modern Vulkan Renderer:** Primary backend built for low-overhead, multi-threaded command buffer generation.
-- **🖥️ OpenGL Fallback:** Broad legacy and cross-platform compatibility.
-- **📜 Advanced Asset Pipeline:** Asynchronous asset compilation, optimization, and hot-reloading.
-
-### 🛠️ Tooling & Ecosystem
-- **🎨 Native Qt Editor:** Professional-grade, customizable C++ editor interface with docking, scene inspection, and profiling tools.
-- **🚀 Tauri-Powered Launcher:** Ultra-lightweight desktop launcher built with React, TypeScript, and Tauri.
-- **🧩 Modular Plugin Architecture:** Extend engine functionality dynamically without modifying core source code.
-- **☁️ Cloud-Ready Infrastructure:** Built-in integration support for backend services, telemetry, and multiplayer persistence.
-
-### 🤖 Applied AI Integration
-- **🧠 Local & API AI Workflows:** Native interfaces to plug into powerful LLMs and neural networks (via cloud APIs like OpenAI and Anthropic, or local inference runtimes like ONNX and llama.cpp).
-- **🎮 Smart Game Mechanics:** Seamlessly integrate AI for dynamic NPC behavior trees, real-time dialogue generation, and adaptive game systems without the overhead of training foundation models locally.
-- **🛠️ Editor Copilot Support:** AI-assisted scene generation, automated debugging, and intelligent asset tagging directly within the editor environment.
+The status indicators below describe the **current direction of the Coreverse Engine repository**, not the entire Coreverse ecosystem.
 
 ---
 
-## 🏗️ System Architecture
+## 🟢 Overview
 
-| Subsystem            | Primary Technology         | Responsibility                                                   |
-|:---------------------|:---------------------------|:-----------------------------------------------------------------|
-| **Engine Core**      | Rust + C++ (C++20)         | Memory management, VFS, ECS, math library, and job system        |
-| **Rendering**        | Vulkan / OpenGL            | Scene graph execution, shader compilation, and post-processing   |
-| **Editor**           | C++ / Qt6                  | Tooling, scene manipulation, and development environment         |
-| **Launcher**         | TypeScript / React / Tauri | Project management, engine versioning, and news feed             |
-| **Backend / Server** | Go                         | Authoritative networking, matchmaking, and state synchronization |
-| **AI Integration**   | Python / ONNX / REST APIs  | Local inference runtime and cloud AI service connectors          |
-| **Database & Cloud** | PostgreSQL / Supabase      | Player persistence, telemetry, and cloud asset storage           |
-| **Build System**     | Cargo + CMake              | Unified cross-language compilation and dependency management     |
+**Coreverse Engine** is the native engine and editor repository of the Coreverse ecosystem.
+
+The project focuses on the systems required to build, run, inspect, and render interactive worlds while keeping the architecture modular and performance-oriented.
+
+Coreverse uses a deliberately asymmetric hybrid architecture:
+
+* **Rust** handles the engine's background and systems-oriented infrastructure.
+* **C++23 + Qt 6** powers the editor and rendering layer.
+* **C++ calls Rust through a stable FFI boundary.**
+* **Rust does not depend on or call back into the C++ layer.**
+* **CMake + Ninja** provide the native build orchestration.
+* **vcpkg** manages native third-party dependencies.
+* Platform-native compilers remain the authoritative production toolchains, while **Clang/LLVM is also used for diagnostics, static analysis, tooling, and verification**.
+
+The result is a native engine architecture that combines Rust's safety and concurrency model with the mature graphics, tooling, and desktop ecosystem of C++ and Qt.
+
+> **Coreverse Engine is the Engine repository.**
+> The Launcher, Website, cloud services, backend services, and external scripting ABI repositories are maintained separately.
 
 ---
 
-<a id="supported-platforms"></a>
-## 💻 Supported Platforms
+## 🟢 Architecture
+
+Coreverse is split into two primary native layers.
+
+### 🦀 Rust — Engine Systems
+
+Rust is responsible for the engine's background and infrastructure-oriented systems.
+
+Typical responsibilities include:
+
+* Core engine services
+* Virtual File System (VFS)
+* Asset and project infrastructure
+* Job and task systems
+* Event and messaging infrastructure
+* Resource management
+* Configuration systems
+* Runtime services
+* Other concurrency-sensitive or infrastructure-heavy subsystems
+
+Rust provides:
+
+* Memory safety
+* Data-race prevention
+* Strong ownership semantics
+* Modern concurrency primitives
+* Reliable error handling
+* Safe-by-default abstractions
+
+### ⚙️ C++23 + Qt 6 — Editor & Rendering
+
+The native C++ layer is responsible for the systems that require close integration with graphics APIs and Qt.
+
+This includes:
+
+* Qt-based Engine Editor
+* Rendering infrastructure
+* Vulkan renderer
+* OpenGL renderer where applicable
+* Graphics resource management
+* GPU synchronization
+* Render scheduling
+* Editor viewport systems
+* Scene and tooling interfaces
+* Native platform integration
+
+Qt is used throughout the desktop-facing editor and associated native UI infrastructure.
+
+### 🔗 FFI Boundary
+
+The architectural dependency direction is intentional:
+
+```text
+┌───────────────────────────────────────────────┐
+│               C++23 / Qt 6                    │
+│                                               │
+│  Editor • Renderer • Native Tooling           │
+└──────────────────────┬────────────────────────┘
+                       │
+                       │ C / FFI boundary
+                       ▼
+┌───────────────────────────────────────────────┐
+│                  Rust 2024                    │
+│                                               │
+│  Core Systems • VFS • Jobs • Events • Runtime │
+└───────────────────────────────────────────────┘
+```
+
+The C++ layer consumes Rust APIs through an explicit ABI boundary.
+
+Rust remains independent of C++ at the architectural level. This keeps the ownership model, dependency graph, and compilation boundaries easier to reason about.
+
+---
+
+## 🟢 Core Principles
+
+### 1. Safety Without Sacrificing Native Performance
+
+Rust is used where memory safety and concurrency provide significant architectural value.
+
+C++ is used where direct integration with Qt, graphics APIs, platform SDKs, and established native tooling is advantageous.
+
+### 2. Native First
+
+Coreverse is a native engine rather than a browser-based runtime or managed application framework.
+
+The Engine and Editor are designed around:
+
+* Native binaries
+* Native graphics APIs
+* Native filesystem access
+* Native threading
+* Native debugging
+* Native profiling
+
+### 3. Explicit Boundaries
+
+The Rust/C++ interface is deliberately explicit.
+
+The architecture avoids unnecessary bidirectional dependencies and keeps cross-language communication concentrated around well-defined interfaces.
+
+### 4. Tooling Is Part of the Engine
+
+Compilers, debuggers, static analyzers, sanitizers, linters, and IDE tooling are treated as part of the development architecture rather than optional extras.
+
+### 5. Cross-Platform by Design
+
+Linux is the primary development and build platform, while Windows and macOS remain first-class targets with their appropriate native toolchains.
+
+---
+
+## 🟢 Rendering
+
+Coreverse's rendering layer is implemented in native C++ and integrated into the Qt-based Engine Editor.
+
+### Current Graphics Direction
+
+| Graphics API |            Status            | Intended Platforms                     |
+| :----------- | :--------------------------: | :------------------------------------- |
+| **Vulkan**   |          🟢 Primary          | Linux, Windows, future Android targets |
+| **OpenGL**   | 🟢 Supported / Compatibility | Cross-platform fallback                |
+| **Metal**    |          🔵 Planned          | macOS / Apple platforms                |
+| **Direct3D** |          🔵 Planned          | Windows                                |
+
+The renderer is designed around explicit graphics APIs, multithreaded workloads, predictable resource lifetime, and minimal abstraction overhead.
+
+---
+
+## 🟢 Engine Editor
+
+The Coreverse Editor is a **native Qt 6 / C++ application** rather than a web application.
+
+The Editor is intended to provide:
+
+* Scene editing
+* Entity and component inspection
+* Asset management
+* Resource inspection
+* Rendering viewport
+* Engine diagnostics
+* Project configuration
+* Profiling and debugging workflows
+* Future visual scripting integration
+
+Qt provides the desktop UI foundation while the underlying Engine systems remain separated into their native subsystems.
+
+---
+
+## 🟢 Build System
+
+Coreverse uses **CMake + Ninja** as its native build system.
+
+### Build Stack
+
+```text
+CMake
+   │
+   ├── Ninja
+   │
+   ├── C++23 / Qt 6
+   │
+   ├── Rust 2024
+   │
+   └── vcpkg
+```
+
+### CMake
+
+CMake is responsible for:
+
+* Project configuration
+* Native target generation
+* Rust/C++ integration
+* Qt integration
+* Platform-specific configuration
+* Compiler configuration
+* Dependency integration
+* Installation and packaging infrastructure
+
+### Ninja
+
+Ninja is used as the underlying high-performance build executor.
+
+This keeps incremental builds fast and makes the build graph explicit and reproducible.
+
+### vcpkg
+
+**vcpkg** manages native third-party C/C++ dependencies and integrates directly with the CMake-based build.
+
+The repository therefore avoids depending on manually configured system copies of arbitrary C++ libraries wherever practical.
+
+---
+
+## 🟢 Compiler & Toolchain Strategy
+
+Coreverse uses the **native compiler ecosystem of each operating system as the primary production toolchain**.
+
+At the same time, Clang/LLVM is used as an additional verification and analysis toolchain.
+
+| Platform       | Primary Compiler | Secondary / Verification |
+| :------------- | :--------------- | :----------------------- |
+| 🐧 **Linux**   | **GCC**          | Clang / LLVM             |
+| 🪟 **Windows** | **MSVC**         | Clang / LLVM             |
+| 🍎 **macOS**   | **Apple Clang**  | Clang tooling            |
+
+### Linux
+
+**GCC** is the primary compiler and primary production build toolchain.
+
+Clang is additionally used for:
+
+* Static analysis
+* `clang-tidy`
+* Compilation verification
+* Additional diagnostics
+* LLVM-based tooling
+
+### Windows
+
+**MSVC** is the primary compiler and production build toolchain.
+
+Clang/LLVM is additionally used for:
+
+* Static analysis
+* `clang-tidy`
+* Additional compiler diagnostics
+* LLVM tooling
+* Cross-checking problematic code paths
+
+Visual Studio's native toolchain and debugger remain first-class development tools.
+
+### macOS
+
+**Apple Clang** is used as the primary compiler in accordance with the native Apple development ecosystem.
+
+---
+
+## 🟢 Developer & CI Verification
+
+Toolchain validation does not depend exclusively on a single compiler.
+
+Coreverse uses both local developer checks and CI/CD verification.
+
+### Developer Environment
+
+Developers can use:
+
+* Native compiler diagnostics
+* Clang diagnostics
+* `clang-tidy`
+* LLVM tooling
+* GDB
+* LLDB
+* Visual Studio Debugger
+* Qt debugging tools
+* Platform-specific profiling and diagnostic tools
+
+### CI/CD
+
+CI pipelines are used to verify:
+
+* Supported platform builds
+* Compiler compatibility
+* Static analysis
+* Linting
+* Warnings and diagnostics
+* Cross-platform regressions
+* Dependency integration
+* Release configuration
+
+The goal is not merely to produce a successful build, but to continuously validate the codebase against multiple diagnostic ecosystems.
+
+---
+
+## 🟢 Platform Matrix
 
 ### Operating Systems
-| Platform          |       Status       | Notes                                       |
-|:------------------|:------------------:|:--------------------------------------------|
-| **Windows**       | ✅ Fully Supported | Windows 10/11 (x64)                         |
-| **Linux**         | ✅ Fully Supported | Tested on Ubuntu 22.04+ / Arch Linux        |
-| **macOS**         |   🚧 In Progress   | Apple Silicon (M-Series) & Intel support    |
-| **Android / iOS** |     🔮 Planned     | Mobile deployment via Vulkan/Metal backends |
 
-### Graphics APIs
-| API                |    Status     | Target Platforms                |
-|:-------------------|:-------------:|:--------------------------------|
-| **Vulkan 1.3**     |  ✅ Primary   | Windows, Linux, Android         |
-| **OpenGL 4.6**     | ✅ Supported  | Cross-platform legacy support   |
-| **DirectX 12**     |  🔮 Planned   | Windows, Xbox                   |
-| **Metal 3**        |  🔮 Planned   | macOS, iOS                      |
+| Platform             |    Status    | Primary Toolchain |        Development Priority         |
+| :------------------- |:------------:| :---------------- |:-----------------------------------:|
+| 🐧 **Linux**         | 🟢 Supported | GCC               |             **Primary**             |
+| 🪟 **Windows**       | 🟢 Supported | MSVC              | **Secondary / Official Validation** |
+| 🍎 **macOS**         | 🟢 Supported | Apple Clang       |    **Cross-platform Validation**    |
+| 📱 **Android / iOS** |  🔵 Future   | Platform-specific |               Future                |
+
+Linux is the primary development environment for Coreverse Engine.
+
+Windows remains a first-class target and is continuously validated with MSVC.
+
+macOS follows the native Apple toolchain through Apple Clang.
 
 ---
 
-## 📁 Repository Structure
+## 🟢 Repository Scope
+
+This repository contains the **Coreverse Engine and its native Editor infrastructure**.
+
+A simplified structure is:
 
 ```text
 coreverse-engine/
-├── .github/                  # CI/CD workflows and issue templates
-├── applications/             # End-user applications and tools
-│   ├── editor/               # Qt6-based visual editor
-│   ├── launcher/             # Tauri + React desktop launcher
-│   └── server/               # Go-based dedicated server node
-├── assets/                   # Default engine shaders, icons, and fonts
-├── docs/                     # Technical documentation and architecture specifications
-├── engine/                   # Engine core libraries
-│   ├── cpp/                  # Rendering, physics, and platform APIs
-│   └── rust/                 # ECS, VFS, job system, and core logic
-├── scripts/                  # Build utilities and environment setup scripts
-├── third_party/              # Submodules and external dependencies
-├── Cargo.toml                # Rust workspace configuration
-├── CMakeLists.txt            # C++ build configuration
-├── LICENSE                   # GNU General Public License v3.0
+├── .github/
+│   ├── workflows/          # CI/CD
+│   ├── ISSUE_TEMPLATE/
+│   └── ...
+│
+├── assets/
+│   └── emblems/
+│
+├── docs/                   # Technical documentation
+│
+├── engine/
+│   ├── cpp/                # C++23 native engine & renderer
+│   └── rust/               # Rust 2024 engine systems
+│
+├── editor/                 # Qt 6 / C++ Engine Editor
+│
+├── scripts/                # Development and build utilities
+│
+├── third_party/            # External repositories / integrations
+│
+├── CMakeLists.txt
+├── CMakePresets.json
+├── Cargo.toml
+├── vcpkg.json
+├── LICENSE
 └── README.md
+```
+
+> The exact directory structure may evolve as the Engine architecture matures.
+
+---
+
+## ⚪ Separate Coreverse Repositories
+
+The following components are intentionally **not part of this repository**:
+
+| Component                           | Repository Role                              |
+| :---------------------------------- | :------------------------------------------- |
+| **Coreverse Launcher**              | Desktop project/engine launcher              |
+| **Coreverse Website**               | Public website and web infrastructure        |
+| **Coreverse Backend / Services**    | Online services and server infrastructure    |
+| **Scripting ABI / API**             | Cross-language scripting interface and ABI   |
+| **Cloud / Database Infrastructure** | Backend storage and online platform services |
+
+This separation keeps the Engine repository focused on native engine development instead of turning it into a monolithic ecosystem repository.
+
+---
+
+## 🟢 Development Workflow
+
+A typical development workflow looks like:
+
+```text
+Developer
+   │
+   ▼
+CMake Configuration
+   │
+   ├── vcpkg dependencies
+   │
+   ├── Rust targets
+   │
+   └── C++ / Qt targets
+   │
+   ▼
+Ninja Build
+   │
+   ▼
+Native Engine + Editor
+   │
+   ├── Compiler diagnostics
+   ├── Clang tooling
+   ├── Debugger
+   └── Runtime validation
+   │
+   ▼
+CI/CD
+   │
+   ├── Linux / GCC
+   ├── Windows / MSVC
+   ├── macOS / Apple Clang
+   └── Additional Clang verification
 ```
 
 ---
 
-## 🎯 Design Philosophy
-
-1. **Performance First:** Abstractions must never come at the cost of runtime CPU/GPU cycles.
-2. **Memory Safety by Design:** Leverage Rust's ownership model for core subsystems to eliminate data races and memory leaks.
-3. **Modular Extensibility:** Every system is a plugin. Use only what your project requires.
-4. **Fast Iteration:** Hot-reloading for assets and shaders to keep creative workflows uninterrupted.
-5. **Open Source Forever:** Built by developers, for developers, with complete transparency.
-
----
-
-## 🚀 Getting Started
+## 🟢 Getting Started
 
 ### Prerequisites
-Ensure you have the following toolchains installed on your system:
-- [Rust Toolchain](https://rustup.rs/) (2024 Edition / Latest Stable)
-- [CMake](https://cmake.org/) (3.24 or newer)
-- C++20 compatible compiler (MSVC v143+, Clang 15+, or GCC 12+)
-- Node.js (v20+) & pnpm (for the Tauri Launcher)
-- Qt 6.5+ (for the Editor)
 
-### Build Instructions
+Install the following:
 
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/KING-MASTER2012/Coreverse-Engine.git
-   cd coreverse-engine
-   ```
+* **Rust** — Rust 2024 Edition / current stable toolchain
+* **CMake**
+* **Ninja**
+* **vcpkg**
+* **Qt 6**
+* A supported platform compiler:
 
-2. **Build the Rust Core**
-   ```bash
-   cargo build --release
-   ```
+  * Linux → GCC
+  * Windows → MSVC
+  * macOS → Apple Clang
+* Git
 
-3. **Build the C++ Engine & Editor**
-   ```bash
-   cmake -B build -DCMAKE_BUILD_TYPE=Release
-   cmake --build build --config Release -j$(nproc)
-   ```
+Additional tooling is recommended for development and diagnostics:
 
-4. **Run the Launcher (Tauri)**
-   ```bash
-   cd applications/launcher
-   npm install
-   npm run tauri dev
-   ```
+* Clang / LLVM
+* `clang-tidy`
+* LLDB
+* GDB
+* Visual Studio Debugger on Windows
 
----
+### Clone
 
-## 📚 Documentation
+```bash
+git clone https://github.com/KING-MASTER2012/Coreverse-Engine.git
+cd Coreverse-Engine
+```
 
-Comprehensive technical documentation can be found in the [`docs/`](docs/) directory.
+### Configure
 
-- **[Getting Started Guide](docs/GETTING_STARTED.md)**
-- **[Engine Architecture Specification](docs/ARCHITECTURE.md)**
-- **[ECS & Memory Model](docs/ECS.md)**
-- **[AI Integration Cookbook](docs/AI_INTEGRATION.md)**
-- **[Plugin Development API](docs/PLUGINS.md)**
+The repository uses CMake with Ninja and vcpkg.
 
----
+A typical configuration looks like:
 
-<a id="roadmap"></a>
-## 🛣️ Roadmap
+```bash
+cmake -S . -B build \
+  -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release
+```
 
-The roadmap below outlines major architectural milestones and upcoming features scheduled for implementation.
+### Build
 
-> 💡 **Looking for completed tasks and granular progress?**
-> To keep this README clean and focused on the future, we track all daily progress, completed development phases, and version changelogs separately. Please see **[`PROGRESS.md`](PROGRESS.md)** for detailed tracking.
+```bash
+cmake --build build
+```
 
-### Upcoming Milestones
-- [ ] **Advanced Renderer:** Hardware ray-tracing support via Vulkan Ray Tracing pipelines.
-- [ ] **Physics Integration:** Native 3D rigid-body and fluid dynamics simulation integration.
-- [ ] **Audio Engine:** Spatial 3D audio processing using OpenAL / FMOD architecture.
-- [ ] **AI Asset Tagging:** Automated semantic asset categorization in VFS via local ONNX models.
-- [ ] **Visual Scripting:** Node-based gameplay scripting integrated directly into the Qt Editor.
-- [ ] **Netcode Subsystem:** Client-side prediction and server reconciliation modules in Rust.
-- [ ] **Plugin Marketplace:** Decentralized community package registry within the Tauri launcher.
+For development builds:
+
+```bash
+cmake -S . -B build \
+  -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug
+
+cmake --build build
+```
+
+> Prefer the repository's CMake presets when available, as they provide the canonical project configuration for each platform and toolchain.
 
 ---
 
-## 🤝 Contributing
+## 🟢 Documentation
 
-Coreverse Engine thrives on community collaboration. Whether you are fixing bugs, optimizing rendering pipelines, improving documentation, or suggesting features, your contributions are welcome!
+Technical documentation is maintained under [`docs/`](docs/).
 
-1. **Fork** the repository.
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`).
-3. **Commit** your changes following our conventional commit guidelines (`git commit -m 'feat(renderer): add vulkan validation layers'`).
-4. **Push** to your branch (`git push origin feature/amazing-feature`).
-5. **Open** a Pull Request.
+Recommended documentation areas include:
 
-Please review our **[Contribution Guidelines](.github/CONTRIBUTING.md)** and **[Code of Conduct](.github/CODE_OF_CONDUCT.md)** before submitting changes.
+* **Engine Architecture**
+* **Rust/C++ FFI Architecture**
+* **Rendering Architecture**
+* **ECS and Runtime Systems**
+* **Build System**
+* **Platform Support**
+* **Editor Architecture**
+* **Development & Contribution Guidelines**
 
----
-
-## 📄 License
-
-This software is open-source and released under the **GNU General Public License v3.0 (GPL-3.0)**.
-
-You are free to use, modify, and distribute this software in accordance with the terms of the license. See the **[`LICENSE`](LICENSE)** file for full legal details.
+Documentation should describe the actual implementation and current architecture rather than future plans presented as completed functionality.
 
 ---
 
-<div style="text-align: center;">
+## 🟡 Roadmap
 
-**Coreverse Engine**
-*Core & Universe — Build Worlds Without Limits.*
+The roadmap evolves together with the engine architecture.
+
+### Rendering
+
+* [ ] Advanced Vulkan rendering pipeline
+* [ ] GPU-driven rendering
+* [ ] Advanced synchronization and resource management
+* [ ] Hardware ray tracing
+* [ ] Metal backend
+* [ ] Direct3D backend
+
+### Engine Systems
+
+* [ ] Expanded ECS/runtime infrastructure
+* [ ] Advanced asynchronous job scheduling
+* [ ] Asset dependency graph
+* [ ] Improved hot-reloading
+* [ ] Runtime profiling infrastructure
+* [ ] Expanded serialization and project systems
+
+### Editor
+
+* [ ] Advanced Scene Editor
+* [ ] Integrated profiling tools
+* [ ] Resource inspectors
+* [ ] Visual scripting
+* [ ] Advanced rendering diagnostics
+* [ ] Editor extensibility APIs
+
+### Platform Support
+
+* [ ] Expanded macOS validation
+* [ ] Mobile runtime architecture
+* [ ] Additional graphics backends
+* [ ] Broader hardware compatibility
+
+---
+
+## 🟡 Project Philosophy
+
+### ⚡ Performance
+
+Runtime abstractions should justify their cost.
+
+### 🦀 Safety
+
+Memory safety and concurrency safety are architectural priorities, particularly in core and infrastructure systems.
+
+### 🧩 Modularity
+
+Engine subsystems should remain independently understandable, testable, and replaceable.
+
+### 🛠️ Developer Experience
+
+Fast builds, useful diagnostics, strong tooling, and predictable project structure are core engineering requirements.
+
+### 🌍 Cross-Platform
+
+Platform-specific behavior should be isolated rather than allowed to leak throughout the codebase.
+
+### 🔍 Verification
+
+A successful build from one compiler is not considered sufficient evidence of correctness.
+
+Coreverse continuously benefits from multiple compiler, analyzer, debugger, and CI environments.
+
+---
+
+## 🟢 Contributing
+
+Contributions are welcome across:
+
+* Engine systems
+* Rust infrastructure
+* C++ rendering
+* Qt Editor development
+* Build infrastructure
+* Platform support
+* Diagnostics and tooling
+* Documentation
+* Tests and validation
+
+Before contributing, review:
+
+* [Contribution Guidelines](.github/CONTRIBUTING.md)
+* [Code of Conduct](.github/CODE_OF_CONDUCT.md)
+
+A typical workflow is:
+
+```bash
+git checkout -b feature/your-feature
+git add .
+git commit -m "feat(renderer): improve command submission"
+git push origin feature/your-feature
+```
+
+Then open a Pull Request against the appropriate branch.
+
+---
+
+## 🟢 License
+
+Coreverse Engine is released under the **GNU General Public License v3.0 (GPL-3.0)**.
+
+See [`LICENSE`](LICENSE) for the complete license text.
+
+---
+
+<div style = "text-align: center">
+
+<h3>Coreverse Engine</h3>
+
+<p><em>Core & Universe — Build Worlds Without Limits.</em></p>
+
+<p>
+  <strong>Rust.</strong> <strong>C++.</strong> <strong>Qt.</strong> <strong>Vulkan.</strong> <strong>Native by design.</strong>
+</p>
 
 </div>

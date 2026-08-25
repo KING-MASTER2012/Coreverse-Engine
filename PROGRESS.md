@@ -2,7 +2,7 @@
 Last changed 14:08 29.07.2026 by KING-MASTER2012.
 
 ## What happened compared to the previous commit?
-- Node, npm and go removed from devkit/setup scripts.
+- CMake files has been fixed.
 
 ## What will be done?
 - Asset system will be added.
