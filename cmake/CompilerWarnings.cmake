@@ -1,6 +1,6 @@
 # cmake/CompilerWarnings.cmake
 # Strict, modern warning set applied via an INTERFACE target
-# (engine/cpp targets should `target_link_libraries(<tgt> PRIVATE cv_compiler_warnings)`).
+# (engine/cpp targets should `target_link_libraries(<tgt> PRIVATE compiler_warnings)`).
 #
 # Six toolchains are in play across the project's compiler matrix:
 #   - MSVC (cl.exe)                    -> real MSVC, MSVC_FRONTEND
@@ -15,7 +15,7 @@
 # MSVC-style flag list, not the GNU-style one, even though its
 # COMPILER_ID is "Clang".
 
-function(cv_set_project_warnings target_name)
+function(set_project_warnings target_name)
     set(MSVC_STYLE_WARNINGS
             /W4
             /permissive-
@@ -33,15 +33,15 @@ function(cv_set_project_warnings target_name)
             -Wdouble-promotion -Wformat=2 -Wimplicit-fallthrough
     )
 
-    set(_cv_is_msvc_frontend FALSE)
+    set(_is_msvc_frontend FALSE)
     if(MSVC)
         # Covers real cl.exe. Also covers clang-cl, EXCEPT we still
         # want to give it a couple of Clang-only diagnostics on top,
         # so we special-case it below instead of short-circuiting here.
-        set(_cv_is_msvc_frontend TRUE)
+        set(_is_msvc_frontend TRUE)
     endif()
 
-    if(_cv_is_msvc_frontend)
+    if(_is_msvc_frontend)
         target_compile_options(${target_name} INTERFACE ${MSVC_STYLE_WARNINGS})
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             # clang-cl: layer on a couple of Clang-native checks that

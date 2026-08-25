@@ -30,20 +30,20 @@ endif()
 # Output directories — applied per-config so this works identically
 # under single-config (Ninja) and multi-config (Ninja Multi-Config).
 # ------------------------------------------------------------------
-foreach(_cv_cfg "" ${CMAKE_CONFIGURATION_TYPES})
-    if(_cv_cfg)
-        string(TOUPPER "${_cv_cfg}" _cv_cfg_upper)
-        set(_cv_suffix "_${_cv_cfg_upper}")
+foreach(_cfg "" ${CMAKE_CONFIGURATION_TYPES})
+    if(_cfg)
+        string(TOUPPER "${_cfg}" _cfg_upper)
+        set(_suffix "_${_cfg_upper}")
     else()
-        set(_cv_suffix "")
+        set(_suffix "")
     endif()
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY${_cv_suffix} ${CMAKE_BINARY_DIR}/lib)
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY${_cv_suffix} ${CMAKE_BINARY_DIR}/lib)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY${_cv_suffix} ${CMAKE_BINARY_DIR}/bin)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY${_suffix} ${CMAKE_BINARY_DIR}/lib)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY${_suffix} ${CMAKE_BINARY_DIR}/lib)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY${_suffix} ${CMAKE_BINARY_DIR}/bin)
 endforeach()
-unset(_cv_cfg)
-unset(_cv_cfg_upper)
-unset(_cv_suffix)
+unset(_cfg)
+unset(_cfg_upper)
+unset(_suffix)
 
 # ------------------------------------------------------------------
 # Ninja quality-of-life: keep colored diagnostics, use ccache/sccache
@@ -60,43 +60,67 @@ include(Ccache)
 
 # ------------------------------------------------------------------
 # Shared warning set, opt-in per target via
-# target_link_libraries(<tgt> PRIVATE cv_compiler_warnings)
+# target_link_libraries(<tgt> PRIVATE compiler_warnings)
 # ------------------------------------------------------------------
 include(CompilerWarnings)
-add_library(cv_compiler_warnings INTERFACE)
-cv_set_project_warnings(cv_compiler_warnings)
+add_library(compiler_warnings INTERFACE)
+set_project_warnings(compiler_warnings)
 
 include(StaticAnalysis)
 include(ClangTools)
 
 # ------------------------------------------------------------------
-# Compiler-role reporting. CV_COMPILER_ROLE is set per-preset in
+# Compiler-role reporting. COMPILER_ROLE is set per-preset in
 # CMakePresets.json: PRIMARY = distribution compiler for this
 # platform (MSVC/Windows, GCC/Linux, Apple Clang/macOS), SECONDARY =
 # validation-only (clang-cl/Windows, Clang/Linux). Not set at all
 # when configuring outside the preset workflow.
 # ------------------------------------------------------------------
-if(DEFINED CV_COMPILER_ROLE AND CV_COMPILER_ROLE STREQUAL "SECONDARY")
+if(DEFINED COMPILER_ROLE AND COMPILER_ROLE STREQUAL "SECONDARY")
     message(STATUS "Coreverse: SECONDARY (validation-only) compiler build — do not package this output for distribution")
-elseif(DEFINED CV_COMPILER_ROLE AND CV_COMPILER_ROLE STREQUAL "PRIMARY")
+elseif(DEFINED COMPILER_ROLE AND COMPILER_ROLE STREQUAL "PRIMARY")
     message(STATUS "Coreverse: PRIMARY (distribution) compiler build")
 endif()
 
 # ------------------------------------------------------------------
+# Rust <-> CMake bridge (Corrosion) and the ffi C ABI boundary.
+# Only ffi is imported from the workspace — it's the single crate
+# C++ is allowed to link against; every other Rust crate stays behind
+# it and is pulled in transitively through Cargo, not through CMake.
+# ------------------------------------------------------------------
+include(FetchContent)
+FetchContent_Declare(
+        Corrosion
+        GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+        GIT_TAG v0.6.1
+)
+FetchContent_MakeAvailable(Corrosion)
+
+corrosion_import_crate(
+        MANIFEST_PATH ${CMAKE_SOURCE_DIR}/Cargo.toml
+        CRATES ffi
+)
+
+include(FfiHeader)
+generate_ffi_header()
+
+# ------------------------------------------------------------------
 # Build switches
 # ------------------------------------------------------------------
-option(CV_BUILD_EDITOR   "Build the Qt editor"          ON)
-option(CV_BUILD_RENDERER "Build the renderer library"   ON)
+option(BUILD_EDITOR   "Build the Qt editor"          ON)
+option(BUILD_RENDERER "Build the renderer library"   ON)
+option(BUILD_TESTS    "Build C++ tests"               OFF)
 
 enable_testing()
 
-if(CV_BUILD_RENDERER)
+if(BUILD_RENDERER)
     add_subdirectory(engine/cpp/renderer)
 endif()
 
-if(CV_BUILD_EDITOR)
+if(BUILD_EDITOR)
     add_subdirectory(engine/cpp/editor)
 endif()
 
-# NOTE: engine/rust (Corrosion import) and tests/ (CTest wiring) are
-# added in the next phases, once the cv-ffi crate and C++ targets exist.
+if(BUILD_TESTS)
+    add_subdirectory(tests/cpp)
+endif()

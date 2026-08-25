@@ -9,16 +9,16 @@
 #     tool of their own.
 #
 # Opt-in per target:
-#   cv_enable_static_analysis(<target>)
-# Globally gated behind CV_ENABLE_STATIC_ANALYSIS so normal dev builds
+#   enable_static_analysis(<target>)
+# Globally gated behind ENABLE_STATIC_ANALYSIS so normal dev builds
 # stay fast; flip it on for CI / pre-merge analysis passes.
 
-option(CV_ENABLE_STATIC_ANALYSIS "Run compiler-native analyzer + clang-tidy on annotated targets" OFF)
+option(ENABLE_STATIC_ANALYSIS "Run compiler-native analyzer + clang-tidy on annotated targets" OFF)
 
-find_program(CV_CLANG_TIDY_PROGRAM NAMES clang-tidy)
+find_program(CLANG_TIDY_PROGRAM NAMES clang-tidy)
 
-function(cv_enable_static_analysis target_name)
-    if(NOT CV_ENABLE_STATIC_ANALYSIS)
+function(enable_static_analysis target_name)
+    if(NOT ENABLE_STATIC_ANALYSIS)
         return()
     endif()
 
@@ -32,9 +32,9 @@ function(cv_enable_static_analysis target_name)
     endif()
 
     # --- clang-tidy half — always attempted, this is the fallback tool ---
-    if(CV_CLANG_TIDY_PROGRAM)
+    if(CLANG_TIDY_PROGRAM)
         set_target_properties(${target_name} PROPERTIES
-                CXX_CLANG_TIDY "${CV_CLANG_TIDY_PROGRAM};--quiet"
+                CXX_CLANG_TIDY "${CLANG_TIDY_PROGRAM};--quiet"
         )
     else()
         message(STATUS "Coreverse: clang-tidy not found — static analysis for '${target_name}' will only use the native compiler analyzer, if any")

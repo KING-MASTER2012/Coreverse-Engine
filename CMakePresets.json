@@ -65,7 +65,7 @@
       },
       "cacheVariables": {
         "VCPKG_TARGET_TRIPLET": "x64-windows",
-        "CV_COMPILER_ROLE": "PRIMARY"
+        "COMPILER_ROLE": "PRIMARY"
       }
     },
 
@@ -82,7 +82,7 @@
         "CMAKE_C_COMPILER": "clang-cl",
         "CMAKE_CXX_COMPILER": "clang-cl",
         "VCPKG_TARGET_TRIPLET": "x64-windows",
-        "CV_COMPILER_ROLE": "SECONDARY"
+        "COMPILER_ROLE": "SECONDARY"
       }
     },
 
@@ -99,7 +99,7 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
         "VCPKG_TARGET_TRIPLET": "x64-mingw-dynamic",
-        "CV_COMPILER_ROLE": "SECONDARY"
+        "COMPILER_ROLE": "SECONDARY"
       }
     },
 
@@ -112,7 +112,7 @@
         "CMAKE_C_COMPILER": "gcc",
         "CMAKE_CXX_COMPILER": "g++",
         "VCPKG_TARGET_TRIPLET": "x64-linux",
-        "CV_COMPILER_ROLE": "PRIMARY"
+        "COMPILER_ROLE": "PRIMARY"
       }
     },
 
@@ -125,7 +125,7 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
         "VCPKG_TARGET_TRIPLET": "x64-linux",
-        "CV_COMPILER_ROLE": "SECONDARY"
+        "COMPILER_ROLE": "SECONDARY"
       }
     },
 
@@ -138,7 +138,7 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
         "VCPKG_TARGET_TRIPLET": "arm64-osx",
-        "CV_COMPILER_ROLE": "PRIMARY"
+        "COMPILER_ROLE": "PRIMARY"
       }
     },
 

@@ -74,6 +74,13 @@ name = "event"
 version = "0.1.0"
 
 [[package]]
+name = "ffi"
+version = "0.1.0"
+dependencies = [
+ "ccore",
+]
+
+[[package]]
 name = "fs"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,17 @@
+[package]
+name = "ffi"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+# staticlib: what Corrosion links into the C++ targets.
+# rlib: so `cargo test -p cv-ffi` keeps working like any other crate.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+ccore = { path = "../ccore" }
+
+[lints]
+workspace = true
