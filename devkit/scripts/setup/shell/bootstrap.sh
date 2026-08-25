@@ -3,7 +3,7 @@
 #
 # Automates toolchain detection/installation, project dependency installation,
 # and CMake configuration in a single command. Independent tools run in
-# parallel; dependent ones (Rustup->Cargo, Node->npm, Git->vcpkg) run in
+# parallel; dependent ones (Rustup->Cargo, Git->vcpkg) run in
 # dependency-ordered layers. Mirrors the setup/powershell/bootstrap.ps1 design.
 #
 # Usage:
@@ -79,9 +79,6 @@ if ! detect_os; then
     log_plain "  - LLVM/Clang: https://releases.llvm.org/download.html"
     log_plain "  - CMake:      https://cmake.org/download/"
     log_plain "  - Ninja:      https://github.com/ninja-build/ninja/releases"
-    log_plain "  - Go:         https://go.dev/dl/"
-    log_plain "  - Node.js:    https://nodejs.org/en/download"
-    log_plain "  - npm:        https://nodejs.org/en/download"
     log_plain "  - vcpkg:      https://learn.microsoft.com/vcpkg/get_started/overview"
     exit 1
 fi
@@ -151,20 +148,6 @@ VCPKG_INSTALLED_DIR=$(to_abs_path "$(jq -r '.vcpkgInstalledDir // empty' "$PROJE
 CMAKE_SOURCE_DIR=$(to_abs_path "$(jq -r '.cmakeSourceDir' "$PROJECT_PATHS_JSON")")
 CMAKE_BUILD_DIR=$(to_abs_path "$(jq -r '.cmakeBuildDir' "$PROJECT_PATHS_JSON")")
 
-NPM_PROJECTS_RAW=$(jq -r '.npmProjects[]?' "$PROJECT_PATHS_JSON")
-NPM_PROJECTS=""
-for proj in $NPM_PROJECTS_RAW; do
-    abs_p=$(to_abs_path "$proj")
-    NPM_PROJECTS="${NPM_PROJECTS:+$NPM_PROJECTS,}$abs_p"
-done
-
-GO_MODULES_RAW=$(jq -r '.goModules[]?' "$PROJECT_PATHS_JSON")
-GO_MODULES=""
-for mod in $GO_MODULES_RAW; do
-    abs_m=$(to_abs_path "$mod")
-    GO_MODULES="${GO_MODULES:+$GO_MODULES,}$abs_m"
-done
-
 RESULTS_DIR=$(mktemp -d)
 
 # --- 6. Phase 1/3: toolchain checks (dependency graph, parallel) ---
@@ -179,9 +162,6 @@ TOOLCHAIN_TASKS=(
     "LLVM|$TOOLCHAIN_DIR/check-llvm.sh|$DRY_RUN_FLAG|"
     "CMake|$TOOLCHAIN_DIR/check-cmake.sh|$DRY_RUN_FLAG|"
     "Ninja|$TOOLCHAIN_DIR/check-ninja.sh|$DRY_RUN_FLAG|"
-    "Go|$TOOLCHAIN_DIR/check-go.sh|$DRY_RUN_FLAG|"
-    "Node|$TOOLCHAIN_DIR/check-node.sh|$DRY_RUN_FLAG|"
-    "npm|$TOOLCHAIN_DIR/check-npm.sh|$DRY_RUN_FLAG|Node"
     "vcpkg|$TOOLCHAIN_DIR/check-vcpkg.sh|--vcpkg-root $VCPKG_ROOT $DRY_RUN_FLAG|Git"
 )
 
@@ -197,8 +177,6 @@ VCPKG_DEPS_ARGS="--manifest-dir $VCPKG_MANIFEST_DIR --vcpkg-root $VCPKG_ROOT $DR
 
 DEP_TASKS=(
     "CargoDeps|$DEP_DIR/parse-cargo.sh|--workspace-root $CARGO_WORKSPACE_ROOT $DRY_RUN_FLAG|"
-    "npmDeps|$DEP_DIR/parse-npm.sh|--projects $NPM_PROJECTS $DRY_RUN_FLAG|"
-    "GoDeps|$DEP_DIR/parse-go.sh|--modules $GO_MODULES $DRY_RUN_FLAG|"
     "vcpkgDeps|$DEP_DIR/parse-vcpkg.sh|$VCPKG_DEPS_ARGS|"
 )
 

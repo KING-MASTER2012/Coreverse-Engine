@@ -9,8 +9,6 @@ there is no need to modify the script code.
 The file that **must be updated** whenever changes are made to the actual directory structure of the Coreverse Engine repository.
 
 - `cargoWorkspaceRoot` : The directory containing the root `Cargo.toml` (workspace).
-- `npmProjects`        : Directories containing `package.json` (e.g., React + Tauri launcher).
-- `goModules`          : Directories containing `go.mod` (e.g., Go server).
 - `vcpkgManifestDir`   : The directory containing the `vcpkg.json` manifest file.
 - `vcpkgInstallDir`    : The directory where vcpkg will be cloned locally for the project (not committed to git;
   should be added to `.gitignore`).

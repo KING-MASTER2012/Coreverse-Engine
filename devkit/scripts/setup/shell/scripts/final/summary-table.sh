@@ -6,8 +6,7 @@
 #   TOOL=...
 #   STATUS=...
 #   VERSION=...
-# separated by a blank line (dependency-parse scripts can report multiple rows,
-# e.g. one per npm project).
+# separated by a blank line (dependency-parse scripts can report multiple rows).
 # Sourced by bootstrap.sh; do not execute directly.
 
 SCRIPT_DIR_SUMMARY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

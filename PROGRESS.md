@@ -2,7 +2,7 @@
 Last changed 14:08 29.07.2026 by KING-MASTER2012.
 
 ## What happened compared to the previous commit?
-- C++ and CMake basics has been added.
+- Node, npm and go removed from devkit/setup scripts.
 
 ## What will be done?
 - Asset system will be added.

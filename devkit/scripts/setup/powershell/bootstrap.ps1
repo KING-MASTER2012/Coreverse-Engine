@@ -5,7 +5,7 @@
 .DESCRIPTION
     Toolchain inspection/installation, project dependencies installation and CMake configuration
     automated by a single command. Independent tools run in parallel, dependents (Rustup->Cargo,
-    Node->npm, Git->vcpkg) run inline.
+    Git->vcpkg) run inline.
 .PARAMETER Yes
     Unapproved/unattended mode. (Currently, the script doesn't require interactive approval;
     it's reserved for possible approval steps to be added in the future.)
@@ -100,7 +100,7 @@ function ConvertTo-AbsolutePath {
     if ([System.IO.Path]::IsPathRooted($RelPath)) {
         return $RelPath
     }
-    
+
     return [System.IO.Path]::GetFullPath((Join-Path $EngineRoot $RelPath))
 }
 
@@ -112,9 +112,6 @@ $absVcpkgInstalledDir = ConvertTo-AbsolutePath $projectPaths.vcpkgInstalledDir
 $absCMakeSourceDir    = ConvertTo-AbsolutePath $projectPaths.cmakeSourceDir
 $absCMakeBuildDir     = ConvertTo-AbsolutePath $projectPaths.cmakeBuildDir
 $absCargoWorkspace    = ConvertTo-AbsolutePath $projectPaths.cargoWorkspaceRoot
-
-$absNpmProjects = $projectPaths.npmProjects | ForEach-Object { ConvertTo-AbsolutePath $_ }
-$absGoModules   = $projectPaths.goModules | ForEach-Object { ConvertTo-AbsolutePath $_ }
 
 function ConvertTo-FlatResults {
 
@@ -170,9 +167,6 @@ $toolchainTasks = @(
     @{ Name = 'LLVM/Clang'; ScriptPath = "$toolchainDir/check-llvm.ps1";   DependsOn = @();          Arguments = (@{ RequiredVersion = $toolVersions.llvm.minVersion } + $commonArgs) }
     @{ Name = 'CMake';      ScriptPath = "$toolchainDir/check-cmake.ps1";  DependsOn = @();          Arguments = (@{ RequiredVersion = $toolVersions.cmake.minVersion } + $commonArgs) }
     @{ Name = 'Ninja';      ScriptPath = "$toolchainDir/check-ninja.ps1";  DependsOn = @();          Arguments = (@{ RequiredVersion = $toolVersions.ninja.minVersion } + $commonArgs) }
-    @{ Name = 'Go';         ScriptPath = "$toolchainDir/check-go.ps1";     DependsOn = @();          Arguments = (@{ RequiredVersion = $toolVersions.go.minVersion } + $commonArgs) }
-    @{ Name = 'Node.js';    ScriptPath = "$toolchainDir/check-node.ps1";   DependsOn = @();          Arguments = (@{ RequiredVersion = $toolVersions.node.minVersion } + $commonArgs) }
-    @{ Name = 'npm';        ScriptPath = "$toolchainDir/check-npm.ps1";    DependsOn = @('Node.js'); Arguments = (@{ RequiredVersion = $toolVersions.npm.minVersion } + $commonArgs) }
     @{ Name = 'vcpkg';      ScriptPath = "$toolchainDir/check-vcpkg.ps1";  DependsOn = @('Git');     Arguments = (@{ VcpkgRoot = $absVcpkgRoot } + $commonArgs) }
 )
 
@@ -186,8 +180,6 @@ $depDir = "$PSRoot/scripts/dependencies"
 
 $depTasks = @(
     @{ Name = 'Cargo Deps'; ScriptPath = "$depDir/parse-cargo.ps1"; Arguments = (@{ WorkspaceRoot = $absCargoWorkspace } + $commonArgs) }
-    @{ Name = 'npm Deps';   ScriptPath = "$depDir/parse-npm.ps1";   Arguments = (@{ Projects = $absNpmProjects } + $commonArgs) }
-    @{ Name = 'Go Deps';    ScriptPath = "$depDir/parse-go.ps1";    Arguments = (@{ Modules = $absGoModules } + $commonArgs) }
     @{ Name = 'vcpkg Deps'; ScriptPath = "$depDir/parse-vcpkg.ps1"; Arguments = (@{ ManifestDir = $absVcpkgManifestDir; VcpkgRoot = $absVcpkgRoot; InstalledDir = $absVcpkgInstalledDir} + $commonArgs) }
 )
 

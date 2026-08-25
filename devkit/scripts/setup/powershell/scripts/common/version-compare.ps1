@@ -3,7 +3,7 @@
 .SYNOPSIS
     Extracting and comparing versions from free text, such as the "--version" output of tools.
     Examples: "cargo 1.82.0 (8f40fc59f 2024-08-21)", "git version 2.45.1.windows.1",
-    "go version go1.22.5 windows/amd64", "cmake version 3.30.2", "node v20.15.1"
+    "cmake version 3.30.2"
 #>
 
 function ConvertTo-CleanVersion {

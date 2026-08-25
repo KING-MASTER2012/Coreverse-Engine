@@ -35,24 +35,6 @@
     "docsUrl": "https://github.com/ninja-build/ninja/releases",
     "pkg": { "pacman": "ninja", "apt": "ninja-build", "dnf": "ninja-build", "zypper": "ninja", "brew": "ninja" }
   },
-  "go": {
-    "minVersion": "1.26.5",
-    "displayName": "Go",
-    "docsUrl": "https://go.dev/dl/",
-    "pkg": { "pacman": "go", "apt": "golang-go", "dnf": "golang", "zypper": "go", "brew": "go" }
-  },
-  "node": {
-    "minVersion": "24.18.0",
-    "displayName": "Node.js",
-    "docsUrl": "https://nodejs.org/en/download",
-    "pkg": { "pacman": "nodejs npm", "apt": "nodejs npm", "dnf": "nodejs npm", "zypper": "nodejs npm", "brew": "node" }
-  },
-  "npm": {
-    "minVersion": "11.16.0",
-    "displayName": "npm",
-    "docsUrl": "https://nodejs.org/en/download",
-    "pkg": {}
-  },
   "vcpkg": {
     "minVersion": "26.06.24",
     "displayName": "vcpkg (project-local, always fetches latest commit)",
