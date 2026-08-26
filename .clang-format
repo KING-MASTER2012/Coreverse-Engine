@@ -56,7 +56,7 @@ BinPackParameters: false
 SortIncludes: CaseSensitive
 IncludeBlocks: Regroup
 IncludeCategories:
-    - Regex: '^"cv_ffi/'          # Rust C-ABI boundary header first
+    - Regex: '^"ffi/'          # Rust C-ABI boundary header first
       Priority: 1
     - Regex: '^<Qt'                # Qt
       Priority: 3
