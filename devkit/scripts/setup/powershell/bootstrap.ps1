@@ -168,6 +168,23 @@ $toolchainTasks = @(
     @{ Name = 'CMake';      ScriptPath = "$toolchainDir/check-cmake.ps1";  DependsOn = @();          Arguments = (@{ RequiredVersion = $toolVersions.cmake.minVersion } + $commonArgs) }
     @{ Name = 'Ninja';      ScriptPath = "$toolchainDir/check-ninja.ps1";  DependsOn = @();          Arguments = (@{ RequiredVersion = $toolVersions.ninja.minVersion } + $commonArgs) }
     @{ Name = 'vcpkg';      ScriptPath = "$toolchainDir/check-vcpkg.ps1";  DependsOn = @('Git');     Arguments = (@{ VcpkgRoot = $absVcpkgRoot } + $commonArgs) }
+
+    # --- LLVM sub-tools: ship in the same LLVM.LLVM release as clang, so they
+    #     only need the base LLVM install to have landed first. ---
+    @{ Name = 'clang-tidy';    ScriptPath = "$toolchainDir/check-clang-tidy.ps1";   DependsOn = @('LLVM/Clang'); Arguments = (@{ RequiredVersion = $toolVersions.clangTidy.minVersion } + $commonArgs) }
+    @{ Name = 'clang-format';  ScriptPath = "$toolchainDir/check-clang-format.ps1"; DependsOn = @('LLVM/Clang'); Arguments = (@{ RequiredVersion = $toolVersions.clangFormat.minVersion } + $commonArgs) }
+    @{ Name = 'LLDB';          ScriptPath = "$toolchainDir/check-lldb.ps1";         DependsOn = @('LLVM/Clang'); Arguments = (@{ RequiredVersion = $toolVersions.lldb.minVersion } + $commonArgs) }
+
+    # --- Rust extras: component-based tools need Rustup; cargo-installed
+    #     tools need Cargo. ---
+    @{ Name = 'Clippy';        ScriptPath = "$toolchainDir/check-clippy.ps1";  DependsOn = @('Rustup'); Arguments = (@{ RequiredVersion = $toolVersions.clippy.minVersion } + $commonArgs) }
+    @{ Name = 'rustfmt';       ScriptPath = "$toolchainDir/check-rustfmt.ps1"; DependsOn = @('Rustup'); Arguments = (@{ RequiredVersion = $toolVersions.rustfmt.minVersion } + $commonArgs) }
+    @{ Name = 'mdBook';        ScriptPath = "$toolchainDir/check-mdbook.ps1";  DependsOn = @('Cargo');  Arguments = (@{ RequiredVersion = $toolVersions.mdbook.minVersion } + $commonArgs) }
+    @{ Name = 'cbindgen';      ScriptPath = "$toolchainDir/check-cbindgen.ps1"; DependsOn = @('Cargo'); Arguments = (@{ RequiredVersion = $toolVersions.cbindgen.minVersion } + $commonArgs) }
+
+    # --- Visual Studio: independent of the Rust/LLVM chains, runs in parallel
+    #     with everything else. ---
+    @{ Name = 'Visual Studio'; ScriptPath = "$toolchainDir/check-vs.ps1"; DependsOn = @(); Arguments = (@{ RequiredVersion = $toolVersions.visualstudio.minVersion; RequiredComponents = $toolVersions.visualstudio.requiredComponents } + $commonArgs) }
 )
 
 $toolchainGraphResults = Invoke-TaskGraph -Tasks $toolchainTasks

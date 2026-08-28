@@ -40,5 +40,58 @@
     "displayName": "vcpkg (project-local, always fetches latest commit)",
     "docsUrl": "https://learn.microsoft.com/vcpkg/get_started/overview",
     "pkg": {}
+  },
+  "clangTidy": {
+    "minVersion": "22.1.8",
+    "displayName": "clang-tidy (LLVM linter / static analyzer)",
+    "docsUrl": "https://clang.llvm.org/extra/clang-tidy/",
+    "pkg": { "pacman": "clang", "apt": "clang-tidy", "dnf": "clang-tools-extra", "zypper": "clang-tools", "brew": "llvm" }
+  },
+  "clangFormat": {
+    "minVersion": "22.1.8",
+    "displayName": "clang-format (LLVM formatter)",
+    "docsUrl": "https://clang.llvm.org/docs/ClangFormat.html",
+    "pkg": { "pacman": "clang", "apt": "clang-format", "dnf": "clang-tools-extra", "zypper": "clang-tools", "brew": "llvm" }
+  },
+  "lldb": {
+    "minVersion": "22.1.8",
+    "displayName": "LLDB (LLVM debugger)",
+    "docsUrl": "https://lldb.llvm.org/",
+    "pkg": { "pacman": "lldb", "apt": "lldb", "dnf": "lldb", "zypper": "lldb", "brew": "llvm" }
+  },
+  "clippy": {
+    "minVersion": "0.1.0",
+    "displayName": "Clippy (rustup component)",
+    "docsUrl": "https://doc.rust-lang.org/clippy/",
+    "pkg": {}
+  },
+  "rustfmt": {
+    "minVersion": "1.7.0",
+    "displayName": "rustfmt (rustup component)",
+    "docsUrl": "https://github.com/rust-lang/rustfmt",
+    "pkg": {}
+  },
+  "mdbook": {
+    "minVersion": "0.4.40",
+    "displayName": "mdBook",
+    "docsUrl": "https://rust-lang.github.io/mdBook/",
+    "pkg": {}
+  },
+  "cbindgen": {
+    "minVersion": "0.28.0",
+    "displayName": "cbindgen (ffi header generator)",
+    "docsUrl": "https://github.com/mozilla/cbindgen",
+    "pkg": {}
+  },
+  "visualstudio": {
+    "minVersion": "17.0.0",
+    "displayName": "Visual Studio (MSVC + Windows SDK, Windows only)",
+    "docsUrl": "https://visualstudio.microsoft.com/downloads/",
+    "requiredComponents": [
+      "Microsoft.VisualStudio.Workload.VCTools",
+      "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+      "Microsoft.VisualStudio.Component.Windows11SDK.26100"
+    ],
+    "pkg": {}
   }
 }

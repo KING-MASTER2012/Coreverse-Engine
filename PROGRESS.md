@@ -2,7 +2,7 @@
 Last changed 14:08 29.07.2026 by KING-MASTER2012.
 
 ## What happened compared to the previous commit?
-- CMake-corrosion compatibility has been fixed.
+- Windows configure, Rust tools and LLVM tools has been added in PowerShell scripts.
 
 ## What will be done?
 - Asset system will be added.
