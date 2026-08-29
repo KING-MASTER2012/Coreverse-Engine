@@ -8,6 +8,9 @@
     and engine/rust/crates/ffi/src/lib.rs for the full rationale). Most OS
     package managers still ship older, which is exactly why this is a
     cargo-installed tool rather than a pacman/apt/dnf/zypper/brew package.
+    Uses the 'cargo-install' tool lock (see tool-lock.ps1) because mdBook
+    also DependsOn = 'Cargo' and would otherwise run `cargo install`
+    concurrently with this one, which cargo doesn't handle cleanly.
 #>
 
 param(
@@ -43,4 +46,5 @@ Invoke-ToolCheck `
     -DryRun:$DryRun `
     -WingetId $null `
     -GetVersionRaw $getVersion `
-    -UpstreamInstall $upstreamInstall
+    -UpstreamInstall $upstreamInstall `
+    -ToolLockName 'cargo-install'

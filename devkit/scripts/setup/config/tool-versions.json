@@ -57,7 +57,8 @@
     "minVersion": "22.1.8",
     "displayName": "LLDB (LLVM debugger)",
     "docsUrl": "https://lldb.llvm.org/",
-    "pkg": { "pacman": "lldb", "apt": "lldb", "dnf": "lldb", "zypper": "lldb", "brew": "llvm" }
+    "pkg": { "pacman": "lldb", "apt": "lldb", "dnf": "lldb", "zypper": "lldb", "brew": "llvm" },
+    "pythonPackages": ["six"]
   },
   "clippy": {
     "minVersion": "0.1.0",

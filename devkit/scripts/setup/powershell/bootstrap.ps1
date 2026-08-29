@@ -173,7 +173,7 @@ $toolchainTasks = @(
     #     only need the base LLVM install to have landed first. ---
     @{ Name = 'clang-tidy';    ScriptPath = "$toolchainDir/check-clang-tidy.ps1";   DependsOn = @('LLVM/Clang'); Arguments = (@{ RequiredVersion = $toolVersions.clangTidy.minVersion } + $commonArgs) }
     @{ Name = 'clang-format';  ScriptPath = "$toolchainDir/check-clang-format.ps1"; DependsOn = @('LLVM/Clang'); Arguments = (@{ RequiredVersion = $toolVersions.clangFormat.minVersion } + $commonArgs) }
-    @{ Name = 'LLDB';          ScriptPath = "$toolchainDir/check-lldb.ps1";         DependsOn = @('LLVM/Clang'); Arguments = (@{ RequiredVersion = $toolVersions.lldb.minVersion } + $commonArgs) }
+    @{ Name = 'LLDB';          ScriptPath = "$toolchainDir/check-lldb.ps1";         DependsOn = @('LLVM/Clang'); Arguments = (@{ RequiredVersion = $toolVersions.lldb.minVersion; RequiredPythonPackages = @($toolVersions.lldb.pythonPackages) } + $commonArgs) }
 
     # --- Rust extras: component-based tools need Rustup; cargo-installed
     #     tools need Cargo. ---

@@ -4,6 +4,9 @@
     Depends on Rustup (task graph: DependsOn = 'Rustup').
     Clippy is a rustup *component*, not a standalone package — installed via
     `rustup component add clippy`, not winget/cargo install.
+    Uses the 'rustup-component' tool lock (see tool-lock.ps1) because
+    rustfmt also DependsOn = 'Rustup' and would otherwise run
+    `rustup component add` concurrently with this one.
 #>
 
 param(
@@ -39,4 +42,5 @@ Invoke-ToolCheck `
     -DryRun:$DryRun `
     -WingetId $null `
     -GetVersionRaw $getVersion `
-    -UpstreamInstall $upstreamInstall
+    -UpstreamInstall $upstreamInstall `
+    -ToolLockName 'rustup-component'
