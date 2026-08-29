@@ -93,5 +93,23 @@
       "Microsoft.VisualStudio.Component.Windows11SDK.26100"
     ],
     "pkg": {}
+  },
+  "gcc": {
+    "minVersion": "12.0.0",
+    "displayName": "GCC (primary Linux compiler)",
+    "docsUrl": "https://gcc.gnu.org/",
+    "pkg": { "pacman": "gcc", "apt": "build-essential", "dnf": "gcc gcc-c++", "zypper": "gcc gcc-c++" }
+  },
+  "gdb": {
+    "minVersion": "12.0.0",
+    "displayName": "GDB (Linux debugger)",
+    "docsUrl": "https://www.gnu.org/software/gdb/",
+    "pkg": { "pacman": "gdb", "apt": "gdb", "dnf": "gdb", "zypper": "gdb", "brew": "gdb" }
+  },
+  "cppcheck": {
+    "minVersion": "2.13.0",
+    "displayName": "cppcheck (static analyzer, alongside GCC's -fanalyzer)",
+    "docsUrl": "https://cppcheck.sourceforge.io/",
+    "pkg": { "pacman": "cppcheck", "apt": "cppcheck", "dnf": "cppcheck", "zypper": "cppcheck", "brew": "cppcheck" }
   }
 }

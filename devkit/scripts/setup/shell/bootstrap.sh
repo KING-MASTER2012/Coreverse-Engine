@@ -163,6 +163,25 @@ TOOLCHAIN_TASKS=(
     "CMake|$TOOLCHAIN_DIR/check-cmake.sh|$DRY_RUN_FLAG|"
     "Ninja|$TOOLCHAIN_DIR/check-ninja.sh|$DRY_RUN_FLAG|"
     "vcpkg|$TOOLCHAIN_DIR/check-vcpkg.sh|--vcpkg-root $VCPKG_ROOT $DRY_RUN_FLAG|Git"
+
+    # --- LLVM sub-tools: ship in the same LLVM release as clang, so they only
+    #     need the base LLVM install to have landed first. ---
+    "clang-tidy|$TOOLCHAIN_DIR/check-clang-tidy.sh|$DRY_RUN_FLAG|LLVM"
+    "clang-format|$TOOLCHAIN_DIR/check-clang-format.sh|$DRY_RUN_FLAG|LLVM"
+    "LLDB|$TOOLCHAIN_DIR/check-lldb.sh|$DRY_RUN_FLAG|LLVM"
+
+    # --- Rust extras: component-based tools need Rustup; cargo-installed
+    #     tools need Cargo. ---
+    "Clippy|$TOOLCHAIN_DIR/check-clippy.sh|$DRY_RUN_FLAG|Rustup"
+    "rustfmt|$TOOLCHAIN_DIR/check-rustfmt.sh|$DRY_RUN_FLAG|Rustup"
+    "mdBook|$TOOLCHAIN_DIR/check-mdbook.sh|$DRY_RUN_FLAG|Cargo"
+    "cbindgen|$TOOLCHAIN_DIR/check-cbindgen.sh|$DRY_RUN_FLAG|Cargo"
+
+    # --- Linux toolchain (GCC is the stated primary compiler; skips cleanly
+    #     on macOS - see check-gcc.sh). Independent of everything above. ---
+    "GCC|$TOOLCHAIN_DIR/check-gcc.sh|$DRY_RUN_FLAG|"
+    "GDB|$TOOLCHAIN_DIR/check-gdb.sh|$DRY_RUN_FLAG|"
+    "cppcheck|$TOOLCHAIN_DIR/check-cppcheck.sh|$DRY_RUN_FLAG|"
 )
 
 run_task_graph "$RESULTS_DIR" "${TOOLCHAIN_TASKS[@]}"
