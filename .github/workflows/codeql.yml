@@ -21,8 +21,7 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze
-
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -36,13 +35,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Set up Rust
+        if: matrix.language == 'cpp'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cbindgen
+        if: matrix.language == 'cpp'
+        run: cargo install --locked cbindgen
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+      - name: Configure CMake
+        if: matrix.language == 'cpp'
+        run: cmake -B build
+
+      - name: Build C++
+        if: matrix.language == 'cpp'
+        run: cmake --build build --config Release
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
