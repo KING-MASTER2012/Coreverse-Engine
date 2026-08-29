@@ -88,7 +88,6 @@
     "displayName": "Visual Studio (MSVC + Windows SDK, Windows only)",
     "docsUrl": "https://visualstudio.microsoft.com/downloads/",
     "requiredComponents": [
-      "Microsoft.VisualStudio.Workload.VCTools",
       "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
       "Microsoft.VisualStudio.Component.Windows11SDK.26100"
     ],

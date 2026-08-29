@@ -81,14 +81,27 @@ try {
         "--x-manifest-root=$ManifestDir" `
         "--x-install-root=$InstalledDir" 2>&1 |
         ForEach-Object {
-            Write-PlainLog -Source $ToolName -Message $_
+
+            # Ignore empty/null output entries.
+            if ($null -ne $_) {
+                $message = $_.ToString()
+
+                if (-not [string]::IsNullOrWhiteSpace($message)) {
+                    Write-PlainLog `
+                        -Source $ToolName `
+                        -Message $message
+                }
+            }
         }
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "'vcpkg install' exited with code $LASTEXITCODE."
+    $vcpkgExitCode = $LASTEXITCODE
+
+    if ($vcpkgExitCode -ne 0) {
+        throw "'vcpkg install' exited with code $vcpkgExitCode."
     }
 
     $result.Status = "OK"
+    $result.Detail = "C++ dependencies restored successfully."
 
     Write-SuccessLog `
         -Source $ToolName `
@@ -98,10 +111,17 @@ try {
 
     $result.Status = "Failed"
 
+    $exceptionMessage = $_.Exception.Message
+
+    if ([string]::IsNullOrWhiteSpace($exceptionMessage)) {
+        $exceptionMessage = "Unknown error while restoring C++ dependencies."
+    }
+
+    $result.Detail = $exceptionMessage
+
     Write-ErrorLog `
         -Source $ToolName `
-        -Message "Failed to restore C++ dependencies. $($_.Exception.Message)"
-
+        -Message "Failed to restore C++ dependencies. $exceptionMessage"
 }
 
 return $result
