@@ -17,3 +17,16 @@ add_test(NAME renderer_device_test COMMAND renderer_device_test)
 add_executable(buffer_roundtrip_test buffer_roundtrip_test.cpp)
 target_link_libraries(buffer_roundtrip_test PRIVATE compiler_warnings renderer::renderer)
 add_test(NAME buffer_roundtrip_test COMMAND buffer_roundtrip_test)
+
+# Faz 5.3 proof: RenderDevice::CreateSurface() from a real native window
+# handle. Uses a dummy window this test creates itself (Win32/Xlib),
+# not Faz 6's Qt window.
+add_executable(surface_test surface_test.cpp)
+target_link_libraries(surface_test PRIVATE compiler_warnings renderer::renderer)
+if(WIN32)
+    target_link_libraries(surface_test PRIVATE user32)
+elseif(UNIX AND NOT APPLE)
+    find_package(X11 REQUIRED)
+    target_link_libraries(surface_test PRIVATE X11::X11)
+endif()
+add_test(NAME surface_test COMMAND surface_test)

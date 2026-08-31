@@ -17,6 +17,7 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 add_library(renderer STATIC
         src/RenderDeviceFactory.cpp
         src/Buffer.cpp
+        src/Surface.cpp
         src/backend/vulkan/VulkanRenderDevice.cpp
         src/backend/vulkan/VmaImpl.cpp
 )
@@ -46,3 +47,16 @@ target_compile_definitions(renderer
         $<$<CONFIG:Debug>:RENDERER_ENABLE_VALIDATION>
 )
 
+# Faz 5.3: Vulkan's platform surface structs/functions (VkWin32SurfaceCreateInfoKHR,
+# vkCreateXlibSurfaceKHR, ...) are only declared when the matching
+# VK_USE_PLATFORM_* macro is defined before <vulkan/vulkan.h> is first
+# included — CMake is what actually knows the target platform, so it's
+# set here rather than guessed in source. Only Xlib is implemented on
+# Linux for now (see VulkanRenderDevice.cpp); XCB/Wayland are not yet.
+if(WIN32)
+    target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+elseif(APPLE)
+    target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_METAL_EXT)
+elseif(UNIX)
+    target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_XLIB_KHR)
+endif()

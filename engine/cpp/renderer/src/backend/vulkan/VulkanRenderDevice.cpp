@@ -122,6 +122,23 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateInstance()
     appInfo.apiVersion = VK_API_VERSION_1_3;
 
     std::vector<const char*> extensions;
+    // VK_KHR_surface plus the one platform-specific WSI extension this
+    // build was compiled for are required unconditionally — surface
+    // creation (Faz 5.3) needs them regardless of whether validation is
+    // enabled. Only one of the platform branches below is compiled in
+    // per build, matching NativeWindowHandle's #if ladder in Surface.hpp.
+    // Linux: only Xlib is wired up for now (see CreateSurface()) —
+    // Wayland's fields exist on NativeWindowHandle for forward
+    // compatibility but aren't implemented yet, so its extension isn't
+    // requested here either.
+    extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+#if defined(_WIN32)
+    extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+#elif defined(__APPLE__)
+    extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
+#elif defined(__linux__)
+    extensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
+#endif
     if (m_validationEnabled)
     {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -381,6 +398,61 @@ void VulkanRenderDevice::ReleaseBuffer(void* nativeHandle) noexcept
     auto* handle = static_cast<VulkanBufferHandle*>(nativeHandle);
     vmaDestroyBuffer(m_allocator, handle->buffer, handle->allocation);
     delete handle;
+}
+
+std::expected<Surface, RenderError> VulkanRenderDevice::CreateSurface(const NativeWindowHandle& handle) noexcept
+{
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    VkResult result = VK_ERROR_EXTENSION_NOT_PRESENT;
+
+#if defined(_WIN32)
+    if (handle.hwnd != nullptr)
+    {
+        VkWin32SurfaceCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+        createInfo.hinstance = static_cast<HINSTANCE>(handle.hinstance);
+        createInfo.hwnd = static_cast<HWND>(handle.hwnd);
+        result = vkCreateWin32SurfaceKHR(m_instance, &createInfo, nullptr, &surface);
+    }
+#elif defined(__APPLE__)
+    if (handle.metalLayer != nullptr)
+    {
+        VkMetalSurfaceCreateInfoEXT createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+        createInfo.pLayer = static_cast<const CAMetalLayer*>(handle.metalLayer);
+        result = vkCreateMetalSurfaceEXT(m_instance, &createInfo, nullptr, &surface);
+    }
+#elif defined(__linux__)
+    // Only Xlib is implemented for now — NativeWindowHandle's Wayland
+    // fields exist so Surface.hpp doesn't need to change shape when
+    // Wayland support is actually added, matching GraphicsAPI.hpp's
+    // "declare now, implement later" convention.
+    if (handle.xlibDisplay != nullptr)
+    {
+        VkXlibSurfaceCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        createInfo.dpy = static_cast<Display*>(handle.xlibDisplay);
+        createInfo.window = static_cast<Window>(handle.xlibWindow);
+        result = vkCreateXlibSurfaceKHR(m_instance, &createInfo, nullptr, &surface);
+    }
+#endif
+
+    if (result != VK_SUCCESS)
+    {
+        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
+                                            "surface creation failed (VkResult=" + std::to_string(result) + ")"});
+    }
+
+    return RenderDevice::MakeSurface(this, surface);
+}
+
+void VulkanRenderDevice::ReleaseSurface(void* nativeHandle) noexcept
+{
+    if (nativeHandle == nullptr)
+    {
+        return;
+    }
+    vkDestroySurfaceKHR(m_instance, static_cast<VkSurfaceKHR>(nativeHandle), nullptr);
 }
 
 void VulkanRenderDevice::Shutdown() noexcept
