@@ -7,8 +7,8 @@
 # build every backend it doesn't have (e.g. no D3D12 on Linux).
 #
 # find_package(*) below are linked PRIVATE further down — nothing in
-# include/renderer/ includes a Vulkan (or any backend) header, so no
-# target linking against `renderer` transitively depends on them.
+# include/renderer/ includes a Vulkan/VMA header, so no target linking
+# against `renderer` transitively depends on them.
 
 find_package(VulkanHeaders CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
@@ -16,7 +16,9 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
 add_library(renderer STATIC
         src/RenderDeviceFactory.cpp
+        src/Buffer.cpp
         src/backend/vulkan/VulkanRenderDevice.cpp
+        src/backend/vulkan/VmaImpl.cpp
 )
 
 add_library(renderer::renderer ALIAS renderer)
@@ -43,3 +45,4 @@ target_compile_definitions(renderer
         RENDERER_HAS_VULKAN_BACKEND
         $<$<CONFIG:Debug>:RENDERER_ENABLE_VALIDATION>
 )
+

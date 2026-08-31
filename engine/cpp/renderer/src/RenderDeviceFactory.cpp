@@ -38,8 +38,7 @@ namespace renderer
         case GraphicsAPI::Metal:
         case GraphicsAPI::D3D11:
         case GraphicsAPI::D3D12:
-            return std::unexpected(
-                RenderError{RenderErrorCode::BackendUnavailable, "Backend not implemented yet"});
+            return std::unexpected(RenderError{RenderErrorCode::BackendUnavailable, "Backend not implemented yet"});
         }
 
         return std::unexpected(RenderError{RenderErrorCode::Unknown, "Unrecognized GraphicsAPI value"});

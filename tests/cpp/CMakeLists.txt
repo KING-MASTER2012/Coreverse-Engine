@@ -11,3 +11,9 @@ add_test(NAME ffi_smoke_test COMMAND ffi_smoke_test)
 add_executable(renderer_device_test renderer_device_test.cpp)
 target_link_libraries(renderer_device_test PRIVATE compiler_warnings renderer::renderer)
 add_test(NAME renderer_device_test COMMAND renderer_device_test)
+
+# Faz 5.2 proof: RenderDevice::CreateBuffer() round-trip through VMA,
+# incl. move semantics, entirely via the Buffer/RenderDevice abstraction.
+add_executable(buffer_roundtrip_test buffer_roundtrip_test.cpp)
+target_link_libraries(buffer_roundtrip_test PRIVATE compiler_warnings renderer::renderer)
+add_test(NAME buffer_roundtrip_test COMMAND buffer_roundtrip_test)

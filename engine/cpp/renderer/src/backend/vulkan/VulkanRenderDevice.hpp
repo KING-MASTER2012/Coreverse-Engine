@@ -5,7 +5,9 @@
 #include <string>
 
 #include <volk.h>
+#include <vk_mem_alloc.h>
 
+#include "renderer/Buffer.hpp"
 #include "renderer/RenderDevice.hpp"
 #include "renderer/RenderError.hpp"
 
@@ -14,26 +16,29 @@ namespace renderer::backend::vulkan
 
 /// Vulkan implementation of RenderDevice. Owns the VkInstance, the
 /// (optional) debug messenger, the selected VkPhysicalDevice, the
-/// VkDevice, and the graphics queue pulled from it.
+/// VkDevice, the graphics queue pulled from it, and (Faz 5.2) the VMA
+/// allocator used to back every buffer this device creates.
 ///
 /// This header lives under src/, not include/renderer/ — it is never
 /// part of the public renderer API. Callers only ever see this type
 /// through the RenderDevice base pointer returned by
-/// CreateRenderDevice(GraphicsAPI::Vulkan); Vulkan headers therefore
-/// never leak into consumers of `renderer` (Qt editor included).
+/// CreateRenderDevice(GraphicsAPI::Vulkan); Vulkan/VMA headers
+/// therefore never leak into consumers of `renderer` (Qt editor
+/// included).
 class VulkanRenderDevice final : public RenderDevice
 {
 public:
     VulkanRenderDevice() = default;
     ~VulkanRenderDevice() override;
 
-    /// Performs the actual instance/device bring-up. Split from the
-    /// constructor so failure is reported through std::expected instead
-    /// of an exception; CreateRenderDevice() only hands the object back
-    /// to the caller once this has succeeded. Not part of RenderDevice
-    /// — it's backend-specific by nature (every backend's bring-up
-    /// takes different inputs), so it isn't forced into the shared
-    /// interface; the factory calls it on the concrete type directly.
+    /// Performs the actual instance/device/allocator bring-up. Split
+    /// from the constructor so failure is reported through
+    /// std::expected instead of an exception; CreateRenderDevice() only
+    /// hands the object back to the caller once this has succeeded.
+    /// Not part of RenderDevice — it's backend-specific by nature
+    /// (every backend's bring-up takes different inputs), so it isn't
+    /// forced into the shared interface; the factory calls it on the
+    /// concrete type directly.
     [[nodiscard]] std::expected<void, RenderError> Initialize();
 
     [[nodiscard]] GraphicsAPI GetAPI() const noexcept override
@@ -48,9 +53,11 @@ public:
 
     void Shutdown() noexcept override;
 
+    [[nodiscard]] std::expected<Buffer, RenderError> CreateBuffer(const BufferDesc& desc) noexcept override;
+
     // --- Vulkan-specific escape hatch. Only reachable by a caller that
     // already checked GetAPI() == GraphicsAPI::Vulkan and downcast to
-    // this concrete type — see RenderDevice.h's class comment. ---
+    // this concrete type — see RenderDevice.hpp's class comment. ---
     [[nodiscard]] VkInstance GetVkInstance() const noexcept
     {
         return m_instance;
@@ -76,11 +83,20 @@ public:
         return m_graphicsQueueFamily;
     }
 
+    [[nodiscard]] VmaAllocator GetAllocator() const noexcept
+    {
+        return m_allocator;
+    }
+
+protected:
+    void ReleaseBuffer(void* nativeHandle) noexcept override;
+
 private:
     [[nodiscard]] std::expected<void, RenderError> CreateInstance();
     [[nodiscard]] std::expected<void, RenderError> SetupDebugMessenger();
     [[nodiscard]] std::expected<void, RenderError> SelectPhysicalDevice();
     [[nodiscard]] std::expected<void, RenderError> CreateLogicalDeviceAndQueues();
+    [[nodiscard]] std::expected<void, RenderError> CreateAllocator();
 
     static bool ValidationLayersRequestedAndSupported();
 
@@ -90,6 +106,7 @@ private:
     VkDevice m_device = VK_NULL_HANDLE;
     VkQueue m_graphicsQueue = VK_NULL_HANDLE;
     uint32_t m_graphicsQueueFamily = UINT32_MAX;
+    VmaAllocator m_allocator = VK_NULL_HANDLE;
     std::string m_deviceName;
     bool m_validationEnabled = false;
 };
