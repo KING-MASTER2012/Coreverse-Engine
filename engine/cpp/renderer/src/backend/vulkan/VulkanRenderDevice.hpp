@@ -8,6 +8,7 @@
 #include "renderer/RenderDevice.hpp"
 #include "renderer/RenderError.hpp"
 #include "renderer/Surface.hpp"
+#include "renderer/Swapchain.hpp"
 
 // Included after our own headers on purpose: on Linux, VK_USE_PLATFORM_XLIB_KHR
 // pulls in <X11/Xlib.h> transitively through <vulkan/vulkan.h>, and X11
@@ -62,6 +63,9 @@ public:
 
     [[nodiscard]] std::expected<Surface, RenderError> CreateSurface(const NativeWindowHandle& handle) noexcept override;
 
+    [[nodiscard]] std::expected<Swapchain, RenderError> CreateSwapchain(const Surface& surface,
+                                                                         const SwapchainDesc& desc) noexcept override;
+
     // --- Vulkan-specific escape hatch. Only reachable by a caller that
     // already checked GetAPI() == GraphicsAPI::Vulkan and downcast to
     // this concrete type — see RenderDevice.hpp's class comment. ---
@@ -98,6 +102,10 @@ public:
 protected:
     void ReleaseBuffer(void* nativeHandle) noexcept override;
     void ReleaseSurface(void* nativeHandle) noexcept override;
+    void ReleaseSwapchain(void* nativeHandle) noexcept override;
+    std::expected<AcquireResult, RenderError> AcquireSwapchainImage(void* nativeHandle) noexcept override;
+    std::expected<SwapchainStatus, RenderError> PresentSwapchainImage(void* nativeHandle, std::uint32_t imageIndex,
+                                                                       void* waitSemaphore) noexcept override;
 
 private:
     [[nodiscard]] std::expected<void, RenderError> CreateInstance();

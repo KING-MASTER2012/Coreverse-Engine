@@ -30,3 +30,15 @@ elseif(UNIX AND NOT APPLE)
     target_link_libraries(surface_test PRIVATE X11::X11)
 endif()
 add_test(NAME surface_test COMMAND surface_test)
+
+# Faz 5.4 proof: RenderDevice::CreateSwapchain() built from a real
+# Surface's capabilities — image count logged, clean teardown.
+add_executable(swapchain_test swapchain_test.cpp)
+target_link_libraries(swapchain_test PRIVATE compiler_warnings renderer::renderer)
+if(WIN32)
+    target_link_libraries(swapchain_test PRIVATE user32)
+elseif(UNIX AND NOT APPLE)
+    find_package(X11 REQUIRED)
+    target_link_libraries(swapchain_test PRIVATE X11::X11)
+endif()
+add_test(NAME swapchain_test COMMAND swapchain_test)
