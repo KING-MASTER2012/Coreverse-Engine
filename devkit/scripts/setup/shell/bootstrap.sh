@@ -186,6 +186,32 @@ TOOLCHAIN_TASKS=(
 
 run_task_graph "$RESULTS_DIR" "${TOOLCHAIN_TASKS[@]}"
 
+# --- 6b. Make newly-installed cargo-based tools (rustup, cargo, cbindgen,
+#     mdBook, ...) visible for the rest of THIS script and for any later CI
+#     steps in the same job.
+#
+#     Every task above runs as an isolated background subshell
+#     ("( "$script" ... ) & wait"; see parallel-runner.sh), so an
+#     `export PATH=...` inside e.g. check-cbindgen.sh only ever affects that
+#     subshell's own process - it never reaches this parent script. Without
+#     this block, Phase 3 below (cmake-configure.sh, itself a *separate*
+#     child process) can fail to find cbindgen even though it was just
+#     installed, and CMake then caches CBINDGEN_PROGRAM-NOTFOUND, so every
+#     later "cmake -B build" (e.g. a CI workflow's own Configure/Build step)
+#     keeps failing too.
+CARGO_BIN="$HOME/.cargo/bin"
+if [ -d "$CARGO_BIN" ]; then
+    case ":$PATH:" in
+        *":$CARGO_BIN:"*) ;;
+        *) export PATH="$PATH:$CARGO_BIN" ;;
+    esac
+    # Persist for subsequent steps in the same CI job (GitHub Actions only;
+    # no-op locally where GITHUB_PATH isn't set).
+    if [ -n "${GITHUB_PATH:-}" ]; then
+        echo "$CARGO_BIN" >> "$GITHUB_PATH"
+    fi
+fi
+
 # --- 7. Phase 2/3: project dependencies (independent package managers, parallel) ---
 log_banner "2/3 - Project Dependencies"
 
