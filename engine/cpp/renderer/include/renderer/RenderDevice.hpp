@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "renderer/Buffer.hpp"
+#include "renderer/CommandBuffer.hpp"
 #include "renderer/GraphicsAPI.hpp"
 #include "renderer/RenderError.hpp"
 #include "renderer/Surface.hpp"
@@ -21,14 +22,14 @@ namespace renderer
 /// This is deliberately a *thin* common base, not a lowest-common-
 /// denominator API: it only covers what every backend can do the same
 /// way (report itself, tear itself down, allocate a buffer, create a
-/// presentation surface, build a swapchain on that surface). Anything
-/// backend-specific stays out of this interface entirely — callers who
-/// need it check GetAPI() and downcast to the concrete backend type
-/// (e.g. VulkanRenderDevice::GetVkDevice()) rather than this class
-/// growing a GetNativeHandle()-style grab bag that would have to be
-/// re-interpreted per backend anyway. That downcast is the escape
-/// hatch: no backend's advanced functionality is blocked by this
-/// abstraction existing.
+/// presentation surface, build a swapchain, record and submit a minimal
+/// command buffer). Anything backend-specific stays out of this
+/// interface entirely — callers who need it check GetAPI() and downcast
+/// to the concrete backend type (e.g. VulkanRenderDevice::GetVkDevice())
+/// rather than this class growing a GetNativeHandle()-style grab bag
+/// that would have to be re-interpreted per backend anyway. That
+/// downcast is the escape hatch: no backend's advanced functionality is
+/// blocked by this abstraction existing.
 ///
 /// Ownership: obtained via CreateRenderDevice() (RenderDeviceFactory.hpp)
 /// as a std::unique_ptr<RenderDevice>. Non-copyable and non-movable —
@@ -53,6 +54,14 @@ public:
     /// Human-readable name of the selected physical device (e.g. a GPU
     /// model string), for logging/diagnostics.
     [[nodiscard]] virtual std::string_view GetDeviceName() const noexcept = 0;
+
+    /// Blocks until this device has finished all outstanding GPU work.
+    /// Shutdown() calls this itself before releasing anything, but a
+    /// caller that created its own backend-native sync objects (via the
+    /// escape hatch — e.g. Faz 5.5's render loop creating VkSemaphores
+    /// directly) must call this before destroying those objects itself;
+    /// this device has no way to track resources it didn't hand out.
+    virtual void WaitIdle() noexcept = 0;
 
     /// Releases every backend resource this device owns. Safe to call
     /// more than once; the destructor calls it too, so an explicit call
@@ -84,10 +93,27 @@ public:
     [[nodiscard]] virtual std::expected<Swapchain, RenderError> CreateSwapchain(const Surface& surface,
                                                                                  const SwapchainDesc& desc) noexcept = 0;
 
+    /// Borrows a command buffer from a pool this device owns. Unlike
+    /// Create*() above, the returned CommandBuffer is not RAII-owned —
+    /// see CommandBuffer.hpp's class comment — so there is no matching
+    /// Destroy call for it.
+    [[nodiscard]] virtual std::expected<CommandBuffer, RenderError> AcquireCommandBuffer() noexcept = 0;
+
+    /// Submits a recorded (Begin()/.../End()'d) command buffer to this
+    /// device's graphics queue. `waitSemaphore`/`signalSemaphore`/`fence`
+    /// are backend-native sync object handles (nullptr/VK_NULL_HANDLE-
+    /// equivalent to skip any of them) — obtained through the backend's
+    /// own escape hatch, since owning and pacing sync objects is
+    /// render-loop-specific, not something this abstraction should
+    /// impose a shape on this early.
+    [[nodiscard]] virtual std::expected<void, RenderError>
+    Submit(const CommandBuffer& commandBuffer, void* waitSemaphore, void* signalSemaphore, void* fence) noexcept = 0;
+
 protected:
     friend class Buffer;
     friend class Surface;
     friend class Swapchain;
+    friend class CommandBuffer;
 
     /// Lets a derived backend construct a Buffer. Buffer's constructor
     /// is private with only RenderDevice as a friend, and friendship
@@ -111,6 +137,12 @@ protected:
         return Swapchain(device, nativeHandle, imageCount);
     }
 
+    /// Same purpose as MakeBuffer(), for CommandBuffer — see there.
+    static CommandBuffer MakeCommandBuffer(RenderDevice* device, void* nativeHandle) noexcept
+    {
+        return CommandBuffer(device, nativeHandle);
+    }
+
     /// Releases the backend resource behind a Buffer's native handle.
     /// Called only by Buffer's destructor/move-assignment — never call
     /// this directly; release a buffer by letting its Buffer object be
@@ -126,13 +158,26 @@ protected:
     virtual void ReleaseSwapchain(void* nativeHandle) noexcept = 0;
 
     /// Backs Swapchain::Acquire() — called only by Swapchain, never
-    /// directly.
-    virtual std::expected<AcquireResult, RenderError> AcquireSwapchainImage(void* nativeHandle) noexcept = 0;
+    /// directly. `signalSemaphore` is nullable; see Swapchain::Acquire()
+    /// for what nullptr means.
+    virtual std::expected<AcquireResult, RenderError> AcquireSwapchainImage(void* nativeHandle,
+                                                                             void* signalSemaphore) noexcept = 0;
 
     /// Backs Swapchain::Present() — called only by Swapchain, never
     /// directly.
     virtual std::expected<SwapchainStatus, RenderError>
     PresentSwapchainImage(void* nativeHandle, std::uint32_t imageIndex, void* waitSemaphore) noexcept = 0;
+
+    /// Backs Swapchain::GetImageNativeHandle() — called only by
+    /// Swapchain, never directly.
+    virtual void* GetSwapchainImageHandle(void* swapchainNativeHandle, std::uint32_t index) noexcept = 0;
+
+    /// Backs CommandBuffer::Begin()/End()/ClearColor() — called only by
+    /// CommandBuffer, never directly.
+    virtual std::expected<void, RenderError> BeginCommandBuffer(void* commandBufferHandle) noexcept = 0;
+    virtual std::expected<void, RenderError> EndCommandBuffer(void* commandBufferHandle) noexcept = 0;
+    virtual std::expected<void, RenderError>
+    RecordClearColor(void* commandBufferHandle, void* imageHandle, const ClearColor& color) noexcept = 0;
 };
 
 } // namespace renderer

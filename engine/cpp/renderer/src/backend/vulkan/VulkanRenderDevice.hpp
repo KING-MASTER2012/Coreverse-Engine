@@ -5,6 +5,7 @@
 #include <string>
 
 #include "renderer/Buffer.hpp"
+#include "renderer/CommandBuffer.hpp"
 #include "renderer/RenderDevice.hpp"
 #include "renderer/RenderError.hpp"
 #include "renderer/Surface.hpp"
@@ -12,8 +13,9 @@
 
 // Included after our own headers on purpose: on Linux, VK_USE_PLATFORM_XLIB_KHR
 // pulls in <X11/Xlib.h> transitively through <vulkan/vulkan.h>, and X11
-// defines `None` as a plain macro (`#define None 0L`) — which would
-// mangle BufferUsage::None above if these were included first.
+// defines plain macros (`None`, `Success`, ...) that collide with our
+// own enum members if those headers are parsed first — see Faz 5.3/5.4's
+// notes for the two we already hit.
 #include <volk.h>
 #include <vk_mem_alloc.h>
 
@@ -22,8 +24,9 @@ namespace renderer::backend::vulkan
 
 /// Vulkan implementation of RenderDevice. Owns the VkInstance, the
 /// (optional) debug messenger, the selected VkPhysicalDevice, the
-/// VkDevice, the graphics queue pulled from it, and (Faz 5.2) the VMA
-/// allocator used to back every buffer this device creates.
+/// VkDevice, the graphics queue pulled from it, the VMA allocator used
+/// to back every buffer this device creates, and (Faz 5.5) the command
+/// pool CommandBuffers are borrowed from.
 ///
 /// This header lives under src/, not include/renderer/ — it is never
 /// part of the public renderer API. Callers only ever see this type
@@ -37,8 +40,8 @@ public:
     VulkanRenderDevice() = default;
     ~VulkanRenderDevice() override;
 
-    /// Performs the actual instance/device/allocator bring-up. Split
-    /// from the constructor so failure is reported through
+    /// Performs the actual instance/device/allocator/pool bring-up.
+    /// Split from the constructor so failure is reported through
     /// std::expected instead of an exception; CreateRenderDevice() only
     /// hands the object back to the caller once this has succeeded.
     /// Not part of RenderDevice — it's backend-specific by nature
@@ -57,6 +60,8 @@ public:
         return m_deviceName;
     }
 
+    void WaitIdle() noexcept override;
+
     void Shutdown() noexcept override;
 
     [[nodiscard]] std::expected<Buffer, RenderError> CreateBuffer(const BufferDesc& desc) noexcept override;
@@ -65,6 +70,11 @@ public:
 
     [[nodiscard]] std::expected<Swapchain, RenderError> CreateSwapchain(const Surface& surface,
                                                                          const SwapchainDesc& desc) noexcept override;
+
+    [[nodiscard]] std::expected<CommandBuffer, RenderError> AcquireCommandBuffer() noexcept override;
+
+    [[nodiscard]] std::expected<void, RenderError> Submit(const CommandBuffer& commandBuffer, void* waitSemaphore,
+                                                           void* signalSemaphore, void* fence) noexcept override;
 
     // --- Vulkan-specific escape hatch. Only reachable by a caller that
     // already checked GetAPI() == GraphicsAPI::Vulkan and downcast to
@@ -103,9 +113,16 @@ protected:
     void ReleaseBuffer(void* nativeHandle) noexcept override;
     void ReleaseSurface(void* nativeHandle) noexcept override;
     void ReleaseSwapchain(void* nativeHandle) noexcept override;
-    std::expected<AcquireResult, RenderError> AcquireSwapchainImage(void* nativeHandle) noexcept override;
+    std::expected<AcquireResult, RenderError> AcquireSwapchainImage(void* nativeHandle,
+                                                                     void* signalSemaphore) noexcept override;
     std::expected<SwapchainStatus, RenderError> PresentSwapchainImage(void* nativeHandle, std::uint32_t imageIndex,
                                                                        void* waitSemaphore) noexcept override;
+    void* GetSwapchainImageHandle(void* swapchainNativeHandle, std::uint32_t index) noexcept override;
+
+    std::expected<void, RenderError> BeginCommandBuffer(void* commandBufferHandle) noexcept override;
+    std::expected<void, RenderError> EndCommandBuffer(void* commandBufferHandle) noexcept override;
+    std::expected<void, RenderError> RecordClearColor(void* commandBufferHandle, void* imageHandle,
+                                                       const ClearColor& color) noexcept override;
 
 private:
     [[nodiscard]] std::expected<void, RenderError> CreateInstance();
@@ -113,6 +130,7 @@ private:
     [[nodiscard]] std::expected<void, RenderError> SelectPhysicalDevice();
     [[nodiscard]] std::expected<void, RenderError> CreateLogicalDeviceAndQueues();
     [[nodiscard]] std::expected<void, RenderError> CreateAllocator();
+    [[nodiscard]] std::expected<void, RenderError> CreateCommandPool();
 
     static bool ValidationLayersRequestedAndSupported();
 
@@ -123,6 +141,7 @@ private:
     VkQueue m_graphicsQueue = VK_NULL_HANDLE;
     uint32_t m_graphicsQueueFamily = UINT32_MAX;
     VmaAllocator m_allocator = VK_NULL_HANDLE;
+    VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::string m_deviceName;
     bool m_validationEnabled = false;
 };

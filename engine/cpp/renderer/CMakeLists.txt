@@ -19,6 +19,7 @@ add_library(renderer STATIC
         src/Buffer.cpp
         src/Surface.cpp
         src/Swapchain.cpp
+        src/CommandBuffer.cpp
         src/backend/vulkan/VulkanRenderDevice.cpp
         src/backend/vulkan/VmaImpl.cpp
 )

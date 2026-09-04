@@ -46,14 +46,19 @@ namespace renderer
         m_imageCount = 0;
     }
 
-    std::expected<AcquireResult, RenderError> Swapchain::Acquire() noexcept
+    std::expected<AcquireResult, RenderError> Swapchain::Acquire(void* signalSemaphore) noexcept
     {
-        return m_device->AcquireSwapchainImage(m_nativeHandle);
+        return m_device->AcquireSwapchainImage(m_nativeHandle, signalSemaphore);
     }
 
     std::expected<SwapchainStatus, RenderError> Swapchain::Present(std::uint32_t imageIndex, void* waitSemaphore) noexcept
     {
         return m_device->PresentSwapchainImage(m_nativeHandle, imageIndex, waitSemaphore);
+    }
+
+    void* Swapchain::GetImageNativeHandle(std::uint32_t index) const noexcept
+    {
+        return m_device->GetSwapchainImageHandle(m_nativeHandle, index);
     }
 
 } // namespace renderer

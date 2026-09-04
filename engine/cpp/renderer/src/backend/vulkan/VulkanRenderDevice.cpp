@@ -122,6 +122,11 @@ std::expected<void, RenderError> VulkanRenderDevice::Initialize()
         return result;
     }
 
+    if (auto result = CreateCommandPool(); !result)
+    {
+        return result;
+    }
+
     return {};
 }
 
@@ -342,6 +347,26 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateAllocator()
     {
         return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
                                             "vmaCreateAllocator failed (VkResult=" + std::to_string(result) + ")"});
+    }
+    return {};
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::CreateCommandPool()
+{
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    // RESET_COMMAND_BUFFER: Faz 5.5's render loop needs to be able to
+    // re-record (or just re-Begin, implicitly resetting) a command
+    // buffer across frames rather than allocating a fresh one every
+    // time — cheap to allow now, costs nothing when unused.
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = m_graphicsQueueFamily;
+
+    if (const VkResult result = vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool);
+        result != VK_SUCCESS)
+    {
+        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
+                                            "vkCreateCommandPool failed (VkResult=" + std::to_string(result) + ")"});
     }
     return {};
 }
@@ -654,33 +679,40 @@ void VulkanRenderDevice::ReleaseSwapchain(void* nativeHandle) noexcept
     delete handle;
 }
 
-std::expected<AcquireResult, RenderError> VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle) noexcept
+std::expected<AcquireResult, RenderError> VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle,
+                                                                                     void* signalSemaphore) noexcept
 {
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
+    const auto semaphore = static_cast<VkSemaphore>(signalSemaphore);
 
-    // Vulkan requires at least one of {semaphore, fence} to be valid.
-    // Faz 5.4 has no frame-submission architecture yet to hand this a
-    // semaphore to signal into, so it uses a fence and waits on it
-    // itself, making Acquire() self-contained and synchronous for now.
-    // Faz 5.5's render loop is expected to pass its own semaphore
-    // through a refined call path once there's real work to wait on it.
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     VkFence fence = VK_NULL_HANDLE;
-    if (const VkResult result = vkCreateFence(m_device, &fenceInfo, nullptr, &fence); result != VK_SUCCESS)
+    if (semaphore == VK_NULL_HANDLE)
     {
-        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed, "vkCreateFence failed"});
+        // No semaphore for the GPU to signal into — fall back to a
+        // fence and wait on it ourselves, so this call stays usable
+        // stand-alone (Faz 5.4's test still calls it exactly this way).
+        // Vulkan requires at least one of {semaphore, fence} to be
+        // valid; this is the "no real submission pipeline yet" path.
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        if (const VkResult result = vkCreateFence(m_device, &fenceInfo, nullptr, &fence); result != VK_SUCCESS)
+        {
+            return std::unexpected(RenderError{RenderErrorCode::InitializationFailed, "vkCreateFence failed"});
+        }
     }
 
     uint32_t imageIndex = 0;
     const VkResult acquireResult =
-        vkAcquireNextImageKHR(m_device, handle->swapchain, UINT64_MAX, VK_NULL_HANDLE, fence, &imageIndex);
+        vkAcquireNextImageKHR(m_device, handle->swapchain, UINT64_MAX, semaphore, fence, &imageIndex);
 
-    if (acquireResult == VK_SUCCESS || acquireResult == VK_SUBOPTIMAL_KHR)
+    if (fence != VK_NULL_HANDLE)
     {
-        vkWaitForFences(m_device, 1, &fence, VK_TRUE, UINT64_MAX);
+        if (acquireResult == VK_SUCCESS || acquireResult == VK_SUBOPTIMAL_KHR)
+        {
+            vkWaitForFences(m_device, 1, &fence, VK_TRUE, UINT64_MAX);
+        }
+        vkDestroyFence(m_device, fence, nullptr);
     }
-    vkDestroyFence(m_device, fence, nullptr);
 
     switch (acquireResult)
     {
@@ -728,8 +760,187 @@ VulkanRenderDevice::PresentSwapchainImage(void* nativeHandle, std::uint32_t imag
     }
 }
 
+void* VulkanRenderDevice::GetSwapchainImageHandle(void* swapchainNativeHandle, std::uint32_t index) noexcept
+{
+    auto* handle = static_cast<VulkanSwapchainHandle*>(swapchainNativeHandle);
+    if (index >= handle->images.size())
+    {
+        return nullptr;
+    }
+    // VkImage is itself a non-dispatchable handle (a pointer on 64-bit
+    // builds), so it converts to void* directly — the caller gets it
+    // back the same way Buffer/Surface/Swapchain's own native handles
+    // work.
+    return handle->images[index];
+}
+
+std::expected<CommandBuffer, RenderError> VulkanRenderDevice::AcquireCommandBuffer() noexcept
+{
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = m_commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+    if (const VkResult result = vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer);
+        result != VK_SUCCESS)
+    {
+        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
+                                            "vkAllocateCommandBuffers failed (VkResult=" + std::to_string(result) +
+                                                ")"});
+    }
+
+    // Borrowed, not owned (CommandBuffer.hpp) — the pool it came from
+    // frees it implicitly at Shutdown(); there is deliberately no
+    // ReleaseCommandBuffer path to call.
+    return RenderDevice::MakeCommandBuffer(this, commandBuffer);
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::BeginCommandBuffer(void* commandBufferHandle) noexcept
+{
+    const auto commandBuffer = static_cast<VkCommandBuffer>(commandBufferHandle);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    if (const VkResult result = vkBeginCommandBuffer(commandBuffer, &beginInfo); result != VK_SUCCESS)
+    {
+        return std::unexpected(RenderError{RenderErrorCode::Unknown,
+                                            "vkBeginCommandBuffer failed (VkResult=" + std::to_string(result) + ")"});
+    }
+    return {};
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::EndCommandBuffer(void* commandBufferHandle) noexcept
+{
+    const auto commandBuffer = static_cast<VkCommandBuffer>(commandBufferHandle);
+
+    if (const VkResult result = vkEndCommandBuffer(commandBuffer); result != VK_SUCCESS)
+    {
+        return std::unexpected(RenderError{RenderErrorCode::Unknown,
+                                            "vkEndCommandBuffer failed (VkResult=" + std::to_string(result) + ")"});
+    }
+    return {};
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::RecordClearColor(void* commandBufferHandle, void* imageHandle,
+                                                                       const ClearColor& color) noexcept
+{
+    const auto commandBuffer = static_cast<VkCommandBuffer>(commandBufferHandle);
+    const auto image = static_cast<VkImage>(imageHandle);
+
+    // A freshly acquired swapchain image starts life in
+    // VK_IMAGE_LAYOUT_UNDEFINED; vkCmdClearColorImage needs it in
+    // TRANSFER_DST_OPTIMAL, and presenting afterward needs
+    // PRESENT_SRC_KHR — this pair of barriers is the entire "render
+    // pass" this milestone needs, deliberately skipping a real
+    // VkRenderPass/VkFramebuffer for a single clear.
+    VkImageSubresourceRange range{};
+    range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    range.baseMipLevel = 0;
+    range.levelCount = 1;
+    range.baseArrayLayer = 0;
+    range.layerCount = 1;
+
+    VkImageMemoryBarrier toTransferDst{};
+    toTransferDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransferDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    toTransferDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toTransferDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferDst.image = image;
+    toTransferDst.subresourceRange = range;
+    toTransferDst.srcAccessMask = 0;
+    toTransferDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                          nullptr, 0, nullptr, 1, &toTransferDst);
+
+    VkClearColorValue clearValue{};
+    clearValue.float32[0] = color.r;
+    clearValue.float32[1] = color.g;
+    clearValue.float32[2] = color.b;
+    clearValue.float32[3] = color.a;
+
+    vkCmdClearColorImage(commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearValue, 1, &range);
+
+    VkImageMemoryBarrier toPresent{};
+    toPresent.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toPresent.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    toPresent.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toPresent.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toPresent.image = image;
+    toPresent.subresourceRange = range;
+    toPresent.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toPresent.dstAccessMask = 0;
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
+                          nullptr, 0, nullptr, 1, &toPresent);
+
+    return {};
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::Submit(const CommandBuffer& commandBuffer, void* waitSemaphore,
+                                                             void* signalSemaphore, void* fence) noexcept
+{
+    const auto vkCommandBuffer = static_cast<VkCommandBuffer>(commandBuffer.GetNativeHandle());
+    const auto wait = static_cast<VkSemaphore>(waitSemaphore);
+    const auto signal = static_cast<VkSemaphore>(signalSemaphore);
+    const auto vkFence = static_cast<VkFence>(fence);
+
+    // Matches RecordClearColor()'s first barrier: whatever waits on
+    // `wait` only needs to block the transfer stage, not the whole
+    // pipeline, since a clear is the only work this milestone submits.
+    constexpr VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &vkCommandBuffer;
+    if (wait != VK_NULL_HANDLE)
+    {
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = &wait;
+        submitInfo.pWaitDstStageMask = &waitStage;
+    }
+    if (signal != VK_NULL_HANDLE)
+    {
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &signal;
+    }
+
+    if (const VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, vkFence); result != VK_SUCCESS)
+    {
+        return std::unexpected(
+            RenderError{RenderErrorCode::Unknown, "vkQueueSubmit failed (VkResult=" + std::to_string(result) + ")"});
+    }
+    return {};
+}
+
+void VulkanRenderDevice::WaitIdle() noexcept
+{
+    if (m_device != VK_NULL_HANDLE)
+    {
+        vkDeviceWaitIdle(m_device);
+    }
+}
+
 void VulkanRenderDevice::Shutdown() noexcept
 {
+    // Everything below needs a live VkDevice, so make sure no
+    // outstanding GPU work is still touching it before tearing
+    // anything down — matches WaitIdle()'s own contract.
+    WaitIdle();
+
+    if (m_commandPool != VK_NULL_HANDLE)
+    {
+        vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+        m_commandPool = VK_NULL_HANDLE;
+    }
+
     // Allocator must be torn down before the VkDevice it wraps — it
     // still needs a valid device to free any memory it holds.
     if (m_allocator != VK_NULL_HANDLE)
@@ -740,7 +951,6 @@ void VulkanRenderDevice::Shutdown() noexcept
 
     if (m_device != VK_NULL_HANDLE)
     {
-        vkDeviceWaitIdle(m_device);
         vkDestroyDevice(m_device, nullptr);
         m_device = VK_NULL_HANDLE;
         m_graphicsQueue = VK_NULL_HANDLE;

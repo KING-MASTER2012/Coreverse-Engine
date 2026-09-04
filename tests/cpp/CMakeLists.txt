@@ -42,3 +42,16 @@ elseif(UNIX AND NOT APPLE)
     target_link_libraries(swapchain_test PRIVATE X11::X11)
 endif()
 add_test(NAME swapchain_test COMMAND swapchain_test)
+
+# Faz 5.5 proof: acquire -> record a clear-color command buffer -> submit
+# -> present, entirely through the RenderDevice/Swapchain/CommandBuffer
+# abstraction. Single-shot (one frame, then closes), matching the plan.
+add_executable(render_loop_test render_loop_test.cpp)
+target_link_libraries(render_loop_test PRIVATE compiler_warnings renderer::renderer)
+if(WIN32)
+    target_link_libraries(render_loop_test PRIVATE user32)
+elseif(UNIX AND NOT APPLE)
+    find_package(X11 REQUIRED)
+    target_link_libraries(render_loop_test PRIVATE X11::X11)
+endif()
+add_test(NAME render_loop_test COMMAND render_loop_test)

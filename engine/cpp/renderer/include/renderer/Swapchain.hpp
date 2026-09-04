@@ -66,10 +66,17 @@ public:
     }
 
     /// Acquires the next presentable image; blocks until one is ready.
+    /// `signalSemaphore` is a backend-native semaphore handle (e.g. a
+    /// VkSemaphore) the GPU signals once the image is actually
+    /// available — pass one obtained through the backend's own escape
+    /// hatch so a subsequent Submit() can wait on it before rendering.
+    /// nullptr (the default) makes this call synchronous instead: it
+    /// blocks the CPU until the image is ready using an internal fence,
+    /// which is enough before any real submission work exists.
     /// Suboptimal/OutOfDate are not errors — they mean the swapchain
     /// should be rebuilt (typically after a resize). The caller decides
     /// when; a Suboptimal result still hands back a usable image index.
-    [[nodiscard]] std::expected<AcquireResult, RenderError> Acquire() noexcept;
+    [[nodiscard]] std::expected<AcquireResult, RenderError> Acquire(void* signalSemaphore = nullptr) noexcept;
 
     /// Presents a previously acquired image. `waitSemaphore` is a
     /// backend-native semaphore handle (e.g. a VkSemaphore signaled by
@@ -87,6 +94,14 @@ public:
     {
         return m_nativeHandle;
     }
+
+    /// Backend-owned opaque handle for the image at `index` (0 ..
+    /// GetImageCount()-1) — e.g. a VkImage for the Vulkan backend. Used
+    /// to target a specific swapchain image with a command, such as
+    /// CommandBuffer::ClearColor(). Same escape-hatch contract as
+    /// GetNativeHandle(): what this actually points to is backend-
+    /// defined, meaningful only to that backend's own recording calls.
+    [[nodiscard]] void* GetImageNativeHandle(std::uint32_t index) const noexcept;
 
 private:
     friend class RenderDevice;
