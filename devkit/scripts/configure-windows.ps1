@@ -5,7 +5,7 @@
     environment regardless of which shell this was launched from.
 
 .DESCRIPTION
-    Root cause this fixes: CMakePresets.json's Windows presets use
+    Root cause this fixes: CMakePresets.json's Windows presets usegit
     `"architecture": { "strategy": "external" }`, meaning CMake does not pick
     the host/target architecture itself — it inherits whatever the launching
     shell's environment already has active. A generic "Developer PowerShell
