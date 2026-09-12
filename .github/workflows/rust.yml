@@ -1,31 +1,34 @@
 name: Rust
 
 on:
-  workflow_call:
+    workflow_call:
 
 permissions:
-  contents: read
+    contents: read
 
 jobs:
-  rust:
-    runs-on: ubuntu-latest
+    rust:
+        runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v5
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bootstrap
-        shell: bash
-        run: |
-          chmod +x devkit/scripts/setup/shell/bootstrap.sh
-          devkit/scripts/setup/shell/bootstrap.sh
+        steps:
+            - uses: actions/checkout@v5
 
-      - uses: Swatinem/rust-cache@v2
+            - name: Bootstrap
+              shell: bash
+              run: |
+                  chmod +x devkit/scripts/setup/shell/bootstrap.sh
+                  devkit/scripts/setup/shell/bootstrap.sh --rust-only
 
-      - name: Cargo Check
-        run: cargo check --workspace --all-features
+            - uses: Swatinem/rust-cache@v2
 
-      - name: Cargo Test
-        run: cargo test --workspace --all-features
+            - name: Cargo Check
+              run: cargo check --workspace --all-features
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-features
+            - name: Cargo Test
+              run: cargo test --workspace --all-features
+
+            - name: Clippy
+              run: cargo clippy --workspace --all-features
