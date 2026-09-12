@@ -39,7 +39,7 @@ upstream_install() {
 
     local api_url="https://api.github.com/repos/Kitware/CMake/releases/latest"
     local asset_url
-    asset_url=$(curl -fsSL "$api_url" \
+    asset_url=$(github_api_curl "$api_url" \
         | jq -r --arg pat "${os_pattern}\\.tar\\.gz$" '.assets[] | select(.name | test($pat)) | .browser_download_url' \
         | head -n1)
 

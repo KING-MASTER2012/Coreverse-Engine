@@ -25,6 +25,11 @@ done
 
 get_version_raw() {
     export PATH="$PATH:$HOME/.local/coreverse-bootstrap/llvm/bin"
+    local vb
+    if vb=$(find_versioned_llvm_binary clang); then
+        "$vb" --version 2>/dev/null | head -n1
+        return
+    fi
     command -v clang >/dev/null 2>&1 && clang --version 2>/dev/null | head -n1
 }
 
@@ -49,7 +54,7 @@ upstream_install() {
     esac
 
     local asset_url
-    asset_url=$(curl -fsSL "$api_url" \
+    asset_url=$(github_api_curl "$api_url" \
         | jq -r --arg pat "${OS_ARCH}.*${os_pattern}.*\\.tar\\.[gx]z$" '.assets[] | select(.name | test($pat)) | .browser_download_url' \
         | head -n1)
 

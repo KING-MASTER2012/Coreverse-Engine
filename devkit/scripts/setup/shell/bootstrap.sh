@@ -46,11 +46,13 @@ CONFIG_DIR="$SCRIPT_DIR/../config"
 # --- 0. CLI arguments ---
 YES="false"
 DRY_RUN="false"
+RUST_ONLY="false"
 
 for arg in "$@"; do
     case "$arg" in
         --yes|-y) YES="true" ;;
         --dry-run) DRY_RUN="true" ;;
+        --rust-only) RUST_ONLY="true" ;;
         *) log_warning "Unknown argument: $arg" ;;
     esac
 done
@@ -155,34 +157,44 @@ log_banner "1/3 - Toolchain Check"
 
 TOOLCHAIN_DIR="$SCRIPT_DIR/scripts/toolchain"
 
-TOOLCHAIN_TASKS=(
-    "Rustup|$TOOLCHAIN_DIR/check-rustup.sh|$DRY_RUN_FLAG|"
-    "Cargo|$TOOLCHAIN_DIR/check-cargo.sh|$DRY_RUN_FLAG|Rustup"
-    "Git|$TOOLCHAIN_DIR/check-git.sh|$DRY_RUN_FLAG|"
-    "LLVM|$TOOLCHAIN_DIR/check-llvm.sh|$DRY_RUN_FLAG|"
-    "CMake|$TOOLCHAIN_DIR/check-cmake.sh|$DRY_RUN_FLAG|"
-    "Ninja|$TOOLCHAIN_DIR/check-ninja.sh|$DRY_RUN_FLAG|"
-    "vcpkg|$TOOLCHAIN_DIR/check-vcpkg.sh|--vcpkg-root $VCPKG_ROOT $DRY_RUN_FLAG|Git"
+if [ "$RUST_ONLY" = "true" ]; then
+    TOOLCHAIN_TASKS=(
+        "Rustup|$TOOLCHAIN_DIR/check-rustup.sh|$DRY_RUN_FLAG|"
+        "Cargo|$TOOLCHAIN_DIR/check-cargo.sh|$DRY_RUN_FLAG|Rustup"
+        "Git|$TOOLCHAIN_DIR/check-git.sh|$DRY_RUN_FLAG|"
+        "Clippy|$TOOLCHAIN_DIR/check-clippy.sh|$DRY_RUN_FLAG|Rustup"
+        "rustfmt|$TOOLCHAIN_DIR/check-rustfmt.sh|$DRY_RUN_FLAG|Rustup"
+    )
+else
+    TOOLCHAIN_TASKS=(
+        "Rustup|$TOOLCHAIN_DIR/check-rustup.sh|$DRY_RUN_FLAG|"
+        "Cargo|$TOOLCHAIN_DIR/check-cargo.sh|$DRY_RUN_FLAG|Rustup"
+        "Git|$TOOLCHAIN_DIR/check-git.sh|$DRY_RUN_FLAG|"
+        "LLVM|$TOOLCHAIN_DIR/check-llvm.sh|$DRY_RUN_FLAG|"
+        "CMake|$TOOLCHAIN_DIR/check-cmake.sh|$DRY_RUN_FLAG|"
+        "Ninja|$TOOLCHAIN_DIR/check-ninja.sh|$DRY_RUN_FLAG|"
+        "vcpkg|$TOOLCHAIN_DIR/check-vcpkg.sh|--vcpkg-root $VCPKG_ROOT $DRY_RUN_FLAG|Git"
 
-    # --- LLVM sub-tools: ship in the same LLVM release as clang, so they only
-    #     need the base LLVM install to have landed first. ---
-    "clang-tidy|$TOOLCHAIN_DIR/check-clang-tidy.sh|$DRY_RUN_FLAG|LLVM"
-    "clang-format|$TOOLCHAIN_DIR/check-clang-format.sh|$DRY_RUN_FLAG|LLVM"
-    "LLDB|$TOOLCHAIN_DIR/check-lldb.sh|$DRY_RUN_FLAG|LLVM"
+        # --- LLVM sub-tools: ship in the same LLVM release as clang, so they only
+        #     need the base LLVM install to have landed first. ---
+        "clang-tidy|$TOOLCHAIN_DIR/check-clang-tidy.sh|$DRY_RUN_FLAG|LLVM"
+        "clang-format|$TOOLCHAIN_DIR/check-clang-format.sh|$DRY_RUN_FLAG|LLVM"
+        "LLDB|$TOOLCHAIN_DIR/check-lldb.sh|$DRY_RUN_FLAG|LLVM"
 
-    # --- Rust extras: component-based tools need Rustup; cargo-installed
-    #     tools need Cargo. ---
-    "Clippy|$TOOLCHAIN_DIR/check-clippy.sh|$DRY_RUN_FLAG|Rustup"
-    "rustfmt|$TOOLCHAIN_DIR/check-rustfmt.sh|$DRY_RUN_FLAG|Rustup"
-    "mdBook|$TOOLCHAIN_DIR/check-mdbook.sh|$DRY_RUN_FLAG|Cargo"
-    "cbindgen|$TOOLCHAIN_DIR/check-cbindgen.sh|$DRY_RUN_FLAG|Cargo"
+        # --- Rust extras: component-based tools need Rustup; cargo-installed
+        #     tools need Cargo. ---
+        "Clippy|$TOOLCHAIN_DIR/check-clippy.sh|$DRY_RUN_FLAG|Rustup"
+        "rustfmt|$TOOLCHAIN_DIR/check-rustfmt.sh|$DRY_RUN_FLAG|Rustup"
+        "mdBook|$TOOLCHAIN_DIR/check-mdbook.sh|$DRY_RUN_FLAG|Cargo"
+        "cbindgen|$TOOLCHAIN_DIR/check-cbindgen.sh|$DRY_RUN_FLAG|Cargo"
 
-    # --- Linux toolchain (GCC is the stated primary compiler; skips cleanly
-    #     on macOS - see check-gcc.sh). Independent of everything above. ---
-    "GCC|$TOOLCHAIN_DIR/check-gcc.sh|$DRY_RUN_FLAG|"
-    "GDB|$TOOLCHAIN_DIR/check-gdb.sh|$DRY_RUN_FLAG|"
-    "cppcheck|$TOOLCHAIN_DIR/check-cppcheck.sh|$DRY_RUN_FLAG|"
-)
+        # --- Linux toolchain (GCC is the stated primary compiler; skips cleanly
+        #     on macOS - see check-gcc.sh). Independent of everything above. ---
+        "GCC|$TOOLCHAIN_DIR/check-gcc.sh|$DRY_RUN_FLAG|"
+        "GDB|$TOOLCHAIN_DIR/check-gdb.sh|$DRY_RUN_FLAG|"
+        "cppcheck|$TOOLCHAIN_DIR/check-cppcheck.sh|$DRY_RUN_FLAG|"
+    )
+fi
 
 run_task_graph "$RESULTS_DIR" "${TOOLCHAIN_TASKS[@]}"
 
@@ -220,27 +232,37 @@ DEP_DIR="$SCRIPT_DIR/scripts/dependencies"
 VCPKG_DEPS_ARGS="--manifest-dir $VCPKG_MANIFEST_DIR --vcpkg-root $VCPKG_ROOT $DRY_RUN_FLAG"
 [ -n "$VCPKG_INSTALLED_DIR" ] && VCPKG_DEPS_ARGS="$VCPKG_DEPS_ARGS --installed-dir $VCPKG_INSTALLED_DIR"
 
-DEP_TASKS=(
-    "CargoDeps|$DEP_DIR/parse-cargo.sh|--workspace-root $CARGO_WORKSPACE_ROOT $DRY_RUN_FLAG|"
-    "vcpkgDeps|$DEP_DIR/parse-vcpkg.sh|$VCPKG_DEPS_ARGS|"
-)
+if [ "$RUST_ONLY" = "true" ]; then
+    DEP_TASKS=(
+        "CargoDeps|$DEP_DIR/parse-cargo.sh|--workspace-root $CARGO_WORKSPACE_ROOT $DRY_RUN_FLAG|"
+    )
+else
+    DEP_TASKS=(
+        "CargoDeps|$DEP_DIR/parse-cargo.sh|--workspace-root $CARGO_WORKSPACE_ROOT $DRY_RUN_FLAG|"
+        "vcpkgDeps|$DEP_DIR/parse-vcpkg.sh|$VCPKG_DEPS_ARGS|"
+    )
+fi
 
 run_parallel_tasks "$RESULTS_DIR" "${DEP_TASKS[@]}"
 
 # --- 8. Phase 3/3: CMake configuration ---
-log_banner "3/3 - CMake Configuration"
+if [ "$RUST_ONLY" = "true" ]; then
+    log_info "Skipping CMake configuration (--rust-only)."
+else
+    log_banner "3/3 - CMake Configuration"
 
-CMAKE_CONFIGURE_ARGS=(
-    --source-dir "$CMAKE_SOURCE_DIR"
-    --build-dir "$CMAKE_BUILD_DIR"
-    --vcpkg-root "$VCPKG_ROOT"
-    --manifest-dir "$VCPKG_MANIFEST_DIR"
-)
-[ -n "$VCPKG_INSTALLED_DIR" ] && CMAKE_CONFIGURE_ARGS+=(--installed-dir "$VCPKG_INSTALLED_DIR")
-[ "$DRY_RUN" = "true" ] && CMAKE_CONFIGURE_ARGS+=(--dry-run)
-CMAKE_CONFIGURE_ARGS+=(--result-file "$RESULTS_DIR/CMakeConfigure.result")
+    CMAKE_CONFIGURE_ARGS=(
+        --source-dir "$CMAKE_SOURCE_DIR"
+        --build-dir "$CMAKE_BUILD_DIR"
+        --vcpkg-root "$VCPKG_ROOT"
+        --manifest-dir "$VCPKG_MANIFEST_DIR"
+    )
+    [ -n "$VCPKG_INSTALLED_DIR" ] && CMAKE_CONFIGURE_ARGS+=(--installed-dir "$VCPKG_INSTALLED_DIR")
+    [ "$DRY_RUN" = "true" ] && CMAKE_CONFIGURE_ARGS+=(--dry-run)
+    CMAKE_CONFIGURE_ARGS+=(--result-file "$RESULTS_DIR/CMakeConfigure.result")
 
-bash "$SCRIPT_DIR/scripts/final/cmake-configure.sh" "${CMAKE_CONFIGURE_ARGS[@]}"
+    bash "$SCRIPT_DIR/scripts/final/cmake-configure.sh" "${CMAKE_CONFIGURE_ARGS[@]}"
+fi
 
 # --- 9. Summary table ---
 show_summary_table "$RESULTS_DIR"

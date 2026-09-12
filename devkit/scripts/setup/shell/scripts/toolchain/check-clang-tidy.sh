@@ -31,6 +31,11 @@ done
 get_version_raw() {
     local llvm_local_bin="$HOME/.local/coreverse-bootstrap/llvm/bin"
     export PATH="$PATH:$llvm_local_bin"
+    local vb
+    if vb=$(find_versioned_llvm_binary clang-tidy); then
+        "$vb" --version 2>/dev/null | sed -n '2p'
+        return
+    fi
     command -v clang-tidy >/dev/null 2>&1 && clang-tidy --version 2>/dev/null | sed -n '2p'
 }
 
@@ -40,6 +45,20 @@ upstream_install() {
         export PATH="$PATH:$install_dir/bin"
         return 0
     fi
+
+    # On apt.llvm.org/dnf-based distros, check-llvm.sh installs versioned
+    # clang-<N> but clang-tidy-<N> is a separate package that isn't always
+    # pulled in as a dependency. Find which LLVM version actually landed (via
+    # the clang-<N> binary) and install the matching clang-tidy package.
+    local suffix
+    suffix=$(find_versioned_llvm_binary clang | sed 's/^clang-//')
+    if [ -n "$suffix" ] && [ "$PKG_MANAGER" != "none" ]; then
+        pkg_install "clang-tidy-$suffix" >/dev/null 2>&1
+        if command -v "clang-tidy-$suffix" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
     log_error "clang-tidy not found. Re-run check-llvm.sh (or repair the LLVM install manually) - clang-tidy ships as part of the same LLVM release." "$TOOL_NAME"
     return 1
 }

@@ -27,6 +27,11 @@ done
 get_version_raw() {
     local llvm_local_bin="$HOME/.local/coreverse-bootstrap/llvm/bin"
     export PATH="$PATH:$llvm_local_bin"
+    local vb
+    if vb=$(find_versioned_llvm_binary lldb); then
+        "$vb" --version 2>/dev/null | head -n1
+        return
+    fi
     command -v lldb >/dev/null 2>&1 && lldb --version 2>/dev/null | head -n1
 }
 
@@ -34,6 +39,9 @@ upstream_install() {
     local install_dir="$HOME/.local/coreverse-bootstrap/llvm"
     if [ -x "$install_dir/bin/lldb" ]; then
         export PATH="$PATH:$install_dir/bin"
+        return 0
+    fi
+    if find_versioned_llvm_binary lldb >/dev/null 2>&1; then
         return 0
     fi
     log_error "lldb not found. Re-run check-llvm.sh (or repair the LLVM install manually) - lldb ships as part of the same LLVM release." "$TOOL_NAME"

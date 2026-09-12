@@ -68,7 +68,15 @@ else
     PARENT_DIR=$(dirname "$VCPKG_ROOT")
     [ -n "$PARENT_DIR" ] && [ "$PARENT_DIR" != "." ] && mkdir -p "$PARENT_DIR"
     log_info "Cloning https://github.com/microsoft/vcpkg.git ..." "$TOOL_NAME"
-    git clone --depth 1 https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT" >/dev/null 2>&1
+    # NOT --depth 1: vcpkg's builtin-baseline resolves an arbitrary historical
+    # commit (whatever vcpkg.json pins) via `git show <sha>:versions/baseline.json`
+    # against THIS clone. A shallow clone only carries the tip commit's history,
+    # so any baseline older than that tip is missing from the local object
+    # database even though it's a perfectly valid commit upstream - this is
+    # exactly what produced "path 'versions/baseline.json' exists on disk, but
+    # not in '<commit>'". vcpkg's own docs call out that shallow clones of the
+    # registry are unsupported for this reason.
+    git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT" >/dev/null 2>&1
 fi
 
 log_info "Running bootstrap-vcpkg.sh..." "$TOOL_NAME"

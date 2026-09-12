@@ -35,6 +35,39 @@ SCRIPT_DIR_TOOL_CHECK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 detect_os
 
+# github_api_curl <url> [curl-args...]
+# Wraps curl for api.github.com calls. Adds an Authorization header when
+# GITHUB_TOKEN is present in the environment (map it in via `env:` in the
+# workflow - GitHub Actions does not expose it by default). Unauthenticated
+# calls to api.github.com are capped at 60/hour *per IP*, and hosted CI
+# runners share a small IP pool, so this limit gets hit routinely without a
+# token - silently starving any check-*.sh that queries GitHub's release API.
+github_api_curl() {
+    local url="$1"
+    shift
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$@" "$url"
+    else
+        curl -fsSL "$@" "$url"
+    fi
+}
+
+# find_versioned_llvm_binary <base_name>
+# Prints the highest-numbered "<base_name>-<N>" binary found on PATH (e.g.
+# clang-22), for distros where LLVM is installed via apt.llvm.org/dnf's
+# versioned packages without an unversioned alias (no `clang` symlink, only
+# `clang-22`). Prints nothing and returns 1 if none is found.
+find_versioned_llvm_binary() {
+    local base_name="$1" v
+    for v in 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9; do
+        if command -v "${base_name}-${v}" >/dev/null 2>&1; then
+            echo "${base_name}-${v}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Every check-*.sh lives at setup/shell/scripts/toolchain/; the shared config
 # lives at setup/config/. Resolve it relative to this file's own location so it
 # works regardless of the caller's current working directory.

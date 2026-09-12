@@ -28,6 +28,11 @@ done
 get_version_raw() {
     local llvm_local_bin="$HOME/.local/coreverse-bootstrap/llvm/bin"
     export PATH="$PATH:$llvm_local_bin"
+    local vb
+    if vb=$(find_versioned_llvm_binary clang-format); then
+        "$vb" --version 2>/dev/null | head -n1
+        return
+    fi
     command -v clang-format >/dev/null 2>&1 && clang-format --version 2>/dev/null | head -n1
 }
 
@@ -37,6 +42,16 @@ upstream_install() {
         export PATH="$PATH:$install_dir/bin"
         return 0
     fi
+
+    local suffix
+    suffix=$(find_versioned_llvm_binary clang | sed 's/^clang-//')
+    if [ -n "$suffix" ] && [ "$PKG_MANAGER" != "none" ]; then
+        pkg_install "clang-format-$suffix" >/dev/null 2>&1
+        if command -v "clang-format-$suffix" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
     log_error "clang-format not found. Re-run check-llvm.sh (or repair the LLVM install manually) - clang-format ships as part of the same LLVM release." "$TOOL_NAME"
     return 1
 }
