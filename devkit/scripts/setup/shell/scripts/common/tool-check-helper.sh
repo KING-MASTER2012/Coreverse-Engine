@@ -135,14 +135,17 @@ invoke_tool_check() {
         if [ -n "$raw" ] && version_ge "$raw" "$required_version"; then
             log_success "Installed/upgraded via upstream: $raw" "$tool_name"
             write_result "$result_file" "$tool_name" "Installed" "$raw"
+            return 0
 
         elif [ -n "$raw" ]; then
             log_warning "Installed but below the required version: $raw (required >= $required_version). Continuing." "$tool_name"
             write_result "$result_file" "$tool_name" "Warning" "$raw"
+            return 0
 
         else
             log_error "Tool is still not found on PATH after installation." "$tool_name"
             write_result "$result_file" "$tool_name" "Failed" ""
+            return 1
         fi
 
     else
@@ -150,7 +153,6 @@ invoke_tool_check() {
 
         log_error "Upstream installation failed (exit code: $exit_code)." "$tool_name"
         write_result "$result_file" "$tool_name" "Failed" ""
+        return 1
     fi
-
-    return 0
 }

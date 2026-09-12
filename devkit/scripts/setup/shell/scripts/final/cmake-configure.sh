@@ -65,11 +65,14 @@ fi
 
 log_info "Running: cmake ${CMAKE_ARGS[*]}" "$TOOL_NAME"
 cmake "${CMAKE_ARGS[@]}"
+cmake_exit_code=$?
 
-if [ $? -eq 0 ]; then
+if [ "$cmake_exit_code" -eq 0 ]; then
     log_success "CMake configuration completed ($BUILD_DIR)." "$TOOL_NAME"
     write_result "OK"
 else
     log_error "cmake configure failed." "$TOOL_NAME"
     write_result "Failed"
 fi
+
+exit "$cmake_exit_code"
