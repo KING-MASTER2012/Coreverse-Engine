@@ -66,7 +66,7 @@ run_task_graph() {
 
             (
                 # shellcheck disable=SC2086
-                "$script" $args --result-file "$results_dir/$name.result"
+                bash "$script" $args --result-file "$results_dir/$name.result"
             ) > "$results_dir/logs/$name.log" 2>&1 &
 
             pids+=("$!")

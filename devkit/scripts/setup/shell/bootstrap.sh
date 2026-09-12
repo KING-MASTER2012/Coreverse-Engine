@@ -240,7 +240,7 @@ CMAKE_CONFIGURE_ARGS=(
 [ "$DRY_RUN" = "true" ] && CMAKE_CONFIGURE_ARGS+=(--dry-run)
 CMAKE_CONFIGURE_ARGS+=(--result-file "$RESULTS_DIR/CMakeConfigure.result")
 
-"$SCRIPT_DIR/scripts/final/cmake-configure.sh" "${CMAKE_CONFIGURE_ARGS[@]}"
+bash "$SCRIPT_DIR/scripts/final/cmake-configure.sh" "${CMAKE_CONFIGURE_ARGS[@]}"
 
 # --- 9. Summary table ---
 show_summary_table "$RESULTS_DIR"
