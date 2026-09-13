@@ -37,10 +37,29 @@ upstream_install() {
     if [ "$OS_PLATFORM" = "linux" ] && { [ "$OS_DISTRO" = "debian" ] || [ "$OS_DISTRO" = "kali" ]; }; then
         # apt.llvm.org's official bootstrap script always installs the latest release.
         log_info "Using the official apt.llvm.org bootstrap script..." "$TOOL_NAME"
-        curl -fsSL https://apt.llvm.org/llvm.sh -o /tmp/llvm.sh
-        chmod +x /tmp/llvm.sh
-        with_pkg_lock "sudo /tmp/llvm.sh"
-        return $?
+        if curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused --retry-all-errors \
+            https://apt.llvm.org/llvm.sh -o /tmp/llvm.sh \
+            && chmod +x /tmp/llvm.sh \
+            && with_pkg_lock "sudo /tmp/llvm.sh"
+        then
+            return 0
+        fi
+
+        # apt.llvm.org unreachable (network blip, outage, ...): this is the
+        # same "package manager was good enough, just not at the ideal
+        # version" situation check-clang-tidy.sh/check-clang-format.sh/
+        # check-lldb.sh already treat as a soft Warning rather than a hard
+        # Failed - they fall back to whatever clang<N>/clang-tidy-<N>/... the
+        # distro's own repos already provided. Do the same here instead of
+        # aborting the whole bootstrap over one unreachable mirror: GCC
+        # remains this project's primary/required compiler either way (see
+        # bootstrap.sh's Linux toolchain comment), so an old-but-present
+        # clang from apt is good enough to continue with, not a hard stop.
+        log_warning "apt.llvm.org unreachable; falling back to whatever clang the package manager already provided." "$TOOL_NAME"
+        if find_versioned_llvm_binary clang >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+            return 0
+        fi
+        return 1
     fi
 
     # Generic fallback: download a prebuilt release from GitHub and place it
