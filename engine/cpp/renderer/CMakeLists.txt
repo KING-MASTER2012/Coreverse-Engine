@@ -55,7 +55,22 @@ target_compile_definitions(renderer
 # included — CMake is what actually knows the target platform, so it's
 # set here rather than guessed in source.
 if(WIN32)
-    target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+    # windows.h (pulled in transitively by <vulkan/vulkan.h> once
+    # VK_USE_PLATFORM_WIN32_KHR is defined - see vulkan.h's own
+    # "#ifdef VK_USE_PLATFORM_WIN32_KHR / #include <windows.h>" branch)
+    # defines `max`/`min` function-like macros unless NOMINMAX is defined
+    # first. Left unguarded, any later `std::max`/`std::min` call in this
+    # translation unit silently expands through that macro instead - MSVC
+    # reports it as "C2589: '(': illegal token on right side of '::'"
+    # pointing at the `std::max`/`std::min` call itself, which is a
+    # confusing way to find out windows.h did this. NOMINMAX must be
+    # defined before windows.h's first include, so it goes on the
+    # compiler command line (via target_compile_definitions) rather than
+    # relying on include order in the .cpp files. WIN32_LEAN_AND_MEAN is
+    # the standard companion define - trims windows.h down to the common
+    # subset, avoiding a similar class of surprise macro/name collisions
+    # from the parts of it this renderer never needed anyway.
+    target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_WIN32_KHR NOMINMAX WIN32_LEAN_AND_MEAN)
 elseif(APPLE)
     target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_METAL_EXT)
 elseif(UNIX)
