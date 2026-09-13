@@ -55,3 +55,31 @@ elseif(UNIX AND NOT APPLE)
     target_link_libraries(render_loop_test PRIVATE X11::X11)
 endif()
 add_test(NAME render_loop_test COMMAND render_loop_test)
+
+# Faz 5 (Wayland milestone) proof: the same single-shot render loop as
+# render_loop_test.cpp above, but through a real wl_surface instead of
+# Xlib. Only built when Wayland is actually compiled into `renderer`
+# (RENDERER_ENABLE_WAYLAND, see renderer/CMakeLists.txt) — Wayland has
+# no Win32/macOS equivalent, unlike the Xlib tests above. Needs a real
+# libwayland-client (unlike the renderer itself, which only needs
+# vulkan_wayland.h's own forward-declared wl_display/wl_surface — see
+# that file's comments) because this test actually calls into it to
+# connect to a compositor and create a surface.
+if(UNIX AND NOT APPLE AND RENDERER_ENABLE_WAYLAND)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(WaylandClient REQUIRED IMPORTED_TARGET wayland-client)
+
+    add_executable(wayland_render_loop_test wayland_render_loop_test.cpp)
+    target_link_libraries(wayland_render_loop_test PRIVATE compiler_warnings renderer::renderer PkgConfig::WaylandClient)
+
+    # wl_display_connect() needs an actual compositor listening on
+    # WAYLAND_DISPLAY — there's no display-less equivalent of Xlib's
+    # "just open the existing X server" trick above. scripts/run-with-
+    # weston-headless.sh spins up a throwaway headless Weston instance
+    # around the test binary for exactly that reason; running the
+    # binary directly (like every other add_test() here) would just
+    # fail wherever no compositor happens to already be running.
+    add_test(NAME wayland_render_loop_test
+            COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-with-weston-headless.sh"
+            "$<TARGET_FILE:wayland_render_loop_test>")
+endif()

@@ -143,22 +143,30 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateInstance()
     appInfo.apiVersion = VK_API_VERSION_1_3;
 
     std::vector<const char*> extensions;
-    // VK_KHR_surface plus the one platform-specific WSI extension this
-    // build was compiled for are required unconditionally — surface
-    // creation (Faz 5.3) needs them regardless of whether validation is
-    // enabled. Only one of the platform branches below is compiled in
-    // per build, matching NativeWindowHandle's #if ladder in Surface.hpp.
-    // Linux: only Xlib is wired up for now (see CreateSurface()) —
-    // Wayland's fields exist on NativeWindowHandle for forward
-    // compatibility but aren't implemented yet, so its extension isn't
-    // requested here either.
+    // VK_KHR_surface plus whichever platform-specific WSI extension(s)
+    // this build was compiled for are required unconditionally —
+    // surface creation (Faz 5.3) needs them regardless of whether
+    // validation is enabled. Win32/Metal are mutually exclusive with
+    // everything else, matching NativeWindowHandle's #if ladder in
+    // Surface.hpp. Linux is the one platform where more than one WSI
+    // extension can be requested in the same build: Xlib and Wayland
+    // are independent CMake options (RENDERER_ENABLE_XLIB /
+    // RENDERER_ENABLE_WAYLAND, see renderer/CMakeLists.txt) and either,
+    // both, or (checked at configure time) neither-is-rejected can be
+    // compiled in — CreateSurface() below picks whichever one the
+    // caller's NativeWindowHandle actually filled in at runtime.
     extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 #if defined(_WIN32)
     extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
 #elif defined(__APPLE__)
     extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
 #elif defined(__linux__)
+#if defined(VK_USE_PLATFORM_XLIB_KHR)
     extensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
+#endif
+#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+    extensions.push_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+#endif
 #endif
     if (m_validationEnabled)
     {
@@ -472,18 +480,39 @@ std::expected<Surface, RenderError> VulkanRenderDevice::CreateSurface(const Nati
         result = vkCreateMetalSurfaceEXT(m_instance, &createInfo, nullptr, &surface);
     }
 #elif defined(__linux__)
-    // Only Xlib is implemented for now — NativeWindowHandle's Wayland
-    // fields exist so Surface.hpp doesn't need to change shape when
-    // Wayland support is actually added, matching GraphicsAPI.hpp's
-    // "declare now, implement later" convention.
-    if (handle.xlibDisplay != nullptr)
+    // Both backends may be compiled in at once (see renderer/CMakeLists.txt),
+    // so pick whichever one the caller actually populated — Xlib first
+    // for parity with the previous X11-only behavior, falling through
+    // to Wayland only if Xlib didn't handle it (either because it isn't
+    // compiled in, or because the caller left xlibDisplay null).
+    bool handled = false;
+#if defined(VK_USE_PLATFORM_XLIB_KHR)
+    if (!handled && handle.xlibDisplay != nullptr)
     {
         VkXlibSurfaceCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
         createInfo.dpy = static_cast<Display*>(handle.xlibDisplay);
         createInfo.window = static_cast<Window>(handle.xlibWindow);
         result = vkCreateXlibSurfaceKHR(m_instance, &createInfo, nullptr, &surface);
+        handled = true;
     }
+#endif
+#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+    // struct wl_display/wl_surface are forward-declared by
+    // vulkan_wayland.h itself (see the CMakeLists.txt comment above) —
+    // we never dereference them, only hand the pointers Qt/the caller
+    // gave us straight to the Vulkan WSI extension, so no
+    // wayland-client header is needed here either.
+    if (!handled && handle.waylandDisplay != nullptr)
+    {
+        VkWaylandSurfaceCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+        createInfo.display = static_cast<struct wl_display*>(handle.waylandDisplay);
+        createInfo.surface = static_cast<struct wl_surface*>(handle.waylandSurface);
+        result = vkCreateWaylandSurfaceKHR(m_instance, &createInfo, nullptr, &surface);
+        handled = true;
+    }
+#endif
 #endif
 
     if (result != VK_SUCCESS)

@@ -53,12 +53,32 @@ target_compile_definitions(renderer
 # vkCreateXlibSurfaceKHR, ...) are only declared when the matching
 # VK_USE_PLATFORM_* macro is defined before <vulkan/vulkan.h> is first
 # included — CMake is what actually knows the target platform, so it's
-# set here rather than guessed in source. Only Xlib is implemented on
-# Linux for now (see VulkanRenderDevice.cpp); XCB/Wayland are not yet.
+# set here rather than guessed in source.
 if(WIN32)
     target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 elseif(APPLE)
     target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_METAL_EXT)
 elseif(UNIX)
-    target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_XLIB_KHR)
+    # Faz 5 (Wayland milestone): Xlib and Wayland are independent WSI
+    # extensions — Vulkan-Headers allows VK_USE_PLATFORM_XLIB_KHR and
+    # VK_USE_PLATFORM_WAYLAND_KHR to be defined together, and
+    # vulkan_wayland.h only forward-declares `struct wl_display` /
+    # `struct wl_surface` itself (see VulkanRenderDevice.cpp), so no
+    # wayland-client vcpkg dependency is needed just to build against
+    # it. Both default ON so a plain Linux build supports either
+    # windowing system out of the box; a packager/CI leg that only
+    # cares about one can turn the other off.
+    option(RENDERER_ENABLE_XLIB    "Enable the Xlib (X11) Vulkan surface backend on Linux" ON)
+    option(RENDERER_ENABLE_WAYLAND "Enable the Wayland Vulkan surface backend on Linux" ON)
+
+    if(NOT RENDERER_ENABLE_XLIB AND NOT RENDERER_ENABLE_WAYLAND)
+        message(FATAL_ERROR "renderer: at least one of RENDERER_ENABLE_XLIB / RENDERER_ENABLE_WAYLAND must be ON on Linux")
+    endif()
+
+    if(RENDERER_ENABLE_XLIB)
+        target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_XLIB_KHR)
+    endif()
+    if(RENDERER_ENABLE_WAYLAND)
+        target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_WAYLAND_KHR)
+    endif()
 endif()

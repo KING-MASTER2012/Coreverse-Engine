@@ -54,6 +54,22 @@ jobs:
                   chmod +x devkit/scripts/setup/shell/bootstrap.sh
                   devkit/scripts/setup/shell/bootstrap.sh
 
+            # See the identical step in cpp.yml for why these aren't part
+            # of bootstrap.sh itself: libx11-dev/libwayland-dev are the
+            # Xlib and Wayland WSI backends renderer needs to compile on
+            # Linux, weston gives wayland_render_loop_test a headless
+            # compositor to run against.
+            - name: Install X11 & Wayland dev libraries
+              if: matrix.language == 'cpp'
+              shell: bash
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                      libx11-dev \
+                      libwayland-dev \
+                      pkg-config \
+                      weston
+
             - name: Initialize CodeQL
               uses: github/codeql-action/init@v4
               with:
