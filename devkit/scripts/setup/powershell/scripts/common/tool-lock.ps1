@@ -78,3 +78,49 @@ function Exit-ToolLock {
     }
     $Mutex.Dispose()
 }
+
+# Invoke-TimedCargoInstall <Package> [-TimeoutSeconds <n>]
+# Runs `cargo install --locked <Package>`, bounded by a real timeout.
+#
+# The lock functions above only bound how long a task waits to *start*
+# cargo install; nothing previously bounded the install itself once it was
+# running. `cargo install` has no built-in network timeout of its own, and
+# on some Windows runners its very first step - updating the crates.io
+# index - can stall indefinitely (observed hanging forever right after
+# printing "Updating crates.io index", with no further output and no error,
+# until the whole CI job was eventually killed with nothing useful logged).
+# This wraps the same command in an actual process timeout so that failure
+# mode becomes a clear, bounded error instead of a silent multi-hour hang.
+function Invoke-TimedCargoInstall {
+    param(
+        [Parameter(Mandatory)][string]$Package,
+        [int]$TimeoutSeconds = 600
+    )
+
+    $stdoutFile = [System.IO.Path]::GetTempFileName()
+    $stderrFile = [System.IO.Path]::GetTempFileName()
+
+    try {
+        $proc = Start-Process -FilePath 'cargo' `
+            -ArgumentList @('install', '--locked', $Package) `
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput $stdoutFile `
+            -RedirectStandardError $stderrFile
+
+        $finished = $proc.WaitForExit($TimeoutSeconds * 1000)
+
+        if (-not $finished) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            $tail = @(Get-Content $stdoutFile, $stderrFile -ErrorAction SilentlyContinue | Select-Object -Last 20)
+            throw "cargo install --locked $Package timed out after ${TimeoutSeconds}s with no output (likely stuck talking to crates.io) and was killed. Last output:`n$($tail -join "`n")"
+        }
+
+        Get-Content $stdoutFile, $stderrFile -ErrorAction SilentlyContinue | Write-Host
+
+        if ($proc.ExitCode -ne 0) {
+            throw "cargo install --locked $Package failed (exit code $($proc.ExitCode))."
+        }
+    } finally {
+        Remove-Item $stdoutFile, $stderrFile -ErrorAction SilentlyContinue
+    }
+}

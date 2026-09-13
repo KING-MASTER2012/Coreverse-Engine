@@ -30,10 +30,11 @@ $upstreamInstall = {
         throw 'Cargo is missing.'
     }
 
-    & cargo install --locked mdbook
-    if ($LASTEXITCODE -ne 0) {
-        throw "cargo install --locked mdbook failed (exit code $LASTEXITCODE)."
-    }
+    # Invoke-TimedCargoInstall (tool-lock.ps1) instead of a bare
+    # `& cargo install` - see its comment for why: an untimed cargo
+    # install can hang forever on some Windows runners with zero
+    # diagnostic output.
+    Invoke-TimedCargoInstall -Package 'mdbook'
 }
 
 Invoke-ToolCheck `
