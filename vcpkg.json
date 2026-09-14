@@ -1,27 +1,34 @@
 {
-  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+    "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
 
-  "name": "coreverse-engine",
-  "version-semver": "0.1.0",
+    "name": "coreverse-engine",
+    "version-semver": "0.1.0",
 
-  "description": "Coreverse Engine C++ dependencies.",
+    "description": "Coreverse Engine C++ dependencies.",
 
-  "license": "GPL-3.0-only",
+    "license": "GPL-3.0-only",
 
-  "builtin-baseline": "cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3",
+    "builtin-baseline": "cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3",
 
-  "dependencies": [
-    "vulkan-headers",
-    "volk",
-    "vulkan-memory-allocator"
-  ],
+    "dependencies": [
+        "vulkan-headers",
+        "volk",
+        "vulkan-memory-allocator",
+        {
+            "name": "qtbase",
+            "default-features": false,
+            "features": [
+                "widgets"
+            ]
+        }
+    ],
 
-  "features": {
-    "vulkan-validation": {
-      "description": "Vulkan validation layers for debug/dev builds.",
-      "dependencies": [
-        "vulkan-validationlayers"
-      ]
+    "features": {
+        "vulkan-validation": {
+            "description": "Vulkan validation layers for debug/dev builds.",
+            "dependencies": [
+                "vulkan-validationlayers"
+            ]
+        }
     }
-  }
 }
