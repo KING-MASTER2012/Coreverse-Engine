@@ -193,6 +193,13 @@ else
         "GCC|$TOOLCHAIN_DIR/check-gcc.sh|$DRY_RUN_FLAG|"
         "GDB|$TOOLCHAIN_DIR/check-gdb.sh|$DRY_RUN_FLAG|"
         "cppcheck|$TOOLCHAIN_DIR/check-cppcheck.sh|$DRY_RUN_FLAG|"
+
+        # --- Host build tools vcpkg's autotools-based ports (e.g. libb2, a
+        #     transitive qtbase/widgets dependency) shell out to during their
+        #     build step. Must land before Phase 2's `vcpkg install`, which is
+        #     why it's in this graph (fully awaited) rather than Phase 2 itself.
+        #     Independent of everything above. ---
+        "Autotools|$TOOLCHAIN_DIR/check-autotools.sh|$DRY_RUN_FLAG|"
     )
 fi
 

@@ -1,115 +1,121 @@
 {
-  "rustup": {
-    "minVersion": "1.29.0",
-    "displayName": "Rustup",
-    "docsUrl": "https://www.rust-lang.org/tools/install",
-    "pkg": {}
-  },
-  "cargo": {
-    "minVersion": "1.97.1",
-    "displayName": "Cargo",
-    "docsUrl": "https://www.rust-lang.org/tools/install",
-    "pkg": {}
-  },
-  "git": {
-    "minVersion": "2.55.0",
-    "displayName": "Git",
-    "docsUrl": "https://git-scm.com/downloads",
-    "pkg": { "pacman": "git", "apt": "git", "dnf": "git", "zypper": "git", "brew": "git" }
-  },
-  "llvm": {
-    "minVersion": "22.1.8",
-    "displayName": "LLVM/Clang",
-    "docsUrl": "https://releases.llvm.org/download.html",
-    "pkg": { "pacman": "clang llvm", "apt": "clang llvm", "dnf": "clang llvm-devel", "zypper": "clang llvm", "brew": "llvm" }
-  },
-  "cmake": {
-    "minVersion": "4.4.0",
-    "displayName": "CMake",
-    "docsUrl": "https://cmake.org/download/",
-    "pkg": { "pacman": "cmake", "apt": "cmake", "dnf": "cmake", "zypper": "cmake", "brew": "cmake" }
-  },
-  "ninja": {
-    "minVersion": "1.13.1",
-    "displayName": "Ninja",
-    "docsUrl": "https://github.com/ninja-build/ninja/releases",
-    "pkg": { "pacman": "ninja", "apt": "ninja-build", "dnf": "ninja-build", "zypper": "ninja", "brew": "ninja" }
-  },
-  "vcpkg": {
-    "minVersion": "26.06.24",
-    "displayName": "vcpkg (project-local, always fetches latest commit)",
-    "docsUrl": "https://learn.microsoft.com/vcpkg/get_started/overview",
-    "pkg": {}
-  },
-  "clangTidy": {
-    "minVersion": "22.1.8",
-    "displayName": "clang-tidy (LLVM linter / static analyzer)",
-    "docsUrl": "https://clang.llvm.org/extra/clang-tidy/",
-    "pkg": { "pacman": "clang", "apt": "clang-tidy", "dnf": "clang-tools-extra", "zypper": "clang-tools", "brew": "llvm" }
-  },
-  "clangFormat": {
-    "minVersion": "22.1.8",
-    "displayName": "clang-format (LLVM formatter)",
-    "docsUrl": "https://clang.llvm.org/docs/ClangFormat.html",
-    "pkg": { "pacman": "clang", "apt": "clang-format", "dnf": "clang-tools-extra", "zypper": "clang-tools", "brew": "llvm" }
-  },
-  "lldb": {
-    "minVersion": "22.1.8",
-    "displayName": "LLDB (LLVM debugger)",
-    "docsUrl": "https://lldb.llvm.org/",
-    "pkg": { "pacman": "lldb", "apt": "lldb", "dnf": "lldb", "zypper": "lldb", "brew": "llvm" },
-    "pythonPackages": ["six"]
-  },
-  "clippy": {
-    "minVersion": "0.1.0",
-    "displayName": "Clippy (rustup component)",
-    "docsUrl": "https://doc.rust-lang.org/clippy/",
-    "pkg": {}
-  },
-  "rustfmt": {
-    "minVersion": "1.7.0",
-    "displayName": "rustfmt (rustup component)",
-    "docsUrl": "https://github.com/rust-lang/rustfmt",
-    "pkg": {}
-  },
-  "mdbook": {
-    "minVersion": "0.4.40",
-    "displayName": "mdBook",
-    "docsUrl": "https://rust-lang.github.io/mdBook/",
-    "pkg": {}
-  },
-  "cbindgen": {
-    "minVersion": "0.28.0",
-    "displayName": "cbindgen (ffi header generator)",
-    "docsUrl": "https://github.com/mozilla/cbindgen",
-    "pkg": {}
-  },
-  "visualstudio": {
-    "minVersion": "17.0.0",
-    "displayName": "Visual Studio (MSVC + Windows SDK, Windows only)",
-    "docsUrl": "https://visualstudio.microsoft.com/downloads/",
-    "requiredComponents": [
-      "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-      "Microsoft.VisualStudio.Component.Windows11SDK.26100"
-    ],
-    "pkg": {}
-  },
-  "gcc": {
-    "minVersion": "12.0.0",
-    "displayName": "GCC (primary Linux compiler)",
-    "docsUrl": "https://gcc.gnu.org/",
-    "pkg": { "pacman": "gcc", "apt": "build-essential", "dnf": "gcc gcc-c++", "zypper": "gcc gcc-c++" }
-  },
-  "gdb": {
-    "minVersion": "12.0.0",
-    "displayName": "GDB (Linux debugger)",
-    "docsUrl": "https://www.gnu.org/software/gdb/",
-    "pkg": { "pacman": "gdb", "apt": "gdb", "dnf": "gdb", "zypper": "gdb", "brew": "gdb" }
-  },
-  "cppcheck": {
-    "minVersion": "2.13.0",
-    "displayName": "cppcheck (static analyzer, alongside GCC's -fanalyzer)",
-    "docsUrl": "https://cppcheck.sourceforge.io/",
-    "pkg": { "pacman": "cppcheck", "apt": "cppcheck", "dnf": "cppcheck", "zypper": "cppcheck", "brew": "cppcheck" }
-  }
+    "rustup": {
+        "minVersion": "1.29.0",
+        "displayName": "Rustup",
+        "docsUrl": "https://www.rust-lang.org/tools/install",
+        "pkg": {}
+    },
+    "cargo": {
+        "minVersion": "1.97.1",
+        "displayName": "Cargo",
+        "docsUrl": "https://www.rust-lang.org/tools/install",
+        "pkg": {}
+    },
+    "git": {
+        "minVersion": "2.55.0",
+        "displayName": "Git",
+        "docsUrl": "https://git-scm.com/downloads",
+        "pkg": { "pacman": "git", "apt": "git", "dnf": "git", "zypper": "git", "brew": "git" }
+    },
+    "llvm": {
+        "minVersion": "22.1.8",
+        "displayName": "LLVM/Clang",
+        "docsUrl": "https://releases.llvm.org/download.html",
+        "pkg": { "pacman": "clang llvm", "apt": "clang llvm", "dnf": "clang llvm-devel", "zypper": "clang llvm", "brew": "llvm" }
+    },
+    "cmake": {
+        "minVersion": "4.4.0",
+        "displayName": "CMake",
+        "docsUrl": "https://cmake.org/download/",
+        "pkg": { "pacman": "cmake", "apt": "cmake", "dnf": "cmake", "zypper": "cmake", "brew": "cmake" }
+    },
+    "ninja": {
+        "minVersion": "1.13.1",
+        "displayName": "Ninja",
+        "docsUrl": "https://github.com/ninja-build/ninja/releases",
+        "pkg": { "pacman": "ninja", "apt": "ninja-build", "dnf": "ninja-build", "zypper": "ninja", "brew": "ninja" }
+    },
+    "vcpkg": {
+        "minVersion": "26.06.24",
+        "displayName": "vcpkg (project-local, always fetches latest commit)",
+        "docsUrl": "https://learn.microsoft.com/vcpkg/get_started/overview",
+        "pkg": {}
+    },
+    "clangTidy": {
+        "minVersion": "22.1.8",
+        "displayName": "clang-tidy (LLVM linter / static analyzer)",
+        "docsUrl": "https://clang.llvm.org/extra/clang-tidy/",
+        "pkg": { "pacman": "clang", "apt": "clang-tidy", "dnf": "clang-tools-extra", "zypper": "clang-tools", "brew": "llvm" }
+    },
+    "clangFormat": {
+        "minVersion": "22.1.8",
+        "displayName": "clang-format (LLVM formatter)",
+        "docsUrl": "https://clang.llvm.org/docs/ClangFormat.html",
+        "pkg": { "pacman": "clang", "apt": "clang-format", "dnf": "clang-tools-extra", "zypper": "clang-tools", "brew": "llvm" }
+    },
+    "lldb": {
+        "minVersion": "22.1.8",
+        "displayName": "LLDB (LLVM debugger)",
+        "docsUrl": "https://lldb.llvm.org/",
+        "pkg": { "pacman": "lldb", "apt": "lldb", "dnf": "lldb", "zypper": "lldb", "brew": "llvm" },
+        "pythonPackages": ["six"]
+    },
+    "clippy": {
+        "minVersion": "0.1.0",
+        "displayName": "Clippy (rustup component)",
+        "docsUrl": "https://doc.rust-lang.org/clippy/",
+        "pkg": {}
+    },
+    "rustfmt": {
+        "minVersion": "1.7.0",
+        "displayName": "rustfmt (rustup component)",
+        "docsUrl": "https://github.com/rust-lang/rustfmt",
+        "pkg": {}
+    },
+    "mdbook": {
+        "minVersion": "0.4.40",
+        "displayName": "mdBook",
+        "docsUrl": "https://rust-lang.github.io/mdBook/",
+        "pkg": {}
+    },
+    "cbindgen": {
+        "minVersion": "0.28.0",
+        "displayName": "cbindgen (ffi header generator)",
+        "docsUrl": "https://github.com/mozilla/cbindgen",
+        "pkg": {}
+    },
+    "visualstudio": {
+        "minVersion": "17.0.0",
+        "displayName": "Visual Studio (MSVC + Windows SDK, Windows only)",
+        "docsUrl": "https://visualstudio.microsoft.com/downloads/",
+        "requiredComponents": [
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "Microsoft.VisualStudio.Component.Windows11SDK.26100"
+        ],
+        "pkg": {}
+    },
+    "gcc": {
+        "minVersion": "12.0.0",
+        "displayName": "GCC (primary Linux compiler)",
+        "docsUrl": "https://gcc.gnu.org/",
+        "pkg": { "pacman": "gcc", "apt": "build-essential", "dnf": "gcc gcc-c++", "zypper": "gcc gcc-c++" }
+    },
+    "gdb": {
+        "minVersion": "12.0.0",
+        "displayName": "GDB (Linux debugger)",
+        "docsUrl": "https://www.gnu.org/software/gdb/",
+        "pkg": { "pacman": "gdb", "apt": "gdb", "dnf": "gdb", "zypper": "gdb", "brew": "gdb" }
+    },
+    "autotools": {
+        "minVersion": "2.60",
+        "displayName": "Autotools (autoconf/automake/libtool, needed by vcpkg's autotools-based ports e.g. libb2)",
+        "docsUrl": "https://learn.microsoft.com/vcpkg/troubleshoot/build-failures",
+        "pkg": { "pacman": "autoconf autoconf-archive automake libtool", "apt": "autoconf autoconf-archive automake libtool", "dnf": "autoconf autoconf-archive automake libtool", "zypper": "autoconf autoconf-archive automake libtool", "brew": "autoconf autoconf-archive automake libtool" }
+    },
+    "cppcheck": {
+        "minVersion": "2.13.0",
+        "displayName": "cppcheck (static analyzer, alongside GCC's -fanalyzer)",
+        "docsUrl": "https://cppcheck.sourceforge.io/",
+        "pkg": { "pacman": "cppcheck", "apt": "cppcheck", "dnf": "cppcheck", "zypper": "cppcheck", "brew": "cppcheck" }
+    }
 }
