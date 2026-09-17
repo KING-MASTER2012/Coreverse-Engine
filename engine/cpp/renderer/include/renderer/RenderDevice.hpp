@@ -11,8 +11,7 @@
 #include "renderer/Surface.hpp"
 #include "renderer/Swapchain.hpp"
 
-namespace renderer
-{
+namespace renderer {
 
 /// Abstract, backend-agnostic handle to a graphics device. Concrete
 /// backends (VulkanRenderDevice, ...) own every API-specific resource
@@ -82,7 +81,8 @@ public:
     /// platform's fields are set (see NativeWindowHandle in Surface.hpp).
     /// The returned Surface must be destroyed before this device's
     /// Shutdown() runs — same ordering rule as Buffer.
-    [[nodiscard]] virtual std::expected<Surface, RenderError> CreateSurface(const NativeWindowHandle& handle) noexcept = 0;
+    [[nodiscard]] virtual std::expected<Surface, RenderError>
+    CreateSurface(const NativeWindowHandle& handle) noexcept = 0;
 
     /// Builds a swapchain on a previously created Surface, sized and
     /// formatted according to what that surface's capabilities actually
@@ -90,8 +90,8 @@ public:
     /// SwapchainDesc in Swapchain.hpp). The returned Swapchain must be
     /// destroyed before its Surface, and before this device's
     /// Shutdown() — same ordering rule as Buffer/Surface.
-    [[nodiscard]] virtual std::expected<Swapchain, RenderError> CreateSwapchain(const Surface& surface,
-                                                                                 const SwapchainDesc& desc) noexcept = 0;
+    [[nodiscard]] virtual std::expected<Swapchain, RenderError>
+    CreateSwapchain(const Surface& surface, const SwapchainDesc& desc) noexcept = 0;
 
     /// Borrows a command buffer from a pool this device owns. Unlike
     /// Create*() above, the returned CommandBuffer is not RAII-owned —
@@ -160,8 +160,8 @@ protected:
     /// Backs Swapchain::Acquire() — called only by Swapchain, never
     /// directly. `signalSemaphore` is nullable; see Swapchain::Acquire()
     /// for what nullptr means.
-    virtual std::expected<AcquireResult, RenderError> AcquireSwapchainImage(void* nativeHandle,
-                                                                             void* signalSemaphore) noexcept = 0;
+    virtual std::expected<AcquireResult, RenderError>
+    AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore) noexcept = 0;
 
     /// Backs Swapchain::Present() — called only by Swapchain, never
     /// directly.

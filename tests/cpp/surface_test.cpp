@@ -11,18 +11,16 @@
 #include "renderer/RenderDeviceFactory.hpp"
 
 #if defined(_WIN32)
-#include <windows.h>
+    #include <windows.h>
 #elif defined(__linux__)
-#include <X11/Xlib.h>
+    #include <X11/Xlib.h>
 #endif
 
-namespace
-{
+namespace {
 
 #if defined(_WIN32)
 
-struct DummyWindow
-{
+struct DummyWindow {
     HWND hwnd = nullptr;
 
     DummyWindow()
@@ -33,14 +31,25 @@ struct DummyWindow
         wc.lpszClassName = L"CoreVerseFaz53DummyWindow";
         RegisterClassW(&wc);
 
-        hwnd = CreateWindowExW(0, wc.lpszClassName, L"CoreVerse Faz 5.3", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
-                                CW_USEDEFAULT, 320, 240, nullptr, nullptr, wc.hInstance, nullptr);
+        hwnd = CreateWindowExW(
+            0,
+            wc.lpszClassName,
+            L"CoreVerse Faz 5.3",
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            320,
+            240,
+            nullptr,
+            nullptr,
+            wc.hInstance,
+            nullptr
+        );
     }
 
     ~DummyWindow()
     {
-        if (hwnd != nullptr)
-        {
+        if (hwnd != nullptr) {
             DestroyWindow(hwnd);
         }
     }
@@ -61,29 +70,34 @@ struct DummyWindow
 
 #elif defined(__linux__)
 
-struct DummyWindow
-{
+struct DummyWindow {
     Display* display = nullptr;
     Window window = 0;
 
     DummyWindow()
     {
         display = XOpenDisplay(nullptr);
-        if (display == nullptr)
-        {
+        if (display == nullptr) {
             return;
         }
         const int screen = DefaultScreen(display);
-        window = XCreateSimpleWindow(display, RootWindow(display, screen), 0, 0, 320, 240, 0,
-                                      BlackPixel(display, screen), WhitePixel(display, screen));
+        window = XCreateSimpleWindow(
+            display,
+            RootWindow(display, screen),
+            0,
+            0,
+            320,
+            240,
+            0,
+            BlackPixel(display, screen),
+            WhitePixel(display, screen)
+        );
     }
 
     ~DummyWindow()
     {
-        if (display != nullptr)
-        {
-            if (window != 0)
-            {
+        if (display != nullptr) {
+            if (window != 0) {
                 XDestroyWindow(display, window);
             }
             XCloseDisplay(display);
@@ -115,15 +129,13 @@ int main()
     return 1;
 #else
     DummyWindow window;
-    if (!window.IsValid())
-    {
+    if (!window.IsValid()) {
         std::fprintf(stderr, "failed to create dummy test window\n");
         return 1;
     }
 
     auto deviceResult = renderer::CreateRenderDevice(renderer::GraphicsAPI::Vulkan);
-    if (!deviceResult)
-    {
+    if (!deviceResult) {
         std::fprintf(stderr, "CreateRenderDevice failed: %s\n", deviceResult.error().detail.c_str());
         return 1;
     }
@@ -131,16 +143,14 @@ int main()
 
     {
         auto surfaceResult = device->CreateSurface(window.ToNativeHandle());
-        if (!surfaceResult)
-        {
+        if (!surfaceResult) {
             std::fprintf(stderr, "CreateSurface failed: %s\n", surfaceResult.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
 
         renderer::Surface surface = std::move(*surfaceResult);
-        if (!surface.IsValid())
-        {
+        if (!surface.IsValid()) {
             std::fprintf(stderr, "Surface round-trip produced an unexpected state\n");
             device->Shutdown();
             return 1;

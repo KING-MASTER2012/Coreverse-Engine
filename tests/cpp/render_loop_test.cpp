@@ -17,18 +17,16 @@
 #include "renderer/RenderDeviceFactory.hpp"
 
 #if defined(_WIN32)
-#include <windows.h>
+    #include <windows.h>
 #elif defined(__linux__)
-#include <X11/Xlib.h>
+    #include <X11/Xlib.h>
 #endif
 
-namespace
-{
+namespace {
 
 #if defined(_WIN32)
 
-struct DummyWindow
-{
+struct DummyWindow {
     HWND hwnd = nullptr;
 
     DummyWindow()
@@ -39,14 +37,25 @@ struct DummyWindow
         wc.lpszClassName = L"CoreVerseFaz55DummyWindow";
         RegisterClassW(&wc);
 
-        hwnd = CreateWindowExW(0, wc.lpszClassName, L"CoreVerse Faz 5.5", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
-                                CW_USEDEFAULT, 320, 240, nullptr, nullptr, wc.hInstance, nullptr);
+        hwnd = CreateWindowExW(
+            0,
+            wc.lpszClassName,
+            L"CoreVerse Faz 5.5",
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            320,
+            240,
+            nullptr,
+            nullptr,
+            wc.hInstance,
+            nullptr
+        );
     }
 
     ~DummyWindow()
     {
-        if (hwnd != nullptr)
-        {
+        if (hwnd != nullptr) {
             DestroyWindow(hwnd);
         }
     }
@@ -70,29 +79,34 @@ struct DummyWindow
 
 #elif defined(__linux__)
 
-struct DummyWindow
-{
+struct DummyWindow {
     Display* display = nullptr;
     Window window = 0;
 
     DummyWindow()
     {
         display = XOpenDisplay(nullptr);
-        if (display == nullptr)
-        {
+        if (display == nullptr) {
             return;
         }
         const int screen = DefaultScreen(display);
-        window = XCreateSimpleWindow(display, RootWindow(display, screen), 0, 0, 320, 240, 0,
-                                      BlackPixel(display, screen), WhitePixel(display, screen));
+        window = XCreateSimpleWindow(
+            display,
+            RootWindow(display, screen),
+            0,
+            0,
+            320,
+            240,
+            0,
+            BlackPixel(display, screen),
+            WhitePixel(display, screen)
+        );
     }
 
     ~DummyWindow()
     {
-        if (display != nullptr)
-        {
-            if (window != 0)
-            {
+        if (display != nullptr) {
+            if (window != 0) {
                 XDestroyWindow(display, window);
             }
             XCloseDisplay(display);
@@ -127,15 +141,13 @@ int main()
     return 1;
 #else
     DummyWindow window;
-    if (!window.IsValid())
-    {
+    if (!window.IsValid()) {
         std::fprintf(stderr, "failed to create dummy test window\n");
         return 1;
     }
 
     auto deviceResult = renderer::CreateRenderDevice(renderer::GraphicsAPI::Vulkan);
-    if (!deviceResult)
-    {
+    if (!deviceResult) {
         std::fprintf(stderr, "CreateRenderDevice failed: %s\n", deviceResult.error().detail.c_str());
         return 1;
     }
@@ -143,8 +155,7 @@ int main()
 
     {
         auto surfaceResult = device->CreateSurface(window.ToNativeHandle());
-        if (!surfaceResult)
-        {
+        if (!surfaceResult) {
             std::fprintf(stderr, "CreateSurface failed: %s\n", surfaceResult.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -157,8 +168,7 @@ int main()
         swapchainDesc.height = DummyWindow::height;
 
         auto swapchainResult = device->CreateSwapchain(surface, swapchainDesc);
-        if (!swapchainResult)
-        {
+        if (!swapchainResult) {
             std::fprintf(stderr, "CreateSwapchain failed: %s\n", swapchainResult.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -168,32 +178,28 @@ int main()
         // Synchronous acquire (no semaphore passed) — blocks until an
         // image is ready, same call shape Faz 5.4 already proved.
         auto acquireResult = swapchain.Acquire();
-        if (!acquireResult)
-        {
+        if (!acquireResult) {
             std::fprintf(stderr, "Acquire failed: %s\n", acquireResult.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
 
         void* imageHandle = swapchain.GetImageNativeHandle(acquireResult->imageIndex);
-        if (imageHandle == nullptr)
-        {
+        if (imageHandle == nullptr) {
             std::fprintf(stderr, "GetImageNativeHandle returned null for a just-acquired image\n");
             device->Shutdown();
             return 1;
         }
 
         auto commandBufferResult = device->AcquireCommandBuffer();
-        if (!commandBufferResult)
-        {
+        if (!commandBufferResult) {
             std::fprintf(stderr, "AcquireCommandBuffer failed: %s\n", commandBufferResult.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
         renderer::CommandBuffer commandBuffer = *commandBufferResult;
 
-        if (auto result = commandBuffer.Begin(); !result)
-        {
+        if (auto result = commandBuffer.Begin(); !result) {
             std::fprintf(stderr, "CommandBuffer::Begin failed: %s\n", result.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -202,22 +208,19 @@ int main()
         // CoreVerse's own accent color — an arbitrary but recognizable
         // solid fill, standing in for "the window showed something".
         constexpr renderer::ClearColor color{0.10f, 0.45f, 0.85f, 1.0f};
-        if (auto result = commandBuffer.ClearColor(imageHandle, color); !result)
-        {
+        if (auto result = commandBuffer.ClearColor(imageHandle, color); !result) {
             std::fprintf(stderr, "CommandBuffer::ClearColor failed: %s\n", result.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
 
-        if (auto result = commandBuffer.End(); !result)
-        {
+        if (auto result = commandBuffer.End(); !result) {
             std::fprintf(stderr, "CommandBuffer::End failed: %s\n", result.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
 
-        if (auto result = device->Submit(commandBuffer, nullptr, nullptr, nullptr); !result)
-        {
+        if (auto result = device->Submit(commandBuffer, nullptr, nullptr, nullptr); !result) {
             std::fprintf(stderr, "Submit failed: %s\n", result.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -228,8 +231,7 @@ int main()
         device->WaitIdle();
 
         auto presentResult = swapchain.Present(acquireResult->imageIndex);
-        if (!presentResult)
-        {
+        if (!presentResult) {
             std::fprintf(stderr, "Present failed: %s\n", presentResult.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -239,8 +241,12 @@ int main()
         // the swapchain/surface below.
         device->WaitIdle();
 
-        std::printf("cleared to (%.2f, %.2f, %.2f) and presented — window closing\n", static_cast<double>(color.r),
-                     static_cast<double>(color.g), static_cast<double>(color.b));
+        std::printf(
+            "cleared to (%.2f, %.2f, %.2f) and presented — window closing\n",
+            static_cast<double>(color.r),
+            static_cast<double>(color.g),
+            static_cast<double>(color.b)
+        );
 
         // `swapchain` destructs here (declared after `surface`), then
         // `surface` — matching the ordering rule RenderDevice.hpp

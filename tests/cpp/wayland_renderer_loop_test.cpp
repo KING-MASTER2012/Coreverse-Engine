@@ -21,29 +21,25 @@
 #include <cstring>
 #include <memory>
 #include <utility>
-
 #include <wayland-client.h>
 
 #include "renderer/RenderDeviceFactory.hpp"
 
-namespace
-{
+namespace {
 
-struct DummyWaylandWindow
-{
+struct DummyWaylandWindow {
     wl_display* display = nullptr;
     wl_registry* registry = nullptr;
     wl_compositor* compositor = nullptr;
     wl_surface* surface = nullptr;
 
-    static void RegistryGlobal(void* data, wl_registry* registry, uint32_t name, const char* interface,
-                                uint32_t /*version*/)
+    static void
+    RegistryGlobal(void* data, wl_registry* registry, uint32_t name, const char* interface, uint32_t /*version*/)
     {
         auto* self = static_cast<DummyWaylandWindow*>(data);
         // version 1 is enough for wl_compositor_create_surface(), the
         // only compositor entry point this dummy window needs.
-        if (std::strcmp(interface, wl_compositor_interface.name) == 0)
-        {
+        if (std::strcmp(interface, wl_compositor_interface.name) == 0) {
             self->compositor =
                 static_cast<wl_compositor*>(wl_registry_bind(registry, name, &wl_compositor_interface, 1));
         }
@@ -63,8 +59,7 @@ struct DummyWaylandWindow
         // scripts/run-with-weston-headless.sh sets to the socket name
         // of the throwaway compositor it just started.
         display = wl_display_connect(nullptr);
-        if (display == nullptr)
-        {
+        if (display == nullptr) {
             return;
         }
 
@@ -77,8 +72,7 @@ struct DummyWaylandWindow
         // handled by RegistryGlobal above) has been fully processed.
         wl_display_roundtrip(display);
 
-        if (compositor == nullptr)
-        {
+        if (compositor == nullptr) {
             return;
         }
         surface = wl_compositor_create_surface(compositor);
@@ -86,20 +80,16 @@ struct DummyWaylandWindow
 
     ~DummyWaylandWindow()
     {
-        if (surface != nullptr)
-        {
+        if (surface != nullptr) {
             wl_surface_destroy(surface);
         }
-        if (compositor != nullptr)
-        {
+        if (compositor != nullptr) {
             wl_compositor_destroy(compositor);
         }
-        if (registry != nullptr)
-        {
+        if (registry != nullptr) {
             wl_registry_destroy(registry);
         }
-        if (display != nullptr)
-        {
+        if (display != nullptr) {
             wl_display_disconnect(display);
         }
     }
@@ -131,16 +121,17 @@ struct DummyWaylandWindow
 int main()
 {
     DummyWaylandWindow window;
-    if (!window.IsValid())
-    {
-        std::fprintf(stderr, "failed to connect to a Wayland compositor / create a wl_surface "
-                             "(is WAYLAND_DISPLAY set to a running compositor?)\n");
+    if (!window.IsValid()) {
+        std::fprintf(
+            stderr,
+            "failed to connect to a Wayland compositor / create a wl_surface "
+            "(is WAYLAND_DISPLAY set to a running compositor?)\n"
+        );
         return 1;
     }
 
     auto deviceResult = renderer::CreateRenderDevice(renderer::GraphicsAPI::Vulkan);
-    if (!deviceResult)
-    {
+    if (!deviceResult) {
         std::fprintf(stderr, "CreateRenderDevice failed: %s\n", deviceResult.error().detail.c_str());
         return 1;
     }
@@ -148,8 +139,7 @@ int main()
 
     {
         auto surfaceResult = device->CreateSurface(window.ToNativeHandle());
-        if (!surfaceResult)
-        {
+        if (!surfaceResult) {
             std::fprintf(stderr, "CreateSurface failed: %s\n", surfaceResult.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -162,8 +152,7 @@ int main()
         swapchainDesc.height = DummyWaylandWindow::height;
 
         auto swapchainResult = device->CreateSwapchain(surface, swapchainDesc);
-        if (!swapchainResult)
-        {
+        if (!swapchainResult) {
             std::fprintf(stderr, "CreateSwapchain failed: %s\n", swapchainResult.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -171,32 +160,28 @@ int main()
         renderer::Swapchain swapchain = std::move(*swapchainResult);
 
         auto acquireResult = swapchain.Acquire();
-        if (!acquireResult)
-        {
+        if (!acquireResult) {
             std::fprintf(stderr, "Acquire failed: %s\n", acquireResult.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
 
         void* imageHandle = swapchain.GetImageNativeHandle(acquireResult->imageIndex);
-        if (imageHandle == nullptr)
-        {
+        if (imageHandle == nullptr) {
             std::fprintf(stderr, "GetImageNativeHandle returned null for a just-acquired image\n");
             device->Shutdown();
             return 1;
         }
 
         auto commandBufferResult = device->AcquireCommandBuffer();
-        if (!commandBufferResult)
-        {
+        if (!commandBufferResult) {
             std::fprintf(stderr, "AcquireCommandBuffer failed: %s\n", commandBufferResult.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
         renderer::CommandBuffer commandBuffer = *commandBufferResult;
 
-        if (auto result = commandBuffer.Begin(); !result)
-        {
+        if (auto result = commandBuffer.Begin(); !result) {
             std::fprintf(stderr, "CommandBuffer::Begin failed: %s\n", result.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -206,22 +191,19 @@ int main()
         // window — this test proves the same pipeline works, not a
         // different one, so there's no reason for it to look different.
         constexpr renderer::ClearColor color{0.10f, 0.45f, 0.85f, 1.0f};
-        if (auto result = commandBuffer.ClearColor(imageHandle, color); !result)
-        {
+        if (auto result = commandBuffer.ClearColor(imageHandle, color); !result) {
             std::fprintf(stderr, "CommandBuffer::ClearColor failed: %s\n", result.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
 
-        if (auto result = commandBuffer.End(); !result)
-        {
+        if (auto result = commandBuffer.End(); !result) {
             std::fprintf(stderr, "CommandBuffer::End failed: %s\n", result.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
 
-        if (auto result = device->Submit(commandBuffer, nullptr, nullptr, nullptr); !result)
-        {
+        if (auto result = device->Submit(commandBuffer, nullptr, nullptr, nullptr); !result) {
             std::fprintf(stderr, "Submit failed: %s\n", result.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -230,8 +212,7 @@ int main()
         device->WaitIdle();
 
         auto presentResult = swapchain.Present(acquireResult->imageIndex);
-        if (!presentResult)
-        {
+        if (!presentResult) {
             std::fprintf(stderr, "Present failed: %s\n", presentResult.error().detail.c_str());
             device->Shutdown();
             return 1;
@@ -239,8 +220,12 @@ int main()
 
         device->WaitIdle();
 
-        std::printf("cleared to (%.2f, %.2f, %.2f) and presented via Wayland — closing\n",
-                     static_cast<double>(color.r), static_cast<double>(color.g), static_cast<double>(color.b));
+        std::printf(
+            "cleared to (%.2f, %.2f, %.2f) and presented via Wayland — closing\n",
+            static_cast<double>(color.r),
+            static_cast<double>(color.g),
+            static_cast<double>(color.b)
+        );
 
         // `swapchain` destructs here (declared after `surface`), then
         // `surface` — same ordering rule as render_loop_test.cpp.

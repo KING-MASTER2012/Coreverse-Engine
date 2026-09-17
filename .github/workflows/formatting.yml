@@ -1,16 +1,34 @@
 name: Formatting
 
 on:
-  workflow_call:
+    workflow_call:
 
 jobs:
-  formatting:
-    runs-on: ubuntu-latest
+    formatting:
+        runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v5
+        steps:
+            - uses: actions/checkout@v5
 
-      - uses: dtolnay/rust-toolchain@stable
+            - uses: dtolnay/rust-toolchain@stable
 
-      - name: Rustfmt
-        run: cargo fmt --all -- --check
+            - name: Install Clang
+              run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy
+
+            - name: Rustfmt
+              run: cargo fmt --all -- --check
+
+            - name: Clang format
+              shell: bash
+              run: |
+                  set -euo pipefail
+
+                  find engine/cpp tests/cpp \
+                    -type f \
+                    \( -name '*.cpp' -o -name '*.cc' -o -name '*.cxx' \
+                    -o -name '*.h' -o -name '*.hpp' -o -name '*.hxx' \) \
+                    -print0 |
+                  while IFS= read -r -d '' file; do
+                    echo "Checking: $file"
+                    clang-format --dry-run --Werror "$file"
+                  done

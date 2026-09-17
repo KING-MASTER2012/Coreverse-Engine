@@ -16,11 +16,10 @@
 // defines plain macros (`None`, `Success`, ...) that collide with our
 // own enum members if those headers are parsed first — see Faz 5.3/5.4's
 // notes for the two we already hit.
-#include <volk.h>
 #include <vk_mem_alloc.h>
+#include <volk.h>
 
-namespace renderer::backend::vulkan
-{
+namespace renderer::backend::vulkan {
 
 /// Vulkan implementation of RenderDevice. Owns the VkInstance, the
 /// (optional) debug messenger, the selected VkPhysicalDevice, the
@@ -68,13 +67,14 @@ public:
 
     [[nodiscard]] std::expected<Surface, RenderError> CreateSurface(const NativeWindowHandle& handle) noexcept override;
 
-    [[nodiscard]] std::expected<Swapchain, RenderError> CreateSwapchain(const Surface& surface,
-                                                                         const SwapchainDesc& desc) noexcept override;
+    [[nodiscard]] std::expected<Swapchain, RenderError>
+    CreateSwapchain(const Surface& surface, const SwapchainDesc& desc) noexcept override;
 
     [[nodiscard]] std::expected<CommandBuffer, RenderError> AcquireCommandBuffer() noexcept override;
 
-    [[nodiscard]] std::expected<void, RenderError> Submit(const CommandBuffer& commandBuffer, void* waitSemaphore,
-                                                           void* signalSemaphore, void* fence) noexcept override;
+    [[nodiscard]] std::expected<void, RenderError> Submit(
+        const CommandBuffer& commandBuffer, void* waitSemaphore, void* signalSemaphore, void* fence
+    ) noexcept override;
 
     // --- Vulkan-specific escape hatch. Only reachable by a caller that
     // already checked GetAPI() == GraphicsAPI::Vulkan and downcast to
@@ -113,16 +113,16 @@ protected:
     void ReleaseBuffer(void* nativeHandle) noexcept override;
     void ReleaseSurface(void* nativeHandle) noexcept override;
     void ReleaseSwapchain(void* nativeHandle) noexcept override;
-    std::expected<AcquireResult, RenderError> AcquireSwapchainImage(void* nativeHandle,
-                                                                     void* signalSemaphore) noexcept override;
-    std::expected<SwapchainStatus, RenderError> PresentSwapchainImage(void* nativeHandle, std::uint32_t imageIndex,
-                                                                       void* waitSemaphore) noexcept override;
+    std::expected<AcquireResult, RenderError>
+    AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore) noexcept override;
+    std::expected<SwapchainStatus, RenderError>
+    PresentSwapchainImage(void* nativeHandle, std::uint32_t imageIndex, void* waitSemaphore) noexcept override;
     void* GetSwapchainImageHandle(void* swapchainNativeHandle, std::uint32_t index) noexcept override;
 
     std::expected<void, RenderError> BeginCommandBuffer(void* commandBufferHandle) noexcept override;
     std::expected<void, RenderError> EndCommandBuffer(void* commandBufferHandle) noexcept override;
-    std::expected<void, RenderError> RecordClearColor(void* commandBufferHandle, void* imageHandle,
-                                                       const ClearColor& color) noexcept override;
+    std::expected<void, RenderError>
+    RecordClearColor(void* commandBufferHandle, void* imageHandle, const ClearColor& color) noexcept override;
 
 private:
     [[nodiscard]] std::expected<void, RenderError> CreateInstance();

@@ -6,11 +6,9 @@
 #include <string>
 #include <vector>
 
-namespace renderer::backend::vulkan
-{
+namespace renderer::backend::vulkan {
 
-namespace
-{
+namespace {
 
 constexpr const char* kValidationLayerName = "VK_LAYER_KHRONOS_validation";
 
@@ -18,8 +16,7 @@ constexpr const char* kValidationLayerName = "VK_LAYER_KHRONOS_validation";
 /// stores a backend-agnostic void*, so this is what that void* actually
 /// points at for the Vulkan backend; only CreateBuffer/ReleaseBuffer
 /// (this file) ever interpret it.
-struct VulkanBufferHandle
-{
+struct VulkanBufferHandle {
     VkBuffer buffer;
     VmaAllocation allocation;
 };
@@ -30,8 +27,7 @@ struct VulkanBufferHandle
 /// the Vulkan backend; only CreateSwapchain/ReleaseSwapchain/
 /// AcquireSwapchainImage/PresentSwapchainImage (this file) ever
 /// interpret it.
-struct VulkanSwapchainHandle
-{
+struct VulkanSwapchainHandle {
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat format = VK_FORMAT_UNDEFINED;
     VkExtent2D extent{};
@@ -39,16 +35,17 @@ struct VulkanSwapchainHandle
     std::vector<VkImageView> imageViews;
 };
 
-VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-                                                       VkDebugUtilsMessageTypeFlagsEXT /*messageType*/,
-                                                       const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
-                                                       void* /*userData*/)
+VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT /*messageType*/,
+    const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
+    void* /*userData*/
+)
 {
     // Faz 5.1/5.2 only need validation output to land somewhere visible
     // so leak/misuse checks aren't silent; this gets routed through
     // cv-log once the renderer is wired to ffi (later phase).
-    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-    {
+    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
         std::fprintf(stderr, "[vulkan] %s\n", callbackData->pMessage);
     }
     return VK_FALSE;
@@ -71,10 +68,8 @@ bool VulkanRenderDevice::ValidationLayersRequestedAndSupported()
     std::vector<VkLayerProperties> layers(layerCount);
     vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
 
-    for (const auto& layer : layers)
-    {
-        if (std::strcmp(layer.layerName, kValidationLayerName) == 0)
-        {
+    for (const auto& layer : layers) {
+        if (std::strcmp(layer.layerName, kValidationLayerName) == 0) {
             return true;
         }
     }
@@ -87,43 +82,38 @@ bool VulkanRenderDevice::ValidationLayersRequestedAndSupported()
 
 std::expected<void, RenderError> VulkanRenderDevice::Initialize()
 {
-    if (const VkResult volkResult = volkInitialize(); volkResult != VK_SUCCESS)
-    {
+    if (const VkResult volkResult = volkInitialize(); volkResult != VK_SUCCESS) {
         return std::unexpected(
-            RenderError{RenderErrorCode::InitializationFailed,
-                        "volkInitialize failed (VkResult=" + std::to_string(volkResult) + ")"});
+            RenderError{
+                RenderErrorCode::InitializationFailed,
+                "volkInitialize failed (VkResult=" + std::to_string(volkResult) + ")"
+            }
+        );
     }
 
-    if (auto result = CreateInstance(); !result)
-    {
+    if (auto result = CreateInstance(); !result) {
         return result;
     }
 
-    if (m_validationEnabled)
-    {
-        if (auto result = SetupDebugMessenger(); !result)
-        {
+    if (m_validationEnabled) {
+        if (auto result = SetupDebugMessenger(); !result) {
             return result;
         }
     }
 
-    if (auto result = SelectPhysicalDevice(); !result)
-    {
+    if (auto result = SelectPhysicalDevice(); !result) {
         return result;
     }
 
-    if (auto result = CreateLogicalDeviceAndQueues(); !result)
-    {
+    if (auto result = CreateLogicalDeviceAndQueues(); !result) {
         return result;
     }
 
-    if (auto result = CreateAllocator(); !result)
-    {
+    if (auto result = CreateAllocator(); !result) {
         return result;
     }
 
-    if (auto result = CreateCommandPool(); !result)
-    {
+    if (auto result = CreateCommandPool(); !result) {
         return result;
     }
 
@@ -161,21 +151,19 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateInstance()
 #elif defined(__APPLE__)
     extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
 #elif defined(__linux__)
-#if defined(VK_USE_PLATFORM_XLIB_KHR)
+    #if defined(VK_USE_PLATFORM_XLIB_KHR)
     extensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
-#endif
-#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+    #endif
+    #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
     extensions.push_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+    #endif
 #endif
-#endif
-    if (m_validationEnabled)
-    {
+    if (m_validationEnabled) {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
     std::vector<const char*> layers;
-    if (m_validationEnabled)
-    {
+    if (m_validationEnabled) {
         layers.push_back(kValidationLayerName);
     }
 
@@ -187,10 +175,13 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateInstance()
     createInfo.enabledLayerCount = static_cast<uint32_t>(layers.size());
     createInfo.ppEnabledLayerNames = layers.data();
 
-    if (const VkResult result = vkCreateInstance(&createInfo, nullptr, &m_instance); result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
-                                            "vkCreateInstance failed (VkResult=" + std::to_string(result) + ")"});
+    if (const VkResult result = vkCreateInstance(&createInfo, nullptr, &m_instance); result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::InitializationFailed,
+                "vkCreateInstance failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
     }
 
     volkLoadInstance(m_instance);
@@ -204,18 +195,18 @@ std::expected<void, RenderError> VulkanRenderDevice::SetupDebugMessenger()
     createInfo.messageSeverity =
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                              VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.pfnUserCallback = DebugMessengerCallback;
 
     // volk loads extension entry points (incl. vkCreateDebugUtilsMessengerEXT)
     // automatically once volkLoadInstance() ran with the extension enabled —
     // no manual vkGetInstanceProcAddr lookup needed.
     if (const VkResult result = vkCreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_debugMessenger);
-        result != VK_SUCCESS)
-    {
+        result != VK_SUCCESS) {
         return std::unexpected(
-            RenderError{RenderErrorCode::InitializationFailed, "vkCreateDebugUtilsMessengerEXT failed"});
+            RenderError{RenderErrorCode::InitializationFailed, "vkCreateDebugUtilsMessengerEXT failed"}
+        );
     }
     return {};
 }
@@ -224,10 +215,10 @@ std::expected<void, RenderError> VulkanRenderDevice::SelectPhysicalDevice()
 {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
-    if (deviceCount == 0)
-    {
+    if (deviceCount == 0) {
         return std::unexpected(
-            RenderError{RenderErrorCode::NoSuitableDevice, "No Vulkan-capable physical devices found"});
+            RenderError{RenderErrorCode::NoSuitableDevice, "No Vulkan-capable physical devices found"}
+        );
     }
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
@@ -237,26 +228,22 @@ std::expected<void, RenderError> VulkanRenderDevice::SelectPhysicalDevice()
     // (integrated GPU, software rasterizer, ...) rather than failing —
     // Faz 5 just needs *a* working device, not the best one.
     VkPhysicalDevice fallback = VK_NULL_HANDLE;
-    for (VkPhysicalDevice candidate : devices)
-    {
+    for (VkPhysicalDevice candidate : devices) {
         VkPhysicalDeviceProperties props{};
         vkGetPhysicalDeviceProperties(candidate, &props);
 
-        if (fallback == VK_NULL_HANDLE)
-        {
+        if (fallback == VK_NULL_HANDLE) {
             fallback = candidate;
         }
 
-        if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
-        {
+        if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             m_physicalDevice = candidate;
             m_deviceName = props.deviceName;
             break;
         }
     }
 
-    if (m_physicalDevice == VK_NULL_HANDLE)
-    {
+    if (m_physicalDevice == VK_NULL_HANDLE) {
         m_physicalDevice = fallback;
         VkPhysicalDeviceProperties props{};
         vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
@@ -268,19 +255,17 @@ std::expected<void, RenderError> VulkanRenderDevice::SelectPhysicalDevice()
     std::vector<VkQueueFamilyProperties> families(familyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &familyCount, families.data());
 
-    for (uint32_t i = 0; i < familyCount; ++i)
-    {
-        if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
-        {
+    for (uint32_t i = 0; i < familyCount; ++i) {
+        if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             m_graphicsQueueFamily = i;
             break;
         }
     }
 
-    if (m_graphicsQueueFamily == UINT32_MAX)
-    {
+    if (m_graphicsQueueFamily == UINT32_MAX) {
         return std::unexpected(
-            RenderError{RenderErrorCode::NoSuitableDevice, "Selected device has no graphics-capable queue family"});
+            RenderError{RenderErrorCode::NoSuitableDevice, "Selected device has no graphics-capable queue family"}
+        );
     }
 
     return {};
@@ -313,18 +298,19 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateLogicalDeviceAndQueue
     // has covered everything since Vulkan 1.1) but harmless to set for
     // older loaders that might still be present — cheap to keep.
     std::vector<const char*> layers;
-    if (m_validationEnabled)
-    {
+    if (m_validationEnabled) {
         layers.push_back(kValidationLayerName);
     }
     deviceCreateInfo.enabledLayerCount = static_cast<uint32_t>(layers.size());
     deviceCreateInfo.ppEnabledLayerNames = layers.data();
 
     if (const VkResult result = vkCreateDevice(m_physicalDevice, &deviceCreateInfo, nullptr, &m_device);
-        result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
-                                            "vkCreateDevice failed (VkResult=" + std::to_string(result) + ")"});
+        result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::InitializationFailed, "vkCreateDevice failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
     }
 
     volkLoadDevice(m_device);
@@ -351,10 +337,13 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateAllocator()
     allocatorInfo.instance = m_instance;
     allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 
-    if (const VkResult result = vmaCreateAllocator(&allocatorInfo, &m_allocator); result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
-                                            "vmaCreateAllocator failed (VkResult=" + std::to_string(result) + ")"});
+    if (const VkResult result = vmaCreateAllocator(&allocatorInfo, &m_allocator); result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::InitializationFailed,
+                "vmaCreateAllocator failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
     }
     return {};
 }
@@ -371,40 +360,37 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateCommandPool()
     poolInfo.queueFamilyIndex = m_graphicsQueueFamily;
 
     if (const VkResult result = vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool);
-        result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
-                                            "vkCreateCommandPool failed (VkResult=" + std::to_string(result) + ")"});
+        result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::InitializationFailed,
+                "vkCreateCommandPool failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
     }
     return {};
 }
 
 std::expected<Buffer, RenderError> VulkanRenderDevice::CreateBuffer(const BufferDesc& desc) noexcept
 {
-    if (desc.size == 0)
-    {
+    if (desc.size == 0) {
         return std::unexpected(RenderError{RenderErrorCode::InitializationFailed, "Buffer size must be non-zero"});
     }
 
     VkBufferUsageFlags usageFlags = 0;
-    if (HasFlag(desc.usage, BufferUsage::VertexBuffer))
-    {
+    if (HasFlag(desc.usage, BufferUsage::VertexBuffer)) {
         usageFlags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     }
-    if (HasFlag(desc.usage, BufferUsage::IndexBuffer))
-    {
+    if (HasFlag(desc.usage, BufferUsage::IndexBuffer)) {
         usageFlags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     }
-    if (HasFlag(desc.usage, BufferUsage::UniformBuffer))
-    {
+    if (HasFlag(desc.usage, BufferUsage::UniformBuffer)) {
         usageFlags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     }
-    if (HasFlag(desc.usage, BufferUsage::TransferSrc))
-    {
+    if (HasFlag(desc.usage, BufferUsage::TransferSrc)) {
         usageFlags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     }
-    if (HasFlag(desc.usage, BufferUsage::TransferDst))
-    {
+    if (HasFlag(desc.usage, BufferUsage::TransferDst)) {
         usageFlags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     }
 
@@ -415,28 +401,29 @@ std::expected<Buffer, RenderError> VulkanRenderDevice::CreateBuffer(const Buffer
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VmaAllocationCreateInfo allocInfo{};
-    switch (desc.memoryUsage)
-    {
-    case BufferMemoryUsage::GpuOnly:
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-        break;
-    case BufferMemoryUsage::CpuToGpu:
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-        allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-        break;
-    case BufferMemoryUsage::GpuToCpu:
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-        allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
-        break;
+    switch (desc.memoryUsage) {
+        case BufferMemoryUsage::GpuOnly:
+            allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+            break;
+        case BufferMemoryUsage::CpuToGpu:
+            allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+            break;
+        case BufferMemoryUsage::GpuToCpu:
+            allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+            break;
     }
 
     VkBuffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
     if (const VkResult result = vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
-        result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::OutOfMemory,
-                                            "vmaCreateBuffer failed (VkResult=" + std::to_string(result) + ")"});
+        result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::OutOfMemory, "vmaCreateBuffer failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
     }
 
     // Buffer only stores a backend-agnostic void*; this heap-allocated
@@ -448,8 +435,7 @@ std::expected<Buffer, RenderError> VulkanRenderDevice::CreateBuffer(const Buffer
 
 void VulkanRenderDevice::ReleaseBuffer(void* nativeHandle) noexcept
 {
-    if (nativeHandle == nullptr)
-    {
+    if (nativeHandle == nullptr) {
         return;
     }
     auto* handle = static_cast<VulkanBufferHandle*>(nativeHandle);
@@ -463,8 +449,7 @@ std::expected<Surface, RenderError> VulkanRenderDevice::CreateSurface(const Nati
     VkResult result = VK_ERROR_EXTENSION_NOT_PRESENT;
 
 #if defined(_WIN32)
-    if (handle.hwnd != nullptr)
-    {
+    if (handle.hwnd != nullptr) {
         VkWin32SurfaceCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
         createInfo.hinstance = static_cast<HINSTANCE>(handle.hinstance);
@@ -472,8 +457,7 @@ std::expected<Surface, RenderError> VulkanRenderDevice::CreateSurface(const Nati
         result = vkCreateWin32SurfaceKHR(m_instance, &createInfo, nullptr, &surface);
     }
 #elif defined(__APPLE__)
-    if (handle.metalLayer != nullptr)
-    {
+    if (handle.metalLayer != nullptr) {
         VkMetalSurfaceCreateInfoEXT createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
         createInfo.pLayer = static_cast<const CAMetalLayer*>(handle.metalLayer);
@@ -486,9 +470,8 @@ std::expected<Surface, RenderError> VulkanRenderDevice::CreateSurface(const Nati
     // to Wayland only if Xlib didn't handle it (either because it isn't
     // compiled in, or because the caller left xlibDisplay null).
     bool handled = false;
-#if defined(VK_USE_PLATFORM_XLIB_KHR)
-    if (!handled && handle.xlibDisplay != nullptr)
-    {
+    #if defined(VK_USE_PLATFORM_XLIB_KHR)
+    if (!handled && handle.xlibDisplay != nullptr) {
         VkXlibSurfaceCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
         createInfo.dpy = static_cast<Display*>(handle.xlibDisplay);
@@ -496,15 +479,14 @@ std::expected<Surface, RenderError> VulkanRenderDevice::CreateSurface(const Nati
         result = vkCreateXlibSurfaceKHR(m_instance, &createInfo, nullptr, &surface);
         handled = true;
     }
-#endif
-#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+    #endif
+    #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
     // struct wl_display/wl_surface are forward-declared by
     // vulkan_wayland.h itself (see the CMakeLists.txt comment above) —
     // we never dereference them, only hand the pointers Qt/the caller
     // gave us straight to the Vulkan WSI extension, so no
     // wayland-client header is needed here either.
-    if (!handled && handle.waylandDisplay != nullptr)
-    {
+    if (!handled && handle.waylandDisplay != nullptr) {
         VkWaylandSurfaceCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
         createInfo.display = static_cast<struct wl_display*>(handle.waylandDisplay);
@@ -512,13 +494,16 @@ std::expected<Surface, RenderError> VulkanRenderDevice::CreateSurface(const Nati
         result = vkCreateWaylandSurfaceKHR(m_instance, &createInfo, nullptr, &surface);
         handled = true;
     }
-#endif
+    #endif
 #endif
 
-    if (result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
-                                            "surface creation failed (VkResult=" + std::to_string(result) + ")"});
+    if (result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::InitializationFailed,
+                "surface creation failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
     }
 
     return RenderDevice::MakeSurface(this, surface);
@@ -526,20 +511,19 @@ std::expected<Surface, RenderError> VulkanRenderDevice::CreateSurface(const Nati
 
 void VulkanRenderDevice::ReleaseSurface(void* nativeHandle) noexcept
 {
-    if (nativeHandle == nullptr)
-    {
+    if (nativeHandle == nullptr) {
         return;
     }
     vkDestroySurfaceKHR(m_instance, static_cast<VkSurfaceKHR>(nativeHandle), nullptr);
 }
 
-std::expected<Swapchain, RenderError> VulkanRenderDevice::CreateSwapchain(const Surface& surface,
-                                                                           const SwapchainDesc& desc) noexcept
+std::expected<Swapchain, RenderError>
+VulkanRenderDevice::CreateSwapchain(const Surface& surface, const SwapchainDesc& desc) noexcept
 {
-    if (!surface.IsValid())
-    {
+    if (!surface.IsValid()) {
         return std::unexpected(
-            RenderError{RenderErrorCode::InitializationFailed, "CreateSwapchain called with an invalid Surface"});
+            RenderError{RenderErrorCode::InitializationFailed, "CreateSwapchain called with an invalid Surface"}
+        );
     }
     const auto vkSurface = static_cast<VkSurfaceKHR>(surface.GetNativeHandle());
 
@@ -549,36 +533,35 @@ std::expected<Swapchain, RenderError> VulkanRenderDevice::CreateSwapchain(const 
     // to this surface makes the whole swapchain unusable, so this fails
     // loudly here rather than at some confusing point later.
     VkBool32 presentSupported = VK_FALSE;
-    if (const VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, m_graphicsQueueFamily,
-                                                                      vkSurface, &presentSupported);
-        result != VK_SUCCESS || presentSupported == VK_FALSE)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::NoSuitableDevice,
-                                            "graphics queue family does not support presenting to this surface"});
+    if (const VkResult result =
+            vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, m_graphicsQueueFamily, vkSurface, &presentSupported);
+        result != VK_SUCCESS || presentSupported == VK_FALSE) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::NoSuitableDevice, "graphics queue family does not support presenting to this surface"
+            }
+        );
     }
 
     VkSurfaceCapabilitiesKHR capabilities{};
     if (const VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, vkSurface, &capabilities);
-        result != VK_SUCCESS)
-    {
+        result != VK_SUCCESS) {
         return std::unexpected(
-            RenderError{RenderErrorCode::InitializationFailed, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed"});
+            RenderError{RenderErrorCode::InitializationFailed, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed"}
+        );
     }
 
     uint32_t formatCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, vkSurface, &formatCount, nullptr);
-    if (formatCount == 0)
-    {
+    if (formatCount == 0) {
         return std::unexpected(RenderError{RenderErrorCode::NoSuitableDevice, "surface exposes no formats"});
     }
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, vkSurface, &formatCount, formats.data());
 
     VkSurfaceFormatKHR chosenFormat = formats[0];
-    for (const VkSurfaceFormatKHR& candidate : formats)
-    {
-        if (candidate.format == VK_FORMAT_B8G8R8A8_SRGB && candidate.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-        {
+    for (const VkSurfaceFormatKHR& candidate : formats) {
+        if (candidate.format == VK_FORMAT_B8G8R8A8_SRGB && candidate.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             chosenFormat = candidate;
             break;
         }
@@ -593,33 +576,25 @@ std::expected<Swapchain, RenderError> VulkanRenderDevice::CreateSwapchain(const 
     // support (VK_PRESENT_MODE_FIFO_KHR); prefer MAILBOX (low-latency,
     // no tearing) when it's actually available.
     VkPresentModeKHR chosenPresentMode = VK_PRESENT_MODE_FIFO_KHR;
-    for (VkPresentModeKHR mode : presentModes)
-    {
-        if (mode == VK_PRESENT_MODE_MAILBOX_KHR)
-        {
+    for (VkPresentModeKHR mode : presentModes) {
+        if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
             chosenPresentMode = mode;
             break;
         }
     }
 
     VkExtent2D extent{};
-    if (capabilities.currentExtent.width != UINT32_MAX)
-    {
+    if (capabilities.currentExtent.width != UINT32_MAX) {
         // The surface dictates its own extent (the common case for a
         // real window) — desc.width/height are ignored in favor of it.
         extent = capabilities.currentExtent;
-    }
-    else
-    {
-        extent.width =
-            std::clamp(desc.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-        extent.height =
-            std::clamp(desc.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+    } else {
+        extent.width = std::clamp(desc.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+        extent.height = std::clamp(desc.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
     }
 
     uint32_t imageCount = std::max(desc.preferredImageCount, capabilities.minImageCount);
-    if (capabilities.maxImageCount > 0)
-    {
+    if (capabilities.maxImageCount > 0) {
         imageCount = std::min(imageCount, capabilities.maxImageCount);
     }
 
@@ -645,10 +620,13 @@ std::expected<Swapchain, RenderError> VulkanRenderDevice::CreateSwapchain(const 
 
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     if (const VkResult result = vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &swapchain);
-        result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
-                                            "vkCreateSwapchainKHR failed (VkResult=" + std::to_string(result) + ")"});
+        result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::InitializationFailed,
+                "vkCreateSwapchainKHR failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
     }
 
     uint32_t actualImageCount = 0;
@@ -657,15 +635,18 @@ std::expected<Swapchain, RenderError> VulkanRenderDevice::CreateSwapchain(const 
     vkGetSwapchainImagesKHR(m_device, swapchain, &actualImageCount, images.data());
 
     std::vector<VkImageView> imageViews(actualImageCount, VK_NULL_HANDLE);
-    for (uint32_t i = 0; i < actualImageCount; ++i)
-    {
+    for (uint32_t i = 0; i < actualImageCount; ++i) {
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = images[i];
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.format = chosenFormat.format;
-        viewInfo.components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-                                VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
+        viewInfo.components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY
+        };
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         viewInfo.subresourceRange.baseMipLevel = 0;
         viewInfo.subresourceRange.levelCount = 1;
@@ -673,50 +654,46 @@ std::expected<Swapchain, RenderError> VulkanRenderDevice::CreateSwapchain(const 
         viewInfo.subresourceRange.layerCount = 1;
 
         if (const VkResult result = vkCreateImageView(m_device, &viewInfo, nullptr, &imageViews[i]);
-            result != VK_SUCCESS)
-        {
+            result != VK_SUCCESS) {
             // Roll back everything already created before bailing —
             // this is still inside CreateSwapchain(), so nothing has
             // been handed to the caller yet for them to release.
-            for (uint32_t created = 0; created < i; ++created)
-            {
+            for (uint32_t created = 0; created < i; ++created) {
                 vkDestroyImageView(m_device, imageViews[created], nullptr);
             }
             vkDestroySwapchainKHR(m_device, swapchain, nullptr);
             return std::unexpected(
-                RenderError{RenderErrorCode::InitializationFailed, "vkCreateImageView failed for a swapchain image"});
+                RenderError{RenderErrorCode::InitializationFailed, "vkCreateImageView failed for a swapchain image"}
+            );
         }
     }
 
-    auto* handle = new VulkanSwapchainHandle{swapchain, chosenFormat.format, extent, std::move(images),
-                                              std::move(imageViews)};
+    auto* handle =
+        new VulkanSwapchainHandle{swapchain, chosenFormat.format, extent, std::move(images), std::move(imageViews)};
     return RenderDevice::MakeSwapchain(this, handle, actualImageCount);
 }
 
 void VulkanRenderDevice::ReleaseSwapchain(void* nativeHandle) noexcept
 {
-    if (nativeHandle == nullptr)
-    {
+    if (nativeHandle == nullptr) {
         return;
     }
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
-    for (VkImageView view : handle->imageViews)
-    {
+    for (VkImageView view : handle->imageViews) {
         vkDestroyImageView(m_device, view, nullptr);
     }
     vkDestroySwapchainKHR(m_device, handle->swapchain, nullptr);
     delete handle;
 }
 
-std::expected<AcquireResult, RenderError> VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle,
-                                                                                     void* signalSemaphore) noexcept
+std::expected<AcquireResult, RenderError>
+VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore) noexcept
 {
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
     const auto semaphore = static_cast<VkSemaphore>(signalSemaphore);
 
     VkFence fence = VK_NULL_HANDLE;
-    if (semaphore == VK_NULL_HANDLE)
-    {
+    if (semaphore == VK_NULL_HANDLE) {
         // No semaphore for the GPU to signal into — fall back to a
         // fence and wait on it ourselves, so this call stays usable
         // stand-alone (Faz 5.4's test still calls it exactly this way).
@@ -724,8 +701,7 @@ std::expected<AcquireResult, RenderError> VulkanRenderDevice::AcquireSwapchainIm
         // valid; this is the "no real submission pipeline yet" path.
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        if (const VkResult result = vkCreateFence(m_device, &fenceInfo, nullptr, &fence); result != VK_SUCCESS)
-        {
+        if (const VkResult result = vkCreateFence(m_device, &fenceInfo, nullptr, &fence); result != VK_SUCCESS) {
             return std::unexpected(RenderError{RenderErrorCode::InitializationFailed, "vkCreateFence failed"});
         }
     }
@@ -734,26 +710,27 @@ std::expected<AcquireResult, RenderError> VulkanRenderDevice::AcquireSwapchainIm
     const VkResult acquireResult =
         vkAcquireNextImageKHR(m_device, handle->swapchain, UINT64_MAX, semaphore, fence, &imageIndex);
 
-    if (fence != VK_NULL_HANDLE)
-    {
-        if (acquireResult == VK_SUCCESS || acquireResult == VK_SUBOPTIMAL_KHR)
-        {
+    if (fence != VK_NULL_HANDLE) {
+        if (acquireResult == VK_SUCCESS || acquireResult == VK_SUBOPTIMAL_KHR) {
             vkWaitForFences(m_device, 1, &fence, VK_TRUE, UINT64_MAX);
         }
         vkDestroyFence(m_device, fence, nullptr);
     }
 
-    switch (acquireResult)
-    {
-    case VK_SUCCESS:
-        return AcquireResult{imageIndex, SwapchainStatus::Ok};
-    case VK_SUBOPTIMAL_KHR:
-        return AcquireResult{imageIndex, SwapchainStatus::Suboptimal};
-    case VK_ERROR_OUT_OF_DATE_KHR:
-        return AcquireResult{0, SwapchainStatus::OutOfDate};
-    default:
-        return std::unexpected(RenderError{RenderErrorCode::Unknown, "vkAcquireNextImageKHR failed (VkResult=" +
-                                                                          std::to_string(acquireResult) + ")"});
+    switch (acquireResult) {
+        case VK_SUCCESS:
+            return AcquireResult{imageIndex, SwapchainStatus::Ok};
+        case VK_SUBOPTIMAL_KHR:
+            return AcquireResult{imageIndex, SwapchainStatus::Suboptimal};
+        case VK_ERROR_OUT_OF_DATE_KHR:
+            return AcquireResult{0, SwapchainStatus::OutOfDate};
+        default:
+            return std::unexpected(
+                RenderError{
+                    RenderErrorCode::Unknown,
+                    "vkAcquireNextImageKHR failed (VkResult=" + std::to_string(acquireResult) + ")"
+                }
+            );
     }
 }
 
@@ -765,8 +742,7 @@ VulkanRenderDevice::PresentSwapchainImage(void* nativeHandle, std::uint32_t imag
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    if (semaphore != VK_NULL_HANDLE)
-    {
+    if (semaphore != VK_NULL_HANDLE) {
         presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = &semaphore;
     }
@@ -775,25 +751,26 @@ VulkanRenderDevice::PresentSwapchainImage(void* nativeHandle, std::uint32_t imag
     presentInfo.pImageIndices = &imageIndex;
 
     const VkResult result = vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
-    switch (result)
-    {
-    case VK_SUCCESS:
-        return SwapchainStatus::Ok;
-    case VK_SUBOPTIMAL_KHR:
-        return SwapchainStatus::Suboptimal;
-    case VK_ERROR_OUT_OF_DATE_KHR:
-        return SwapchainStatus::OutOfDate;
-    default:
-        return std::unexpected(
-            RenderError{RenderErrorCode::Unknown, "vkQueuePresentKHR failed (VkResult=" + std::to_string(result) + ")"});
+    switch (result) {
+        case VK_SUCCESS:
+            return SwapchainStatus::Ok;
+        case VK_SUBOPTIMAL_KHR:
+            return SwapchainStatus::Suboptimal;
+        case VK_ERROR_OUT_OF_DATE_KHR:
+            return SwapchainStatus::OutOfDate;
+        default:
+            return std::unexpected(
+                RenderError{
+                    RenderErrorCode::Unknown, "vkQueuePresentKHR failed (VkResult=" + std::to_string(result) + ")"
+                }
+            );
     }
 }
 
 void* VulkanRenderDevice::GetSwapchainImageHandle(void* swapchainNativeHandle, std::uint32_t index) noexcept
 {
     auto* handle = static_cast<VulkanSwapchainHandle*>(swapchainNativeHandle);
-    if (index >= handle->images.size())
-    {
+    if (index >= handle->images.size()) {
         return nullptr;
     }
     // VkImage is itself a non-dispatchable handle (a pointer on 64-bit
@@ -812,12 +789,13 @@ std::expected<CommandBuffer, RenderError> VulkanRenderDevice::AcquireCommandBuff
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-    if (const VkResult result = vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer);
-        result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed,
-                                            "vkAllocateCommandBuffers failed (VkResult=" + std::to_string(result) +
-                                                ")"});
+    if (const VkResult result = vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer); result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::InitializationFailed,
+                "vkAllocateCommandBuffers failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
     }
 
     // Borrowed, not owned (CommandBuffer.hpp) — the pool it came from
@@ -834,10 +812,12 @@ std::expected<void, RenderError> VulkanRenderDevice::BeginCommandBuffer(void* co
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    if (const VkResult result = vkBeginCommandBuffer(commandBuffer, &beginInfo); result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::Unknown,
-                                            "vkBeginCommandBuffer failed (VkResult=" + std::to_string(result) + ")"});
+    if (const VkResult result = vkBeginCommandBuffer(commandBuffer, &beginInfo); result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::Unknown, "vkBeginCommandBuffer failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
     }
     return {};
 }
@@ -846,16 +826,16 @@ std::expected<void, RenderError> VulkanRenderDevice::EndCommandBuffer(void* comm
 {
     const auto commandBuffer = static_cast<VkCommandBuffer>(commandBufferHandle);
 
-    if (const VkResult result = vkEndCommandBuffer(commandBuffer); result != VK_SUCCESS)
-    {
-        return std::unexpected(RenderError{RenderErrorCode::Unknown,
-                                            "vkEndCommandBuffer failed (VkResult=" + std::to_string(result) + ")"});
+    if (const VkResult result = vkEndCommandBuffer(commandBuffer); result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::Unknown, "vkEndCommandBuffer failed (VkResult=" + std::to_string(result) + ")"}
+        );
     }
     return {};
 }
 
-std::expected<void, RenderError> VulkanRenderDevice::RecordClearColor(void* commandBufferHandle, void* imageHandle,
-                                                                       const ClearColor& color) noexcept
+std::expected<void, RenderError>
+VulkanRenderDevice::RecordClearColor(void* commandBufferHandle, void* imageHandle, const ClearColor& color) noexcept
 {
     const auto commandBuffer = static_cast<VkCommandBuffer>(commandBufferHandle);
     const auto image = static_cast<VkImage>(imageHandle);
@@ -884,8 +864,18 @@ std::expected<void, RenderError> VulkanRenderDevice::RecordClearColor(void* comm
     toTransferDst.srcAccessMask = 0;
     toTransferDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                          nullptr, 0, nullptr, 1, &toTransferDst);
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &toTransferDst
+    );
 
     VkClearColorValue clearValue{};
     clearValue.float32[0] = color.r;
@@ -906,14 +896,25 @@ std::expected<void, RenderError> VulkanRenderDevice::RecordClearColor(void* comm
     toPresent.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     toPresent.dstAccessMask = 0;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
-                          nullptr, 0, nullptr, 1, &toPresent);
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &toPresent
+    );
 
     return {};
 }
 
-std::expected<void, RenderError> VulkanRenderDevice::Submit(const CommandBuffer& commandBuffer, void* waitSemaphore,
-                                                             void* signalSemaphore, void* fence) noexcept
+std::expected<void, RenderError> VulkanRenderDevice::Submit(
+    const CommandBuffer& commandBuffer, void* waitSemaphore, void* signalSemaphore, void* fence
+) noexcept
 {
     const auto vkCommandBuffer = static_cast<VkCommandBuffer>(commandBuffer.GetNativeHandle());
     const auto wait = static_cast<VkSemaphore>(waitSemaphore);
@@ -929,30 +930,27 @@ std::expected<void, RenderError> VulkanRenderDevice::Submit(const CommandBuffer&
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &vkCommandBuffer;
-    if (wait != VK_NULL_HANDLE)
-    {
+    if (wait != VK_NULL_HANDLE) {
         submitInfo.waitSemaphoreCount = 1;
         submitInfo.pWaitSemaphores = &wait;
         submitInfo.pWaitDstStageMask = &waitStage;
     }
-    if (signal != VK_NULL_HANDLE)
-    {
+    if (signal != VK_NULL_HANDLE) {
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = &signal;
     }
 
-    if (const VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, vkFence); result != VK_SUCCESS)
-    {
+    if (const VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, vkFence); result != VK_SUCCESS) {
         return std::unexpected(
-            RenderError{RenderErrorCode::Unknown, "vkQueueSubmit failed (VkResult=" + std::to_string(result) + ")"});
+            RenderError{RenderErrorCode::Unknown, "vkQueueSubmit failed (VkResult=" + std::to_string(result) + ")"}
+        );
     }
     return {};
 }
 
 void VulkanRenderDevice::WaitIdle() noexcept
 {
-    if (m_device != VK_NULL_HANDLE)
-    {
+    if (m_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_device);
     }
 }
@@ -964,35 +962,30 @@ void VulkanRenderDevice::Shutdown() noexcept
     // anything down — matches WaitIdle()'s own contract.
     WaitIdle();
 
-    if (m_commandPool != VK_NULL_HANDLE)
-    {
+    if (m_commandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(m_device, m_commandPool, nullptr);
         m_commandPool = VK_NULL_HANDLE;
     }
 
     // Allocator must be torn down before the VkDevice it wraps — it
     // still needs a valid device to free any memory it holds.
-    if (m_allocator != VK_NULL_HANDLE)
-    {
+    if (m_allocator != VK_NULL_HANDLE) {
         vmaDestroyAllocator(m_allocator);
         m_allocator = VK_NULL_HANDLE;
     }
 
-    if (m_device != VK_NULL_HANDLE)
-    {
+    if (m_device != VK_NULL_HANDLE) {
         vkDestroyDevice(m_device, nullptr);
         m_device = VK_NULL_HANDLE;
         m_graphicsQueue = VK_NULL_HANDLE;
     }
 
-    if (m_debugMessenger != VK_NULL_HANDLE)
-    {
+    if (m_debugMessenger != VK_NULL_HANDLE) {
         vkDestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
         m_debugMessenger = VK_NULL_HANDLE;
     }
 
-    if (m_instance != VK_NULL_HANDLE)
-    {
+    if (m_instance != VK_NULL_HANDLE) {
         vkDestroyInstance(m_instance, nullptr);
         m_instance = VK_NULL_HANDLE;
     }

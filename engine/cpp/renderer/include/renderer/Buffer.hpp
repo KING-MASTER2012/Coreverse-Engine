@@ -3,8 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace renderer
-{
+namespace renderer {
 
 class RenderDevice;
 
@@ -12,14 +11,13 @@ class RenderDevice;
 /// handful of uses every backend supports the same way — anything more
 /// exotic goes through the escape hatch on the concrete RenderDevice,
 /// not through this enum (see RenderDevice.hpp's class comment).
-enum class BufferUsage : std::uint32_t
-{
-    None          = 0,
-    VertexBuffer  = 1u << 0,
-    IndexBuffer   = 1u << 1,
+enum class BufferUsage : std::uint32_t {
+    None = 0,
+    VertexBuffer = 1u << 0,
+    IndexBuffer = 1u << 1,
     UniformBuffer = 1u << 2,
-    TransferSrc   = 1u << 3,
-    TransferDst   = 1u << 4,
+    TransferSrc = 1u << 3,
+    TransferDst = 1u << 4,
 };
 
 constexpr BufferUsage operator|(BufferUsage lhs, BufferUsage rhs) noexcept
@@ -36,15 +34,13 @@ constexpr bool HasFlag(BufferUsage value, BufferUsage flag) noexcept
 /// to read fastest (CPU writes would go through a staging buffer, not
 /// modeled yet), or made host-visible for direct CPU access in one
 /// direction or the other.
-enum class BufferMemoryUsage
-{
+enum class BufferMemoryUsage {
     GpuOnly,
     CpuToGpu, ///< Host-visible, optimized for sequential CPU writes (uploads).
     GpuToCpu, ///< Host-visible, optimized for CPU reads (readback).
 };
 
-struct BufferDesc
-{
+struct BufferDesc {
     std::size_t size = 0;
     BufferUsage usage = BufferUsage::None;
     BufferMemoryUsage memoryUsage = BufferMemoryUsage::GpuOnly;
@@ -94,11 +90,8 @@ private:
     friend class RenderDevice;
 
     Buffer(RenderDevice* device, void* nativeHandle, std::size_t size) noexcept
-        : m_device(device)
-        , m_nativeHandle(nativeHandle)
-        , m_size(size)
-    {
-    }
+        : m_device(device), m_nativeHandle(nativeHandle), m_size(size)
+    {}
 
     void Release() noexcept;
 

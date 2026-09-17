@@ -4,15 +4,13 @@
 
 #include "renderer/RenderError.hpp"
 
-namespace renderer
-{
+namespace renderer {
 
 class RenderDevice;
 
 /// A color to clear to; components are linear [0,1] regardless of the
 /// swapchain's actual pixel format — the backend converts as needed.
-struct ClearColor
-{
+struct ClearColor {
     float r = 0.0f;
     float g = 0.0f;
     float b = 0.0f;
@@ -62,11 +60,7 @@ public:
 private:
     friend class RenderDevice;
 
-    CommandBuffer(RenderDevice* device, void* nativeHandle) noexcept
-        : m_device(device)
-        , m_nativeHandle(nativeHandle)
-    {
-    }
+    CommandBuffer(RenderDevice* device, void* nativeHandle) noexcept : m_device(device), m_nativeHandle(nativeHandle) {}
 
     RenderDevice* m_device = nullptr;
     void* m_nativeHandle = nullptr;

@@ -11,8 +11,7 @@
 int main()
 {
     char* info = ffi_build_info_string();
-    if (info == nullptr)
-    {
+    if (info == nullptr) {
         std::fprintf(stderr, "ffi_build_info_string() returned null\n");
         return 1;
     }

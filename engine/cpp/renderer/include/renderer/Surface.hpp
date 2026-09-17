@@ -2,8 +2,7 @@
 
 #include <cstddef>
 
-namespace renderer
-{
+namespace renderer {
 
 class RenderDevice;
 
@@ -16,8 +15,7 @@ class RenderDevice;
 /// or a dummy test window here in Faz 5.3) fills in exactly the fields
 /// its platform has — there is nothing else to abstract here without
 /// adding a layer that would just be unwrapped again one line later.
-struct NativeWindowHandle
-{
+struct NativeWindowHandle {
 #if defined(_WIN32)
     void* hinstance = nullptr; ///< HINSTANCE
     void* hwnd = nullptr;      ///< HWND
@@ -26,8 +24,8 @@ struct NativeWindowHandle
 #elif defined(__linux__)
     // Both are optional; a caller fills in whichever windowing system
     // it's actually using (X11 vs Wayland) and leaves the other null.
-    void* xlibDisplay = nullptr; ///< Display*
-    unsigned long xlibWindow = 0; ///< Window (Xlib)
+    void* xlibDisplay = nullptr;    ///< Display*
+    unsigned long xlibWindow = 0;   ///< Window (Xlib)
     void* waylandDisplay = nullptr; ///< wl_display*
     void* waylandSurface = nullptr; ///< wl_surface*
 #endif
@@ -68,11 +66,7 @@ public:
 private:
     friend class RenderDevice;
 
-    Surface(RenderDevice* device, void* nativeHandle) noexcept
-        : m_device(device)
-        , m_nativeHandle(nativeHandle)
-    {
-    }
+    Surface(RenderDevice* device, void* nativeHandle) noexcept : m_device(device), m_nativeHandle(nativeHandle) {}
 
     void Release() noexcept;
 

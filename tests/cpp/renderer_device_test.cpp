@@ -11,8 +11,7 @@
 int main()
 {
     auto result = renderer::CreateRenderDevice(renderer::GraphicsAPI::Vulkan);
-    if (!result)
-    {
+    if (!result) {
         std::fprintf(stderr, "CreateRenderDevice failed: %s\n", result.error().detail.c_str());
         return 1;
     }

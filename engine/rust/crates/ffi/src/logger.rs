@@ -85,7 +85,9 @@ pub unsafe extern "C" fn ffi_logger_shutdown(logger: *mut Logger) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_logger_add_console_sink(logger: *mut Logger) -> bool {
     // SAFETY: caller guarantees `logger` is a live Logger.
-    unsafe { &*logger }.inner().add_sink(Box::new(ConsoleSink::new()));
+    unsafe { &*logger }
+        .inner()
+        .add_sink(Box::new(ConsoleSink::new()));
     true
 }
 

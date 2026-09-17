@@ -5,8 +5,7 @@
 
 #include "renderer/RenderError.hpp"
 
-namespace renderer
-{
+namespace renderer {
 
 class RenderDevice;
 
@@ -15,21 +14,18 @@ class RenderDevice;
 /// out-of-date (e.g. after a window resize) is routine, and callers
 /// handle it very differently from an initialization failure — they
 /// rebuild the swapchain and retry, not propagate/log/abort.
-enum class SwapchainStatus
-{
+enum class SwapchainStatus {
     Ok,
     Suboptimal, ///< Still presentable, but should be rebuilt soon.
     OutOfDate,  ///< Must be rebuilt before acquiring/presenting again.
 };
 
-struct AcquireResult
-{
+struct AcquireResult {
     std::uint32_t imageIndex = 0;
     SwapchainStatus status = SwapchainStatus::Ok;
 };
 
-struct SwapchainDesc
-{
+struct SwapchainDesc {
     std::uint32_t preferredImageCount = 2; ///< Hint only; the backend clamps to what the surface actually supports.
     std::uint32_t width = 0;
     std::uint32_t height = 0;
@@ -85,8 +81,8 @@ public:
     /// rendering has been wired up (Faz 5.4) — Faz 5.5's render loop is
     /// expected to pass a real one obtained through the backend's own
     /// escape hatch (see RenderDevice.hpp's class comment).
-    [[nodiscard]] std::expected<SwapchainStatus, RenderError> Present(std::uint32_t imageIndex,
-                                                                       void* waitSemaphore = nullptr) noexcept;
+    [[nodiscard]] std::expected<SwapchainStatus, RenderError>
+    Present(std::uint32_t imageIndex, void* waitSemaphore = nullptr) noexcept;
 
     /// Backend-owned opaque resource pointer — same escape-hatch
     /// contract as Buffer::GetNativeHandle() (see Buffer.hpp).
@@ -107,11 +103,8 @@ private:
     friend class RenderDevice;
 
     Swapchain(RenderDevice* device, void* nativeHandle, std::uint32_t imageCount) noexcept
-        : m_device(device)
-        , m_nativeHandle(nativeHandle)
-        , m_imageCount(imageCount)
-    {
-    }
+        : m_device(device), m_nativeHandle(nativeHandle), m_imageCount(imageCount)
+    {}
 
     void Release() noexcept;
 

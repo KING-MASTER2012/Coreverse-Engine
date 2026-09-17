@@ -16,8 +16,7 @@
 int main()
 {
     auto deviceResult = renderer::CreateRenderDevice(renderer::GraphicsAPI::Vulkan);
-    if (!deviceResult)
-    {
+    if (!deviceResult) {
         std::fprintf(stderr, "CreateRenderDevice failed: %s\n", deviceResult.error().detail.c_str());
         return 1;
     }
@@ -30,16 +29,14 @@ int main()
 
     {
         auto bufferResult = device->CreateBuffer(desc);
-        if (!bufferResult)
-        {
+        if (!bufferResult) {
             std::fprintf(stderr, "CreateBuffer failed: %s\n", bufferResult.error().detail.c_str());
             device->Shutdown();
             return 1;
         }
 
         renderer::Buffer buffer = std::move(*bufferResult);
-        if (!buffer.IsValid() || buffer.GetSize() != desc.size)
-        {
+        if (!buffer.IsValid() || buffer.GetSize() != desc.size) {
             std::fprintf(stderr, "Buffer round-trip produced an unexpected state\n");
             device->Shutdown();
             return 1;
@@ -49,8 +46,7 @@ int main()
         // itself invalid so its (no-op) destructor doesn't try to
         // release anything a second time.
         renderer::Buffer moved = std::move(buffer);
-        if (buffer.IsValid())
-        {
+        if (buffer.IsValid()) {
             std::fprintf(stderr, "Moved-from Buffer still reports valid\n");
             device->Shutdown();
             return 1;
