@@ -26,11 +26,45 @@
 //!    `ffi_free_*` function; never let C++ call `free()` on
 //!    Rust-allocated memory or `Box`/`CString` free on C++-allocated
 //!    memory — the allocators are not guaranteed to be the same one.
+//!
+//! ## Null-pointer contract
+//! Across this whole crate, only the functions documented as destroying
+//! or freeing something (`ffi_free_string`, `ffi_logger_destroy`,
+//! `ffi_diagnostic_builder_destroy`, ...) treat a null pointer as a
+//! no-op. Every other function requires a valid, non-null pointer for
+//! any handle/owned-resource argument it takes — passing null there is
+//! undefined behavior, not a recoverable error. (A `const T*` argument
+//! that stands for `Option<T>`, like `DiagnosticBuilder`'s optional
+//! `line`, is the one exception: there, null legitimately means "no
+//! value" rather than misuse — see `diagnostic::ffi_diagnostic_builder_set_line`.)
+//!
+//! ## Opaque handles
+//! `logger::Logger` and `diagnostic::DiagnosticBuilder` are C ABI opaque
+//! handles: `Box::into_raw`/`Box::from_raw` pairs wrapping a real,
+//! documented Rust type (`log_sinks::Logger`, `log_core::DiagnosticBuilder`).
+//! Each wraps its inner type in a locally-defined struct instead of
+//! re-exporting the inner crate's type directly, so cbindgen forward-declares
+//! it as an opaque C struct without needing `parse.parse_deps` (this
+//! crate's `cbindgen.toml` doesn't set it) to see into `log-sinks`/`log-core`.
+//! C++ only ever holds the pointer; it never inspects the layout.
+//!
+//! This is also the pattern for any *stateful* type crossing the
+//! boundary; `ffi_build_info_string` below predates it and stays a
+//! stateless string return because `BuildInfo` has no state to own.
 
 #![allow(
     unsafe_code,
     reason = "this crate is the project's designated unsafe FFI boundary; see module docs"
 )]
+
+/// `Logger` opaque handle: lifecycle, sink registration, severity
+/// threshold. See the module docs for the full function list.
+pub mod logger;
+
+/// `DiagnosticBuilder` opaque handle: construction, field setters,
+/// emit — plus runtime producer registration. See the module docs for
+/// the full function list.
+pub mod diagnostic;
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;

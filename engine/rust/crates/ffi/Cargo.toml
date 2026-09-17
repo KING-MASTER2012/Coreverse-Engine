@@ -12,6 +12,8 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 ccore = { path = "../ccore" }
+log-core = { path = "../log-core" }
+log-sinks = { path = "../log-sinks" }
 
 [lints]
 workspace = true

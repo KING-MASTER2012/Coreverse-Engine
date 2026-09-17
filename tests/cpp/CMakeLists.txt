@@ -6,6 +6,15 @@ link_ffi(ffi_smoke_test)
 
 add_test(NAME ffi_smoke_test COMMAND ffi_smoke_test)
 
+# Faz 7a proof: log-core/log-sinks FFI surface -- opaque Logger and
+# DiagnosticBuilder handles, console + file sinks, runtime producer
+# registration.
+add_executable(ffi_logger_test ffi_logger_test.cpp)
+target_link_libraries(ffi_logger_test PRIVATE compiler_warnings)
+link_ffi(ffi_logger_test)
+
+add_test(NAME ffi_logger_test COMMAND ffi_logger_test)
+
 # Faz 5.1 proof: RenderDevice abstraction -> VulkanRenderDevice bring-up
 # (instance/device/queues), selected device name logged, clean teardown.
 add_executable(renderer_device_test renderer_device_test.cpp)

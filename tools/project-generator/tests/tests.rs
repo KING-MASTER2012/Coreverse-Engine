@@ -8,5 +8,5 @@ fn test_project() {
     let options = generator::ProjectOptions::new("MyProject")
         .with_description("A space adventure game")
         .with_author("Alex");
-    generator::generate(Utf8Path::new("D:/"), &options).unwrap();
+    generator::generate(Utf8Path::new("/home"), &options).unwrap();
 }
