@@ -46,6 +46,18 @@ target_link_libraries(renderer
 target_compile_definitions(renderer
         PRIVATE
         RENDERER_HAS_VULKAN_BACKEND
+        # Defined here (compile definition) rather than relied upon via
+        # include order: volk.h itself only defines this *after* its own
+        # "was <vulkan/vulkan.h> already included?" check, so anything
+        # that pulls in the full umbrella header ahead of volk.h in any
+        # translation unit of this target -- directly or transitively,
+        # now or in a future file -- would otherwise hit
+        # "you need to define VK_NO_PROTOTYPES before including
+        # vulkan.h". A compile-line definition applies before the very
+        # first header in every TU, so this holds regardless of include
+        # order. See VmaImpl.cpp's comment for the (now secondary,
+        # belt-and-suspenders) same-file ordering.
+        VK_NO_PROTOTYPES
         $<$<CONFIG:Debug>:RENDERER_ENABLE_VALIDATION>
 )
 
