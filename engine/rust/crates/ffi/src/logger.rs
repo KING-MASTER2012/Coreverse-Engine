@@ -89,7 +89,9 @@ pub unsafe extern "C" fn ffi_logger_add_console_sink(logger: *mut Logger) -> boo
     // over `Box::new(ConsoleSink::new())` is what clippy::box_default
     // wants here; same sink either way.
     // SAFETY: caller guarantees `logger` is a live Logger.
-    unsafe { &*logger }.inner().add_sink(Box::<ConsoleSink>::default());
+    unsafe { &*logger }
+        .inner()
+        .add_sink(Box::<ConsoleSink>::default());
     true
 }
 
