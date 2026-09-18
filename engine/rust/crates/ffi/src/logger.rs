@@ -84,10 +84,12 @@ pub unsafe extern "C" fn ffi_logger_shutdown(logger: *mut Logger) {
 /// [`ffi_logger_create`] and not yet passed to [`ffi_logger_destroy`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_logger_add_console_sink(logger: *mut Logger) -> bool {
+    // `ConsoleSink::new()` and `ConsoleSink::default()` are identical
+    // (see log-sinks/src/console.rs) -- `Box::<ConsoleSink>::default()`
+    // over `Box::new(ConsoleSink::new())` is what clippy::box_default
+    // wants here; same sink either way.
     // SAFETY: caller guarantees `logger` is a live Logger.
-    unsafe { &*logger }
-        .inner()
-        .add_sink(Box::new(ConsoleSink::new()));
+    unsafe { &*logger }.inner().add_sink(Box::<ConsoleSink>::default());
     true
 }
 
