@@ -34,3 +34,26 @@ pub enum VfsError {
     #[error("vfs context not initialized - call VfsContext::init() first")]
     NotInitialized,
 }
+
+impl VfsError {
+    /// Stable numeric code for this error variant, for callers (like the
+    /// `ffi` crate) that need to hand the failure reason across an ABI
+    /// boundary without cloning/matching the full error. Payload fields
+    /// (which `Root`, which path, the underlying `io::Error`) are not
+    /// encoded here — use `Display`/`to_string()` (already provided via
+    /// `thiserror`) for a full human-readable message instead. One-way
+    /// only (no `from_u8`): callers never construct a `VfsError`
+    /// themselves, only read a code back after a call failed.
+    pub fn code(&self) -> u8 {
+        match self {
+            VfsError::RootNotRegistered(_) => 0,
+            VfsError::NotFound { .. } => 1,
+            VfsError::ReadOnlyBackend(_) => 2,
+            VfsError::Io { .. } => 3,
+            VfsError::InvalidPath(_) => 4,
+            VfsError::CorruptArchive(_) => 5,
+            VfsError::AlreadyInitialized => 6,
+            VfsError::NotInitialized => 7,
+        }
+    }
+}

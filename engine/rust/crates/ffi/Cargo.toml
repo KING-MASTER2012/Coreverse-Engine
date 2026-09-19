@@ -14,6 +14,12 @@ crate-type = ["staticlib", "rlib"]
 ccore = { path = "../ccore" }
 log-core = { path = "../log-core" }
 log-sinks = { path = "../log-sinks" }
+# Renamed on import: this crate's own `vfs` FFI module (src/vfs.rs)
+# would otherwise collide with the external crate's name inside that
+# same module (`use vfs::Foo;` inside `mod vfs { ... }` is ambiguous —
+# see vfs.rs's module docs).
+vfs-crate = { package = "vfs", path = "../vfs" }
+camino.workspace = true
 
 [lints]
 workspace = true

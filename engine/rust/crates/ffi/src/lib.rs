@@ -66,6 +66,13 @@ pub mod logger;
 /// the full function list.
 pub mod diagnostic;
 
+/// VFS FFI surface: process-wide init plus core read/exists/write
+/// operations against the global `vfs::VfsContext`. No opaque handle —
+/// see the module docs for why, and for its own last-error convention
+/// (distinct from this crate's other two modules, since VFS operations
+/// have a real `enum`'s worth of distinct failure reasons).
+pub mod vfs;
+
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 

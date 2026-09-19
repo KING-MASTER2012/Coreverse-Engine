@@ -15,6 +15,15 @@ link_ffi(ffi_logger_test)
 
 add_test(NAME ffi_logger_test COMMAND ffi_logger_test)
 
+# Faz 7b proof: vfs FFI surface -- ffi_vfs_init() plus
+# read_bytes/read_to_string/write_bytes/exists against the global
+# VfsContext, and the thread-local last-error mechanism.
+add_executable(ffi_vfs_test ffi_vfs_test.cpp)
+target_link_libraries(ffi_vfs_test PRIVATE compiler_warnings)
+link_ffi(ffi_vfs_test)
+
+add_test(NAME ffi_vfs_test COMMAND ffi_vfs_test)
+
 # Faz 5.1 proof: RenderDevice abstraction -> VulkanRenderDevice bring-up
 # (instance/device/queues), selected device name logged, clean teardown.
 add_executable(renderer_device_test renderer_device_test.cpp)

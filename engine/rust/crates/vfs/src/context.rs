@@ -18,6 +18,28 @@ pub enum VfsMode {
     Release,
 }
 
+impl VfsMode {
+    /// Stable numeric id for this mode, for callers (like the `ffi`
+    /// crate) that need to pass it across an ABI boundary. Mirrors
+    /// `log_core::Severity::as_u8` / `root::Root::as_u8`.
+    pub fn as_u8(self) -> u8 {
+        match self {
+            VfsMode::Development => 0,
+            VfsMode::Release => 1,
+        }
+    }
+
+    /// Inverse of [`Self::as_u8`]. Returns `None` for any byte other
+    /// than `0` or `1`.
+    pub fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(VfsMode::Development),
+            1 => Some(VfsMode::Release),
+            _ => None,
+        }
+    }
+}
+
 /// The single global entry point into the VFS. Call [`VfsContext::init`]
 /// once at startup (before any [`crate::file_manager`] call), then reach it
 /// from anywhere via [`VfsContext::global`].
