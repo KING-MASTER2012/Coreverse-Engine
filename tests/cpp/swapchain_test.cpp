@@ -1,9 +1,9 @@
-// Faz 5.4 proof: RenderDevice::CreateSwapchain() builds a swapchain
+// Phase 5.4 proof: RenderDevice::CreateSwapchain() builds a swapchain
 // sized/formatted from the real Surface's capabilities, the image
 // count it actually got is logged, and everything tears down cleanly
 // — entirely through the RenderDevice/Surface/Swapchain abstraction.
 // Also exercises Acquire() once, since it's a self-contained call this
-// milestone can already validate; Present() is left for Faz 5.5, once
+// milestone can already validate; Present() is left for Phase 5.5, once
 // there is an actual rendered image to present (presenting an
 // untouched image now would just trip validation for no reason).
 
@@ -31,13 +31,13 @@ struct DummyWindow {
         WNDCLASSW wc{};
         wc.lpfnWndProc = DefWindowProcW;
         wc.hInstance = GetModuleHandleW(nullptr);
-        wc.lpszClassName = L"CoreVerseFaz54DummyWindow";
+        wc.lpszClassName = L"CoreverseFaz54DummyWindow";
         RegisterClassW(&wc);
 
         hwnd = CreateWindowExW(
             0,
             wc.lpszClassName,
-            L"CoreVerse Faz 5.4",
+            L"Coreverse Phase 5.4",
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,

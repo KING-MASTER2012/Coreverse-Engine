@@ -14,7 +14,7 @@
 // Included after our own headers on purpose: on Linux, VK_USE_PLATFORM_XLIB_KHR
 // pulls in <X11/Xlib.h> transitively through <vulkan/vulkan.h>, and X11
 // defines plain macros (`None`, `Success`, ...) that collide with our
-// own enum members if those headers are parsed first — see Faz 5.3/5.4's
+// own enum members if those headers are parsed first — see Phase 5.3/5.4's
 // notes for the two we already hit.
 #include <vk_mem_alloc.h>
 #include <volk.h>
@@ -24,7 +24,7 @@ namespace renderer::backend::vulkan {
 /// Vulkan implementation of RenderDevice. Owns the VkInstance, the
 /// (optional) debug messenger, the selected VkPhysicalDevice, the
 /// VkDevice, the graphics queue pulled from it, the VMA allocator used
-/// to back every buffer this device creates, and (Faz 5.5) the command
+/// to back every buffer this device creates, and (Phase 5.5) the command
 /// pool CommandBuffers are borrowed from.
 ///
 /// This header lives under src/, not include/renderer/ — it is never

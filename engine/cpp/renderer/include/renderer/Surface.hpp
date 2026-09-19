@@ -12,7 +12,7 @@ class RenderDevice;
 /// windowing/Vulkan WSI extension already expects (Win32's HWND +
 /// HINSTANCE, Xlib's Display*/Window, Wayland's wl_display*/wl_surface*);
 /// only one branch is compiled per platform. The caller (Qt editor,
-/// or a dummy test window here in Faz 5.3) fills in exactly the fields
+/// or a dummy test window here in Phase 5.3) fills in exactly the fields
 /// its platform has — there is nothing else to abstract here without
 /// adding a layer that would just be unwrapped again one line later.
 struct NativeWindowHandle {

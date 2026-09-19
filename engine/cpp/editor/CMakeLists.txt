@@ -1,13 +1,13 @@
 # editor: Qt6 executable.
 #
-# Faz 6.1 brings up a bare QApplication + QMainWindow and proves the
+# Phase 6.1 brings up a bare QApplication + QMainWindow and proves the
 # Qt6/CMake/FFI chain end to end (window title comes from a real
 # ffi_build_info_string() call) — deliberately WITHOUT linking
 # `renderer` yet. That's on purpose: it isolates failure domains one
 # at a time (Qt/CMake -> native window bridge -> FFI -> Vulkan
 # surface) instead of debugging all four together. renderer::renderer
-# is added starting Faz 6.3, once the native-window handle bridge
-# (Faz 6.2) exists.
+# is added starting Phase 6.3, once the native-window handle bridge
+# (Phase 6.2) exists.
 #
 # Qt6 is a system install, not a vcpkg dependency — CMAKE_PREFIX_PATH
 # is wired to $env{QT6_DIR} in the base CMakePresets.json preset, so

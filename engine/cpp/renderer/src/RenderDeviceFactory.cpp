@@ -29,7 +29,7 @@ std::expected<std::unique_ptr<RenderDevice>, RenderError> CreateRenderDevice(Gra
         // Declared in GraphicsAPI now so RenderDeviceFactory's switch shape
         // doesn't change later — each of these gains a
         // `#if defined(RENDERER_HAS_<API>_BACKEND)` arm identical to
-        // Vulkan's above once that backend actually exists (Faz 5 only
+        // Vulkan's above once that backend actually exists (Phase 5 only
         // implements Vulkan).
         case GraphicsAPI::OpenGL:
         case GraphicsAPI::Metal:

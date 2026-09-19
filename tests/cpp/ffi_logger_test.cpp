@@ -1,4 +1,4 @@
-// Faz 7a proof: the log-core/log-sinks FFI surface -- opaque Logger and
+// Phase 7a proof: the log-core/log-sinks FFI surface -- opaque Logger and
 // DiagnosticBuilder handles, console + file sinks, runtime producer
 // registration. Three independent checks:
 //   1. ffi_producer_register() -- ABI link + duplicate-code rejection.

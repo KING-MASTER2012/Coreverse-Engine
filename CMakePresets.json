@@ -18,6 +18,7 @@
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "VCPKG_MANIFEST_MODE": "ON",
                 "VCPKG_MANIFEST_DIR": "${sourceDir}",
+                "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
                 "BUILD_TESTS": "ON"
             }
         },
@@ -279,6 +280,179 @@
             "displayName": "Windows x64 Release (MSVC, Static CRT)",
             "configurePreset": "windows-x64-static",
             "configuration": "Release"
+        }
+    ],
+
+    "testPresets": [
+        {
+            "name": "test-base",
+            "hidden": true,
+            "description": "Shared ctest settings: print output of failing tests, and treat 'no tests found' as an error so a misconfigured BUILD_TESTS can't produce a silently green run.",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error"
+            }
+        },
+
+        {
+            "name": "filter-no-gpu",
+            "hidden": true,
+            "description": "Skips tests labelled 'gpu' (they need a Vulkan device/ICD and, for surface tests, a display server). See tests/cpp/CMakeLists.txt.",
+            "filter": {
+                "exclude": {
+                    "label": "gpu"
+                }
+            }
+        },
+
+        {
+            "name": "windows-msvc-debug",
+            "displayName": "Windows x64 Debug (MSVC)",
+            "inherits": "test-base",
+            "configurePreset": "windows-x64",
+            "configuration": "Debug"
+        },
+
+        {
+            "name": "windows-msvc-release",
+            "displayName": "Windows x64 Release (MSVC)",
+            "inherits": "test-base",
+            "configurePreset": "windows-x64",
+            "configuration": "Release"
+        },
+
+        {
+            "name": "windows-clang-debug",
+            "displayName": "Windows x64 Debug (Clang)",
+            "inherits": "test-base",
+            "configurePreset": "windows-x64-clang",
+            "configuration": "Debug"
+        },
+
+        {
+            "name": "windows-clang-release",
+            "displayName": "Windows x64 Release (Clang)",
+            "inherits": "test-base",
+            "configurePreset": "windows-x64-clang",
+            "configuration": "Release"
+        },
+
+        {
+            "name": "windows-clang-gnu-debug",
+            "displayName": "Windows x64 Debug (Clang GNU)",
+            "inherits": "test-base",
+            "configurePreset": "windows-x64-clang-gnu",
+            "configuration": "Debug"
+        },
+
+        {
+            "name": "windows-clang-gnu-release",
+            "displayName": "Windows x64 Release (Clang GNU)",
+            "inherits": "test-base",
+            "configurePreset": "windows-x64-clang-gnu",
+            "configuration": "Release"
+        },
+
+        {
+            "name": "linux-gcc-debug",
+            "displayName": "Linux x64 Debug (GCC)",
+            "inherits": "test-base",
+            "configurePreset": "linux-x64-gcc",
+            "configuration": "Debug"
+        },
+
+        {
+            "name": "linux-gcc-release",
+            "displayName": "Linux x64 Release (GCC)",
+            "inherits": "test-base",
+            "configurePreset": "linux-x64-gcc",
+            "configuration": "Release"
+        },
+
+        {
+            "name": "linux-clang-debug",
+            "displayName": "Linux x64 Debug (Clang)",
+            "inherits": "test-base",
+            "configurePreset": "linux-x64-clang",
+            "configuration": "Debug"
+        },
+
+        {
+            "name": "linux-clang-release",
+            "displayName": "Linux x64 Release (Clang)",
+            "inherits": "test-base",
+            "configurePreset": "linux-x64-clang",
+            "configuration": "Release"
+        },
+
+        {
+            "name": "macos-arm64-debug",
+            "displayName": "macOS arm64 Debug (Apple Clang)",
+            "inherits": "test-base",
+            "configurePreset": "macos-arm64-clang",
+            "configuration": "Debug"
+        },
+
+        {
+            "name": "macos-arm64-release",
+            "displayName": "macOS arm64 Release (Apple Clang)",
+            "inherits": "test-base",
+            "configurePreset": "macos-arm64-clang",
+            "configuration": "Release"
+        },
+
+        {
+            "name": "windows-msvc-static-debug",
+            "displayName": "Windows x64 Debug (MSVC, Static CRT)",
+            "inherits": "test-base",
+            "configurePreset": "windows-x64-static",
+            "configuration": "Debug"
+        },
+
+        {
+            "name": "windows-msvc-static-release",
+            "displayName": "Windows x64 Release (MSVC, Static CRT)",
+            "inherits": "test-base",
+            "configurePreset": "windows-x64-static",
+            "configuration": "Release"
+        },
+
+        {
+            "name": "windows-msvc-debug-nogpu",
+            "displayName": "Windows x64 Debug (MSVC) - without GPU tests",
+            "inherits": ["windows-msvc-debug", "filter-no-gpu"]
+        },
+
+        {
+            "name": "windows-msvc-release-nogpu",
+            "displayName": "Windows x64 Release (MSVC) - without GPU tests",
+            "inherits": ["windows-msvc-release", "filter-no-gpu"]
+        },
+
+        {
+            "name": "linux-gcc-debug-nogpu",
+            "displayName": "Linux x64 Debug (GCC) - without GPU tests",
+            "inherits": ["linux-gcc-debug", "filter-no-gpu"]
+        },
+
+        {
+            "name": "linux-gcc-release-nogpu",
+            "displayName": "Linux x64 Release (GCC) - without GPU tests",
+            "inherits": ["linux-gcc-release", "filter-no-gpu"]
+        },
+
+        {
+            "name": "macos-arm64-debug-nogpu",
+            "displayName": "macOS arm64 Debug (Apple Clang) - without GPU tests",
+            "inherits": ["macos-arm64-debug", "filter-no-gpu"]
+        },
+
+        {
+            "name": "macos-arm64-release-nogpu",
+            "displayName": "macOS arm64 Release (Apple Clang) - without GPU tests",
+            "inherits": ["macos-arm64-release", "filter-no-gpu"]
         }
     ]
 }

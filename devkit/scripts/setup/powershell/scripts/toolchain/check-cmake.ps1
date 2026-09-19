@@ -13,7 +13,7 @@ $getVersion = {
 
 $upstreamInstall = {
     $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/Kitware/CMake/releases/latest' `
-        -Headers @{ 'User-Agent' = 'CoreVerseBootstrap' }
+        -Headers @{ 'User-Agent' = 'CoreverseBootstrap' }
     $asset = $release.assets | Where-Object { $_.name -match 'windows-x86_64\.msi$' } | Select-Object -First 1
     if (-not $asset) { throw 'Suitable CMake Windows MSI package not found.' }
 

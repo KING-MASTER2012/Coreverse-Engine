@@ -57,7 +57,7 @@ public:
     /// Blocks until this device has finished all outstanding GPU work.
     /// Shutdown() calls this itself before releasing anything, but a
     /// caller that created its own backend-native sync objects (via the
-    /// escape hatch — e.g. Faz 5.5's render loop creating VkSemaphores
+    /// escape hatch — e.g. Phase 5.5's render loop creating VkSemaphores
     /// directly) must call this before destroying those objects itself;
     /// this device has no way to track resources it didn't hand out.
     virtual void WaitIdle() noexcept = 0;

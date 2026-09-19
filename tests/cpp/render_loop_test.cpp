@@ -1,4 +1,4 @@
-// Faz 5.5 proof: RenderDevice::AcquireCommandBuffer() -> Begin() ->
+// Phase 5.5 proof: RenderDevice::AcquireCommandBuffer() -> Begin() ->
 // clear an acquired swapchain image to a solid color -> End() ->
 // Submit() -> Swapchain::Present(). This is a single-shot loop
 // (acquire/render/present once, matching the plan's "pencerede düz
@@ -7,7 +7,7 @@
 // Swapchain.hpp) for a real multi-frame render loop to use later;
 // this test uses RenderDevice::WaitIdle() between GPU-dependent steps
 // instead, which is enough for a single frame and keeps the test on
-// the same public abstraction every earlier Faz 5 test used — no
+// the same public abstraction every earlier Phase 5 test used — no
 // backend escape hatch needed here.
 
 #include <cstdio>
@@ -34,13 +34,13 @@ struct DummyWindow {
         WNDCLASSW wc{};
         wc.lpfnWndProc = DefWindowProcW;
         wc.hInstance = GetModuleHandleW(nullptr);
-        wc.lpszClassName = L"CoreVerseFaz55DummyWindow";
+        wc.lpszClassName = L"CoreverseFaz55DummyWindow";
         RegisterClassW(&wc);
 
         hwnd = CreateWindowExW(
             0,
             wc.lpszClassName,
-            L"CoreVerse Faz 5.5",
+            L"Coreverse Phase 5.5",
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
@@ -176,7 +176,7 @@ int main()
         renderer::Swapchain swapchain = std::move(*swapchainResult);
 
         // Synchronous acquire (no semaphore passed) — blocks until an
-        // image is ready, same call shape Faz 5.4 already proved.
+        // image is ready, same call shape Phase 5.4 already proved.
         auto acquireResult = swapchain.Acquire();
         if (!acquireResult) {
             std::fprintf(stderr, "Acquire failed: %s\n", acquireResult.error().detail.c_str());
@@ -205,7 +205,7 @@ int main()
             return 1;
         }
 
-        // CoreVerse's own accent color — an arbitrary but recognizable
+        // Coreverse's own accent color — an arbitrary but recognizable
         // solid fill, standing in for "the window showed something".
         constexpr renderer::ClearColor color{0.10f, 0.45f, 0.85f, 1.0f};
         if (auto result = commandBuffer.ClearColor(imageHandle, color); !result) {

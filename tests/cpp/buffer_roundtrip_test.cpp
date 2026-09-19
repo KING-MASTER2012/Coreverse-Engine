@@ -1,4 +1,4 @@
-// Faz 5.2 proof: RenderDevice::CreateBuffer() -> Buffer (move-only RAII)
+// Phase 5.2 proof: RenderDevice::CreateBuffer() -> Buffer (move-only RAII)
 // -> destructor releases it through VMA, entirely through the
 // renderer::Buffer/RenderDevice abstraction. Also exercises move
 // semantics, since that's the whole point of Buffer being move-only:

@@ -1,6 +1,6 @@
-// Faz 5.3 proof: RenderDevice::CreateSurface() from a real native
+// Phase 5.3 proof: RenderDevice::CreateSurface() from a real native
 // window handle. Uses a dummy window created directly by this test
-// (not Faz 6's Qt window, per the plan) via the platform's own raw
+// (not Phase 6's Qt window, per the plan) via the platform's own raw
 // windowing API — no windowing abstraction is introduced just for this
 // test, matching Surface.hpp's decision not to wrap the native handle.
 
@@ -28,13 +28,13 @@ struct DummyWindow {
         WNDCLASSW wc{};
         wc.lpfnWndProc = DefWindowProcW;
         wc.hInstance = GetModuleHandleW(nullptr);
-        wc.lpszClassName = L"CoreVerseFaz53DummyWindow";
+        wc.lpszClassName = L"CoreverseFaz53DummyWindow";
         RegisterClassW(&wc);
 
         hwnd = CreateWindowExW(
             0,
             wc.lpszClassName,
-            L"CoreVerse Faz 5.3",
+            L"Coreverse Phase 5.3",
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,

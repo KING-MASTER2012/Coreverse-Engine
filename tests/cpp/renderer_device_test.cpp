@@ -1,4 +1,4 @@
-// Faz 5.1 proof: RenderDevice abstraction obtains a Vulkan backend
+// Phase 5.1 proof: RenderDevice abstraction obtains a Vulkan backend
 // device, logs the selected physical device's name, and tears down
 // cleanly — entirely through the RenderDevice base pointer. This test
 // never names a Vulkan type; it only sees renderer::RenderDevice.

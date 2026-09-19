@@ -6,6 +6,25 @@ on:
 permissions:
     contents: read
 
+# All three jobs follow the same shape:
+#
+#   1. Bootstrap        - installs the toolchain and the vcpkg dependencies
+#                         (into ./vcpkg_installed). Its own trailing plain
+#                         `cmake -B build` configure only smoke-tests the
+#                         bootstrap flow itself; nothing below uses that
+#                         build/ directory.
+#   2. Configure        - `cmake --preset ...` (Ninja Multi-Config, the exact
+#                         presets a developer uses, BUILD_TESTS=ON). The presets
+#                         point VCPKG_INSTALLED_DIR at ./vcpkg_installed, so this
+#                         reuses what Bootstrap installed instead of building
+#                         every vcpkg package (Qt!) a second time.
+#   3. Build            - `cmake --build --preset ...`
+#   4. Test             - `ctest --preset ...`. Tests are labelled `ffi` or
+#                         `gpu` (tests/cpp/CMakeLists.txt). Linux runs both
+#                         (software Vulkan + a virtual X server); Windows and
+#                         macOS runners have no Vulkan ICD, so they run the
+#                         `*-nogpu` presets, i.e. the `ffi` tests only.
+
 jobs:
     linux:
         runs-on: ubuntu-latest
@@ -23,7 +42,7 @@ jobs:
                   devkit/scripts/setup/shell/bootstrap.sh
 
             # X11 and Wayland dev libraries are deliberately NOT part of
-            # bootstrap.sh - an end user building CoreVerse on their own
+            # bootstrap.sh - an end user building Coreverse on their own
             # desktop already has whatever windowing system they're
             # running under, and bootstrap.sh doesn't try to guess which
             # one to install for them. A CI runner has neither, so this
@@ -33,7 +52,14 @@ jobs:
             # for the Wayland WSI backend (renderer + wayland_render_loop_test),
             # and weston to give that Wayland test a compositor to run
             # against headlessly.
-            - name: Install X11 & Wayland dev libraries
+            #
+            # The GPU-labelled tests additionally need somewhere to run:
+            # mesa-vulkan-drivers ships lavapipe (a CPU Vulkan
+            # implementation) as the ICD, libvulkan1 is the loader volk
+            # dlopen()s at runtime, and xvfb + xauth (xvfb-run needs it) give
+            # the Xlib surface/swapchain/render-loop tests an X server.
+            # vulkan-tools is only here for the diagnostics step below.
+            - name: Install X11, Wayland and software-Vulkan test dependencies
               shell: bash
               run: |
                   sudo apt-get update
@@ -41,10 +67,32 @@ jobs:
                       libx11-dev \
                       libwayland-dev \
                       pkg-config \
-                      weston
+                      weston \
+                      xvfb \
+                      xauth \
+                      mesa-vulkan-drivers \
+                      libvulkan1 \
+                      vulkan-tools
 
-            - name: Build
-              run: cmake --build build --config Release
+            # Non-fatal: it only exists so a red GPU test in the log below
+            # can be told apart from "the runner has no Vulkan device at all".
+            - name: Vulkan diagnostics
+              shell: bash
+              run: vulkaninfo --summary || true
+
+            - name: Configure (linux-x64-gcc)
+              shell: bash
+              run: cmake --preset linux-x64-gcc
+
+            - name: Build (Release)
+              shell: bash
+              run: cmake --build --preset linux-gcc-release
+
+            - name: Test (Release, ffi + gpu)
+              shell: bash
+              run: |
+                  xvfb-run -a --server-args="-screen 0 1280x720x24" \
+                      ctest --preset linux-gcc-release
 
     windows:
         runs-on: windows-latest
@@ -57,5 +105,58 @@ jobs:
               run: |
                   devkit/scripts/setup/powershell/bootstrap.ps1
 
-            - name: Build
-              run: cmake --build build --config Release
+            # One step on purpose: the Windows presets use
+            # `architecture.strategy = external`, i.e. they take the
+            # compiler environment from the launching shell.
+            # configure-windows.ps1 activates the x64 MSVC environment
+            # (vcvarsall.bat x64) inside this pwsh process and then runs
+            # `cmake --preset`. Environment changes don't survive into a
+            # later workflow step, so the build and test commands that
+            # need that same environment (cl.exe, INCLUDE, LIB) have to
+            # run in this step too.
+            - name: Configure, build and test (windows-x64, Release, ffi tests only)
+              shell: pwsh
+              run: |
+                  $ErrorActionPreference = 'Stop'
+
+                  ./devkit/scripts/configure-windows.ps1 -Preset windows-x64
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+                  cmake --build --preset windows-msvc-release
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+                  ctest --preset windows-msvc-release-nogpu
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    # Experimental: macOS has never been built in CI before (the renderer's
+    # Metal-surface path and the vcpkg arm64-osx dependencies are still
+    # unverified), so a failure here is reported on the job but does not
+    # fail the workflow. Remove `continue-on-error` once it has gone green.
+    macos:
+        runs-on: macos-latest
+        continue-on-error: true
+
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        steps:
+            - uses: actions/checkout@v5
+
+            - name: Bootstrap
+              shell: bash
+              run: |
+                  chmod +x devkit/scripts/setup/shell/bootstrap.sh
+                  devkit/scripts/setup/shell/bootstrap.sh
+
+            - name: Configure (macos-arm64-clang)
+              shell: bash
+              run: cmake --preset macos-arm64-clang
+
+            - name: Build (Release)
+              shell: bash
+              run: cmake --build --preset macos-arm64-release
+
+            # No Vulkan ICD (MoltenVK) on the runner, so ffi tests only.
+            - name: Test (Release, ffi tests only)
+              shell: bash
+              run: ctest --preset macos-arm64-release-nogpu

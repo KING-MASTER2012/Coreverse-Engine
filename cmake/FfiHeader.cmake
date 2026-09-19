@@ -1,9 +1,9 @@
 # cmake/FfiHeader.cmake
 #
 # Generates the C header for engine/rust/crates/ffi via cbindgen, as
-# an actual build-graph dependency (regenerated whenever ffi's
-# source or cbindgen.toml changes) rather than a manual step someone
-# has to remember to re-run.
+# an actual build-graph dependency (regenerated whenever ANY of ffi's
+# .rs sources, its Cargo.toml or cbindgen.toml changes) rather than a
+# manual step someone has to remember to re-run.
 #
 # Requires cbindgen >= 0.28 on PATH. Earlier versions can't parse the
 # `#[unsafe(no_mangle)]` syntax the 2024 edition requires for
@@ -28,13 +28,20 @@ function(generate_ffi_header)
     set(_ffi_dir ${CMAKE_SOURCE_DIR}/engine/rust/crates/ffi)
     set(_ffi_header ${CMAKE_BINARY_DIR}/generated/ffi.h)
 
+    # Every .rs file under src/, not just lib.rs: the exported C ABI
+    # lives in logger.rs, diagnostic.rs, vfs.rs, ... and depending on
+    # lib.rs alone left ffi.h stale whenever only those changed.
+    # CONFIGURE_DEPENDS re-globs at build time, so a newly added module
+    # file is picked up without a manual CMake re-run.
+    file(GLOB_RECURSE _ffi_sources CONFIGURE_DEPENDS ${_ffi_dir}/src/*.rs)
+
     add_custom_command(
             OUTPUT ${_ffi_header}
             COMMAND ${CBINDGEN_PROGRAM}
             --config ${_ffi_dir}/cbindgen.toml
             --output ${_ffi_header}
             ${_ffi_dir}
-            DEPENDS ${_ffi_dir}/src/lib.rs ${_ffi_dir}/cbindgen.toml
+            DEPENDS ${_ffi_sources} ${_ffi_dir}/Cargo.toml ${_ffi_dir}/cbindgen.toml
             COMMENT "Coreverse: generating ffi.h (cbindgen)"
             VERBATIM
     )

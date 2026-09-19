@@ -1,4 +1,4 @@
-// Faz 5 (Wayland milestone) proof: the exact same single-shot render
+// Phase 5 (Wayland milestone) proof: the exact same single-shot render
 // loop render_loop_test.cpp already proved against Xlib (acquire ->
 // clear -> submit -> present), but through a real wl_surface backed by
 // a running Wayland compositor instead. This is a *separate* test
@@ -13,7 +13,7 @@
 // XOpenDisplay(nullptr), e.g. Xvfb in CI), there is no display-less
 // libwayland call that hands back a usable compositor: wl_display_connect()
 // requires an actual compositor listening on WAYLAND_DISPLAY. This test
-// does not start one itself — see scripts/run-with-weston-headless.sh,
+// does not start one itself — see run-with-weston-headless.sh,
 // which wraps the test binary in CMakeLists.txt's add_test() and runs
 // a throwaway headless Weston instance around it for exactly that reason.
 
@@ -56,7 +56,7 @@ struct DummyWaylandWindow {
     DummyWaylandWindow()
     {
         // nullptr -> read from the WAYLAND_DISPLAY env var, which
-        // scripts/run-with-weston-headless.sh sets to the socket name
+        // run-with-weston-headless.sh sets to the socket name
         // of the throwaway compositor it just started.
         display = wl_display_connect(nullptr);
         if (display == nullptr) {

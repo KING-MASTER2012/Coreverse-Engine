@@ -21,7 +21,7 @@ struct VulkanBufferHandle {
     VmaAllocation allocation;
 };
 
-/// Everything Faz 5.4's swapchain owns beyond the VkSwapchainKHR handle
+/// Everything Phase 5.4's swapchain owns beyond the VkSwapchainKHR handle
 /// itself. Buffer.hpp/Surface.hpp/Swapchain.hpp only store a backend-
 /// agnostic void*, so this is what that void* actually points at for
 /// the Vulkan backend; only CreateSwapchain/ReleaseSwapchain/
@@ -42,7 +42,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
     void* /*userData*/
 )
 {
-    // Faz 5.1/5.2 only need validation output to land somewhere visible
+    // Phase 5.1/5.2 only need validation output to land somewhere visible
     // so leak/misuse checks aren't silent; this gets routed through
     // cv-log once the renderer is wired to ffi (later phase).
     if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
@@ -126,16 +126,16 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateInstance()
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "CoreVerse";
+    appInfo.pApplicationName = "Coreverse";
     appInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
-    appInfo.pEngineName = "CoreVerse Engine";
+    appInfo.pEngineName = "Coreverse Engine";
     appInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
     appInfo.apiVersion = VK_API_VERSION_1_3;
 
     std::vector<const char*> extensions;
     // VK_KHR_surface plus whichever platform-specific WSI extension(s)
     // this build was compiled for are required unconditionally —
-    // surface creation (Faz 5.3) needs them regardless of whether
+    // surface creation (Phase 5.3) needs them regardless of whether
     // validation is enabled. Win32/Metal are mutually exclusive with
     // everything else, matching NativeWindowHandle's #if ladder in
     // Surface.hpp. Linux is the one platform where more than one WSI
@@ -226,7 +226,7 @@ std::expected<void, RenderError> VulkanRenderDevice::SelectPhysicalDevice()
 
     // Prefer a discrete GPU; fall back to whatever enumerates first
     // (integrated GPU, software rasterizer, ...) rather than failing —
-    // Faz 5 just needs *a* working device, not the best one.
+    // Phase 5 just needs *a* working device, not the best one.
     VkPhysicalDevice fallback = VK_NULL_HANDLE;
     for (VkPhysicalDevice candidate : devices) {
         VkPhysicalDeviceProperties props{};
@@ -288,7 +288,7 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateLogicalDeviceAndQueue
 
     // VK_KHR_swapchain is a device extension, not an instance one — it
     // has to be requested here, or vkCreateSwapchainKHR and the rest of
-    // Faz 5.4's swapchain calls are never loaded (volk leaves them null,
+    // Phase 5.4's swapchain calls are never loaded (volk leaves them null,
     // which crashes on the first call rather than failing cleanly).
     static constexpr const char* kDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     deviceCreateInfo.enabledExtensionCount = 1;
@@ -352,7 +352,7 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateCommandPool()
 {
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    // RESET_COMMAND_BUFFER: Faz 5.5's render loop needs to be able to
+    // RESET_COMMAND_BUFFER: Phase 5.5's render loop needs to be able to
     // re-record (or just re-Begin, implicitly resetting) a command
     // buffer across frames rather than allocating a fresh one every
     // time — cheap to allow now, costs nothing when unused.
@@ -527,7 +527,7 @@ VulkanRenderDevice::CreateSwapchain(const Surface& surface, const SwapchainDesc&
     }
     const auto vkSurface = static_cast<VkSurfaceKHR>(surface.GetNativeHandle());
 
-    // Faz 5.1 picked the graphics queue family without checking present
+    // Phase 5.1 picked the graphics queue family without checking present
     // support, since there was no surface yet to check it against. Now
     // that there is one, verify it — a queue family that can't present
     // to this surface makes the whole swapchain unusable, so this fails
@@ -607,7 +607,7 @@ VulkanRenderDevice::CreateSwapchain(const Surface& surface, const SwapchainDesc&
     createInfo.imageExtent = extent;
     createInfo.imageArrayLayers = 1;
     // COLOR_ATTACHMENT for a normal render-pass-based draw, TRANSFER_DST
-    // so Faz 5.5's "clear to a solid color" proof can use either a
+    // so Phase 5.5's "clear to a solid color" proof can use either a
     // render pass clear or a plain vkCmdClearColorImage — left open on
     // purpose rather than betting on which one 5.5 picks.
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -696,7 +696,7 @@ VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaph
     if (semaphore == VK_NULL_HANDLE) {
         // No semaphore for the GPU to signal into — fall back to a
         // fence and wait on it ourselves, so this call stays usable
-        // stand-alone (Faz 5.4's test still calls it exactly this way).
+        // stand-alone (Phase 5.4's test still calls it exactly this way).
         // Vulkan requires at least one of {semaphore, fence} to be
         // valid; this is the "no real submission pipeline yet" path.
         VkFenceCreateInfo fenceInfo{};

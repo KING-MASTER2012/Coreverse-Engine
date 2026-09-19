@@ -3,7 +3,7 @@
 #
 # Lower-probability sibling of configure-windows.ps1 / configure-macos.sh:
 # Linux has no per-shell host/target tool selection the way MSVC does, so the
-# x86-vs-x64 class of bug this whole Faz 8.4 batch targets is much rarer here.
+# x86-vs-x64 class of bug this whole Phase 8.4 batch targets is much rarer here.
 # What CAN still happen: a container/chroot/multiarch setup where the running
 # shell's `uname -m` doesn't match the architecture CMakePresets.json actually
 # targets (currently only x64-linux - see linux-x64-gcc/linux-x64-clang).

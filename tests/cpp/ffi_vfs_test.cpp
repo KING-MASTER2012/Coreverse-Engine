@@ -1,4 +1,4 @@
-// Faz 7b proof: the vfs FFI surface -- process-wide ffi_vfs_init(),
+// Phase 7b proof: the vfs FFI surface -- process-wide ffi_vfs_init(),
 // write/read/exists against a Config-root file, the thread-local
 // last-error mechanism (code + message), and two explicit failure
 // paths (AlreadyInitialized from a second init call, InvalidPath from

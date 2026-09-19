@@ -78,7 +78,7 @@ public:
     /// backend-native semaphore handle (e.g. a VkSemaphore signaled by
     /// the work that rendered into this image); nullptr presents
     /// without waiting on anything, which is only meaningful before any
-    /// rendering has been wired up (Faz 5.4) — Faz 5.5's render loop is
+    /// rendering has been wired up (Phase 5.4) — Phase 5.5's render loop is
     /// expected to pass a real one obtained through the backend's own
     /// escape hatch (see RenderDevice.hpp's class comment).
     [[nodiscard]] std::expected<SwapchainStatus, RenderError>
