@@ -1,29 +1,62 @@
 # editor: Qt6 executable.
 #
-# Phase 6.1 brings up a bare QApplication + QMainWindow and proves the
-# Qt6/CMake/FFI chain end to end (window title comes from a real
-# ffi_build_info_string() call) — deliberately WITHOUT linking
-# `renderer` yet. That's on purpose: it isolates failure domains one
-# at a time (Qt/CMake -> native window bridge -> FFI -> Vulkan
-# surface) instead of debugging all four together. renderer::renderer
-# is added starting Phase 6.3, once the native-window handle bridge
-# (Phase 6.2) exists.
+# Phase 6.1 brought up a bare QApplication + QMainWindow and proved the
+# Qt6/CMake/FFI chain end to end (window title from a real
+# ffi_build_info_string() call), deliberately WITHOUT linking `renderer`,
+# to isolate failure domains one at a time (Qt/CMake -> native window
+# bridge -> FFI -> Vulkan surface) instead of debugging all four at once.
 #
-# Qt6 is a system install, not a vcpkg dependency — CMAKE_PREFIX_PATH
-# is wired to $env{QT6_DIR} in the base CMakePresets.json preset, so
-# every platform just needs that environment variable pointing at its
-# Qt6 install (e.g. .../Qt/6.x/msvc2022_64 on Windows).
+# Phase 6.2 adds the native-window bridge (NativeWindowBridge, one
+# implementation per platform) and the viewport widget it describes;
+# Phase 6.3 links `renderer` and lets ViewportRenderer own the device,
+# surface and swapchain for that widget.
+#
+# Qt6 comes from vcpkg (qtbase[widgets] in vcpkg.json), so the vcpkg
+# toolchain finds it — no QT6_DIR / CMAKE_PREFIX_PATH needed.
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
-add_executable(editor
+if(NOT TARGET renderer::renderer)
+    message(FATAL_ERROR "The editor presents through the renderer library: enable BUILD_RENDERER (or disable BUILD_EDITOR).")
+endif()
+
+set(EDITOR_SOURCES
         src/main.cpp
         src/EditorWindow.cpp
         src/EditorWindow.hpp
+        src/NativeWindowBridge.hpp
+        src/ViewportRenderer.cpp
+        src/ViewportRenderer.hpp
+        src/ViewportWidget.cpp
+        src/ViewportWidget.hpp
 )
 
-# AUTOMOC scoped to this target only — EditorWindow.hpp uses Q_OBJECT,
-# so its moc'd source needs generating; nothing else in the project
-# uses Qt so this stays off the global CMAKE_AUTOMOC.
+# Exactly one NativeWindowBridge implementation per platform. Each keeps its
+# platform headers (windows.h, Xlib, AppKit) out of every other file.
+if(WIN32)
+    list(APPEND EDITOR_SOURCES src/NativeWindowBridge_win32.cpp)
+elseif(APPLE)
+    # AppKit/QuartzCore are Objective-C: no way to reach them from plain C++.
+    enable_language(OBJCXX)
+    list(APPEND EDITOR_SOURCES src/NativeWindowBridge_macos.mm)
+    set_source_files_properties(src/NativeWindowBridge_macos.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+elseif(UNIX)
+    # Needs Xlib (see NativeWindowBridge_x11.cpp). Linked by name instead of
+    # through find_package(X11 REQUIRED), like the renderer's own Xlib
+    # support: the headers are only needed when compiling, and a
+    # configure-time check would make any configure fail on a machine that
+    # installs the X11 dev packages only after it (CI's Bootstrap step does
+    # a configure of its own before cpp.yml installs them).
+    list(APPEND EDITOR_SOURCES src/NativeWindowBridge_x11.cpp)
+else()
+    message(FATAL_ERROR "The editor has no NativeWindowBridge implementation for this platform.")
+endif()
+
+add_executable(editor ${EDITOR_SOURCES})
+
+# AUTOMOC scoped to this target only — EditorWindow, ViewportWidget and
+# ViewportRenderer use Q_OBJECT, so their moc'd sources need generating;
+# nothing else in the project uses Qt so this stays off the global
+# CMAKE_AUTOMOC.
 set_target_properties(editor PROPERTIES AUTOMOC ON)
 
 target_include_directories(editor PRIVATE src)
@@ -33,9 +66,19 @@ target_compile_features(editor PUBLIC cxx_std_23)
 target_link_libraries(editor
         PRIVATE
         compiler_warnings
+        renderer::renderer
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
 )
+
+if(APPLE)
+    # The .mm file includes headers that use std::expected, so it needs
+    # the same language level as the C++ sources.
+    set_target_properties(editor PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON)
+    target_link_libraries(editor PRIVATE "-framework AppKit" "-framework QuartzCore")
+elseif(UNIX)
+    target_link_libraries(editor PRIVATE X11)
+endif()
 
 link_ffi(editor)

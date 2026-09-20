@@ -6,7 +6,14 @@
 // milestone can already validate; Present() is left for Phase 5.5, once
 // there is an actual rendered image to present (presenting an
 // untouched image now would just trip validation for no reason).
+//
+// Phase 6.3 adds Swapchain::Recreate()/GetExtent(): the window is resized
+// twice and the swapchain rebuilt in place each time, which must end up
+// at exactly the new size (both Win32 and X11 let the surface dictate
+// its extent, so this is checkable), plus the "invalid swapchain" error
+// path.
 
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <utility>
@@ -62,6 +69,23 @@ struct DummyWindow {
         return hwnd != nullptr;
     }
 
+    /// Resizes the window so its CLIENT area is exactly newWidth x
+    /// newHeight (which is what the surface's extent reports).
+    void Resize(std::uint32_t newWidth, std::uint32_t newHeight) const
+    {
+        RECT rect{0, 0, static_cast<LONG>(newWidth), static_cast<LONG>(newHeight)};
+        AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+        SetWindowPos(
+            hwnd,
+            nullptr,
+            0,
+            0,
+            rect.right - rect.left,
+            rect.bottom - rect.top,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE
+        );
+    }
+
     [[nodiscard]] renderer::NativeWindowHandle ToNativeHandle() const
     {
         renderer::NativeWindowHandle handle{};
@@ -113,6 +137,12 @@ struct DummyWindow {
     [[nodiscard]] bool IsValid() const
     {
         return display != nullptr && window != 0;
+    }
+
+    void Resize(std::uint32_t newWidth, std::uint32_t newHeight) const
+    {
+        XResizeWindow(display, window, newWidth, newHeight);
+        XSync(display, False); // the surface's extent is read back from the server
     }
 
     [[nodiscard]] renderer::NativeWindowHandle ToNativeHandle() const
@@ -178,6 +208,47 @@ int main()
             return 1;
         }
         std::printf("swapchain image count: %u\n", swapchain.GetImageCount());
+
+        const renderer::Extent2D initialExtent = swapchain.GetExtent();
+        std::printf("swapchain extent: %ux%u\n", initialExtent.width, initialExtent.height);
+        if (initialExtent.width == 0 || initialExtent.height == 0) {
+            std::fprintf(stderr, "GetExtent() is zero-sized right after CreateSwapchain\n");
+            return 1; // locals unwind swapchain -> surface, then `device` shuts itself down
+        }
+
+        // Recreate() on a default-constructed Swapchain must fail
+        // cleanly (an error, not a crash).
+        {
+            renderer::Swapchain empty;
+            if (empty.Recreate(surface, swapchainDesc)) {
+                std::fprintf(stderr, "Recreate() on an invalid Swapchain unexpectedly succeeded\n");
+                return 1;
+            }
+        }
+
+        // Resize the window bigger, then smaller than it started, and
+        // rebuild the swapchain in place each time.
+        const std::pair<std::uint32_t, std::uint32_t> sizes[] = {{400, 300}, {256, 192}};
+        for (const auto& [width, height] : sizes) {
+            window.Resize(width, height);
+            swapchainDesc.width = width;
+            swapchainDesc.height = height;
+
+            if (auto recreateResult = swapchain.Recreate(surface, swapchainDesc); !recreateResult) {
+                std::fprintf(stderr, "Recreate failed: %s\n", recreateResult.error().detail.c_str());
+                return 1;
+            }
+
+            const renderer::Extent2D extent = swapchain.GetExtent();
+            std::printf(
+                "recreated swapchain: %ux%u, %u images\n", extent.width, extent.height, swapchain.GetImageCount()
+            );
+            if (!swapchain.IsValid() || swapchain.GetImageCount() == 0 || extent.width != width ||
+                extent.height != height) {
+                std::fprintf(stderr, "Recreate() did not end up at the requested %ux%u\n", width, height);
+                return 1;
+            }
+        }
 
         auto acquireResult = swapchain.Acquire();
         if (!acquireResult) {

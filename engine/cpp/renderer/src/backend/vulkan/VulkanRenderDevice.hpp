@@ -117,6 +117,9 @@ protected:
     AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore) noexcept override;
     std::expected<SwapchainStatus, RenderError>
     PresentSwapchainImage(void* nativeHandle, std::uint32_t imageIndex, void* waitSemaphore) noexcept override;
+    std::expected<void, RenderError> RebuildSwapchain(
+        void* nativeHandle, const Surface& surface, const SwapchainDesc& desc, SwapchainInfo& info
+    ) noexcept override;
     void* GetSwapchainImageHandle(void* swapchainNativeHandle, std::uint32_t index) noexcept override;
 
     std::expected<void, RenderError> BeginCommandBuffer(void* commandBufferHandle) noexcept override;

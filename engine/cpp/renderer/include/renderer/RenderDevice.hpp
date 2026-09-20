@@ -90,6 +90,9 @@ public:
     /// SwapchainDesc in Swapchain.hpp). The returned Swapchain must be
     /// destroyed before its Surface, and before this device's
     /// Shutdown() — same ordering rule as Buffer/Surface.
+    ///
+    /// A swapchain whose surface changed size is rebuilt with
+    /// Swapchain::Recreate(), not by creating a new one.
     [[nodiscard]] virtual std::expected<Swapchain, RenderError>
     CreateSwapchain(const Surface& surface, const SwapchainDesc& desc) noexcept = 0;
 
@@ -132,9 +135,10 @@ protected:
     }
 
     /// Same purpose as MakeBuffer(), for Swapchain — see there.
-    static Swapchain MakeSwapchain(RenderDevice* device, void* nativeHandle, std::uint32_t imageCount) noexcept
+    static Swapchain
+    MakeSwapchain(RenderDevice* device, void* nativeHandle, std::uint32_t imageCount, Extent2D extent) noexcept
     {
-        return Swapchain(device, nativeHandle, imageCount);
+        return Swapchain(device, nativeHandle, imageCount, extent);
     }
 
     /// Same purpose as MakeBuffer(), for CommandBuffer — see there.
@@ -167,6 +171,16 @@ protected:
     /// directly.
     virtual std::expected<SwapchainStatus, RenderError>
     PresentSwapchainImage(void* nativeHandle, std::uint32_t imageIndex, void* waitSemaphore) noexcept = 0;
+
+    /// Backs Swapchain::Recreate() — called only by Swapchain, never
+    /// directly. Rebuilds the backend swapchain behind `nativeHandle` in
+    /// place: the handle itself stays the same. `info` comes in holding
+    /// the swapchain's current image count/extent and must leave holding
+    /// its actual state, including after a failure that dropped the old
+    /// resources. Failure semantics: see Swapchain::Recreate().
+    virtual std::expected<void, RenderError> RebuildSwapchain(
+        void* nativeHandle, const Surface& surface, const SwapchainDesc& desc, SwapchainInfo& info
+    ) noexcept = 0;
 
     /// Backs Swapchain::GetImageNativeHandle() — called only by
     /// Swapchain, never directly.

@@ -8,6 +8,15 @@
 namespace renderer {
 
 class RenderDevice;
+class Surface;
+
+/// A size in pixels.
+struct Extent2D {
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+
+    friend bool operator==(const Extent2D&, const Extent2D&) = default;
+};
 
 /// Outcome of Swapchain::Acquire()/Present() beyond plain success.
 /// Deliberately not merged into RenderErrorCode: a swapchain going
@@ -29,6 +38,13 @@ struct SwapchainDesc {
     std::uint32_t preferredImageCount = 2; ///< Hint only; the backend clamps to what the surface actually supports.
     std::uint32_t width = 0;
     std::uint32_t height = 0;
+};
+
+/// What a backend reports about a swapchain after (re)building it. Only
+/// backends and Swapchain itself use this — see RenderDevice::RebuildSwapchain().
+struct SwapchainInfo {
+    std::uint32_t imageCount = 0;
+    Extent2D extent{};
 };
 
 /// Move-only RAII handle to a presentable swapchain. Construction
@@ -60,6 +76,44 @@ public:
     {
         return m_imageCount;
     }
+
+    /// Size, in pixels, of the swapchain's images — what the surface
+    /// actually gave, which is not necessarily the SwapchainDesc that
+    /// was asked for (see SwapchainDesc). Zero-sized after a failed
+    /// Recreate() (see there).
+    [[nodiscard]] Extent2D GetExtent() const noexcept
+    {
+        return m_extent;
+    }
+
+    /// Rebuilds this swapchain in place on `surface` (the Surface it was
+    /// created from) — the answer to SwapchainStatus::OutOfDate /
+    /// Suboptimal and to a window resize. `desc` is treated exactly as in
+    /// RenderDevice::CreateSwapchain(): hints only, the surface's own
+    /// extent wins whenever it dictates one.
+    ///
+    /// The same Swapchain object keeps working afterwards
+    /// (GetNativeHandle() is unchanged), but everything derived from the
+    /// old swapchain is invalid: handles from GetImageNativeHandle(),
+    /// acquired image indices, and anything built on them (framebuffers,
+    /// ...). GetImageCount()/GetExtent() reflect the new state.
+    ///
+    /// Waits for the device to go idle first — there is no per-frame
+    /// synchronization to wait on yet (Phase 6.4) — so this is a
+    /// resize-time operation, not something to call every frame.
+    ///
+    /// Failure semantics:
+    ///  * Anything detected before the old swapchain is touched — e.g.
+    ///    RenderErrorCode::ZeroExtent for a minimized window, or a
+    ///    different Surface than the one this swapchain was created
+    ///    from: nothing changed, the swapchain stays as it was. Try again
+    ///    once the surface has a size.
+    ///  * The replacement itself could not be created: the old swapchain
+    ///    was retired by the driver and is dropped. The object stays
+    ///    valid but empty (GetImageCount() == 0, Acquire()/Present()
+    ///    report OutOfDate) until a later Recreate() succeeds.
+    ///    Destroying it is always fine.
+    [[nodiscard]] std::expected<void, RenderError> Recreate(const Surface& surface, const SwapchainDesc& desc) noexcept;
 
     /// Acquires the next presentable image; blocks until one is ready.
     /// `signalSemaphore` is a backend-native semaphore handle (e.g. a
@@ -102,8 +156,8 @@ public:
 private:
     friend class RenderDevice;
 
-    Swapchain(RenderDevice* device, void* nativeHandle, std::uint32_t imageCount) noexcept
-        : m_device(device), m_nativeHandle(nativeHandle), m_imageCount(imageCount)
+    Swapchain(RenderDevice* device, void* nativeHandle, std::uint32_t imageCount, Extent2D extent) noexcept
+        : m_device(device), m_nativeHandle(nativeHandle), m_imageCount(imageCount), m_extent(extent)
     {}
 
     void Release() noexcept;
@@ -111,6 +165,7 @@ private:
     RenderDevice* m_device = nullptr;
     void* m_nativeHandle = nullptr;
     std::uint32_t m_imageCount = 0;
+    Extent2D m_extent{};
 };
 
 } // namespace renderer

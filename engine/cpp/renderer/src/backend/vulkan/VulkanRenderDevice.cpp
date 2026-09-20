@@ -28,12 +28,226 @@ struct VulkanBufferHandle {
 /// AcquireSwapchainImage/PresentSwapchainImage (this file) ever
 /// interpret it.
 struct VulkanSwapchainHandle {
-    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    VkSurfaceKHR surface =
+        VK_NULL_HANDLE; ///< The surface this swapchain presents to; Recreate() must be given the same one.
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE; ///< VK_NULL_HANDLE while empty (after a failed rebuild).
     VkFormat format = VK_FORMAT_UNDEFINED;
     VkExtent2D extent{};
     std::vector<VkImage> images;
     std::vector<VkImageView> imageViews;
 };
+
+/// Everything CreateSwapchain()/RebuildSwapchain() decide about a
+/// swapchain before a single Vulkan object is created. Kept separate from
+/// the creation step on purpose: a failure while *querying* is known to
+/// have left an existing swapchain untouched, whereas a failure while
+/// creating a replacement has already retired it (see RebuildSwapchain()).
+struct SwapchainConfig {
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    VkSurfaceFormatKHR format{};
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    VkSurfaceTransformFlagBitsKHR preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    VkExtent2D extent{};
+    uint32_t imageCount = 0;
+};
+
+std::expected<SwapchainConfig, RenderError> QuerySwapchainConfig(
+    VkPhysicalDevice physicalDevice, uint32_t graphicsQueueFamily, VkSurfaceKHR vkSurface, const SwapchainDesc& desc
+) noexcept
+{
+    // Phase 5.1 picked the graphics queue family without checking present
+    // support, since there was no surface yet to check it against. Now
+    // that there is one, verify it — a queue family that can't present
+    // to this surface makes the whole swapchain unusable, so this fails
+    // loudly here rather than at some confusing point later.
+    VkBool32 presentSupported = VK_FALSE;
+    if (const VkResult result =
+            vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, graphicsQueueFamily, vkSurface, &presentSupported);
+        result != VK_SUCCESS || presentSupported == VK_FALSE) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::NoSuitableDevice, "graphics queue family does not support presenting to this surface"
+            }
+        );
+    }
+
+    VkSurfaceCapabilitiesKHR capabilities{};
+    if (const VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, vkSurface, &capabilities);
+        result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::InitializationFailed, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed"}
+        );
+    }
+
+    uint32_t formatCount = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vkSurface, &formatCount, nullptr);
+    if (formatCount == 0) {
+        return std::unexpected(RenderError{RenderErrorCode::NoSuitableDevice, "surface exposes no formats"});
+    }
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vkSurface, &formatCount, formats.data());
+
+    VkSurfaceFormatKHR chosenFormat = formats[0];
+    for (const VkSurfaceFormatKHR& candidate : formats) {
+        if (candidate.format == VK_FORMAT_B8G8R8A8_SRGB && candidate.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            chosenFormat = candidate;
+            break;
+        }
+    }
+
+    uint32_t presentModeCount = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, vkSurface, &presentModeCount, nullptr);
+    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, vkSurface, &presentModeCount, presentModes.data());
+
+    // FIFO is the only mode every Vulkan implementation is required to
+    // support (VK_PRESENT_MODE_FIFO_KHR); prefer MAILBOX (low-latency,
+    // no tearing) when it's actually available.
+    VkPresentModeKHR chosenPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    for (VkPresentModeKHR mode : presentModes) {
+        if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+            chosenPresentMode = mode;
+            break;
+        }
+    }
+
+    VkExtent2D extent{};
+    if (capabilities.currentExtent.width != UINT32_MAX) {
+        // The surface dictates its own extent (the common case for a
+        // real window) — desc.width/height are ignored in favor of it.
+        extent = capabilities.currentExtent;
+    } else {
+        extent.width = std::clamp(desc.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+        extent.height = std::clamp(desc.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+    }
+
+    // A 0x0 extent (a minimized Win32 window reports exactly this) is not
+    // a valid swapchain size — vkCreateSwapchainKHR would just fail. It's
+    // also not an error worth retiring an existing swapchain over, so
+    // report it before anything is created.
+    if (extent.width == 0 || extent.height == 0) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::ZeroExtent, "the surface currently has a zero-sized extent (minimized window?)"
+            }
+        );
+    }
+
+    uint32_t imageCount = std::max(desc.preferredImageCount, capabilities.minImageCount);
+    if (capabilities.maxImageCount > 0) {
+        imageCount = std::min(imageCount, capabilities.maxImageCount);
+    }
+
+    SwapchainConfig config;
+    config.surface = vkSurface;
+    config.format = chosenFormat;
+    config.presentMode = chosenPresentMode;
+    config.preTransform = capabilities.currentTransform;
+    config.extent = extent;
+    config.imageCount = imageCount;
+    return config;
+}
+
+void DestroySwapchainResources(VkDevice device, VulkanSwapchainHandle& handle) noexcept
+{
+    for (VkImageView view : handle.imageViews) {
+        vkDestroyImageView(device, view, nullptr);
+    }
+    // vkDestroySwapchainKHR(VK_NULL_HANDLE) is a valid no-op, which is
+    // what makes destroying an already-emptied handle safe.
+    vkDestroySwapchainKHR(device, handle.swapchain, nullptr);
+
+    handle.imageViews.clear();
+    handle.images.clear();
+    handle.swapchain = VK_NULL_HANDLE;
+    handle.format = VK_FORMAT_UNDEFINED;
+    handle.extent = {};
+}
+
+/// Creates the VkSwapchainKHR and its image views. `oldSwapchain` is
+/// handed to Vulkan as-is: if it is not VK_NULL_HANDLE it is RETIRED by
+/// this call — even when creation fails — so the caller must treat it as
+/// gone (destroy it) whether this succeeds or not.
+std::expected<VulkanSwapchainHandle, RenderError>
+CreateSwapchainResources(VkDevice device, const SwapchainConfig& config, VkSwapchainKHR oldSwapchain) noexcept
+{
+    VkSwapchainCreateInfoKHR createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.surface = config.surface;
+    createInfo.minImageCount = config.imageCount;
+    createInfo.imageFormat = config.format.format;
+    createInfo.imageColorSpace = config.format.colorSpace;
+    createInfo.imageExtent = config.extent;
+    createInfo.imageArrayLayers = 1;
+    // COLOR_ATTACHMENT for a normal render-pass-based draw, TRANSFER_DST
+    // so Phase 5.5's "clear to a solid color" proof can use either a
+    // render pass clear or a plain vkCmdClearColorImage — left open on
+    // purpose rather than betting on which one 5.5 picks.
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    createInfo.preTransform = config.preTransform;
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    createInfo.presentMode = config.presentMode;
+    createInfo.clipped = VK_TRUE;
+    createInfo.oldSwapchain = oldSwapchain;
+
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    if (const VkResult result = vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain); result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::InitializationFailed,
+                "vkCreateSwapchainKHR failed (VkResult=" + std::to_string(result) + ")"
+            }
+        );
+    }
+
+    uint32_t actualImageCount = 0;
+    vkGetSwapchainImagesKHR(device, swapchain, &actualImageCount, nullptr);
+    std::vector<VkImage> images(actualImageCount);
+    vkGetSwapchainImagesKHR(device, swapchain, &actualImageCount, images.data());
+
+    std::vector<VkImageView> imageViews(actualImageCount, VK_NULL_HANDLE);
+    for (uint32_t i = 0; i < actualImageCount; ++i) {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = images[i];
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = config.format.format;
+        viewInfo.components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY
+        };
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        if (const VkResult result = vkCreateImageView(device, &viewInfo, nullptr, &imageViews[i]);
+            result != VK_SUCCESS) {
+            // Roll back everything already created before bailing —
+            // nothing has been handed to the caller yet to release.
+            for (uint32_t created = 0; created < i; ++created) {
+                vkDestroyImageView(device, imageViews[created], nullptr);
+            }
+            vkDestroySwapchainKHR(device, swapchain, nullptr);
+            return std::unexpected(
+                RenderError{RenderErrorCode::InitializationFailed, "vkCreateImageView failed for a swapchain image"}
+            );
+        }
+    }
+
+    VulkanSwapchainHandle handle;
+    handle.surface = config.surface;
+    handle.swapchain = swapchain;
+    handle.format = config.format.format;
+    handle.extent = config.extent;
+    handle.images = std::move(images);
+    handle.imageViews = std::move(imageViews);
+    return handle;
+}
 
 VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -527,150 +741,71 @@ VulkanRenderDevice::CreateSwapchain(const Surface& surface, const SwapchainDesc&
     }
     const auto vkSurface = static_cast<VkSurfaceKHR>(surface.GetNativeHandle());
 
-    // Phase 5.1 picked the graphics queue family without checking present
-    // support, since there was no surface yet to check it against. Now
-    // that there is one, verify it — a queue family that can't present
-    // to this surface makes the whole swapchain unusable, so this fails
-    // loudly here rather than at some confusing point later.
-    VkBool32 presentSupported = VK_FALSE;
-    if (const VkResult result =
-            vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, m_graphicsQueueFamily, vkSurface, &presentSupported);
-        result != VK_SUCCESS || presentSupported == VK_FALSE) {
+    auto config = QuerySwapchainConfig(m_physicalDevice, m_graphicsQueueFamily, vkSurface, desc);
+    if (!config) {
+        return std::unexpected(std::move(config.error()));
+    }
+
+    auto resources = CreateSwapchainResources(m_device, *config, VK_NULL_HANDLE);
+    if (!resources) {
+        return std::unexpected(std::move(resources.error()));
+    }
+
+    const auto imageCount = static_cast<std::uint32_t>(resources->images.size());
+    const Extent2D extent{resources->extent.width, resources->extent.height};
+    auto* handle = new VulkanSwapchainHandle(std::move(*resources));
+    return RenderDevice::MakeSwapchain(this, handle, imageCount, extent);
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::RebuildSwapchain(
+    void* nativeHandle, const Surface& surface, const SwapchainDesc& desc, SwapchainInfo& info
+) noexcept
+{
+    if (!surface.IsValid()) {
         return std::unexpected(
-            RenderError{
-                RenderErrorCode::NoSuitableDevice, "graphics queue family does not support presenting to this surface"
-            }
+            RenderError{RenderErrorCode::InitializationFailed, "Swapchain::Recreate called with an invalid Surface"}
         );
     }
+    auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
+    const auto vkSurface = static_cast<VkSurfaceKHR>(surface.GetNativeHandle());
 
-    VkSurfaceCapabilitiesKHR capabilities{};
-    if (const VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, vkSurface, &capabilities);
-        result != VK_SUCCESS) {
-        return std::unexpected(
-            RenderError{RenderErrorCode::InitializationFailed, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR failed"}
-        );
-    }
-
-    uint32_t formatCount = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, vkSurface, &formatCount, nullptr);
-    if (formatCount == 0) {
-        return std::unexpected(RenderError{RenderErrorCode::NoSuitableDevice, "surface exposes no formats"});
-    }
-    std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, vkSurface, &formatCount, formats.data());
-
-    VkSurfaceFormatKHR chosenFormat = formats[0];
-    for (const VkSurfaceFormatKHR& candidate : formats) {
-        if (candidate.format == VK_FORMAT_B8G8R8A8_SRGB && candidate.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            chosenFormat = candidate;
-            break;
-        }
-    }
-
-    uint32_t presentModeCount = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, vkSurface, &presentModeCount, nullptr);
-    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, vkSurface, &presentModeCount, presentModes.data());
-
-    // FIFO is the only mode every Vulkan implementation is required to
-    // support (VK_PRESENT_MODE_FIFO_KHR); prefer MAILBOX (low-latency,
-    // no tearing) when it's actually available.
-    VkPresentModeKHR chosenPresentMode = VK_PRESENT_MODE_FIFO_KHR;
-    for (VkPresentModeKHR mode : presentModes) {
-        if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
-            chosenPresentMode = mode;
-            break;
-        }
-    }
-
-    VkExtent2D extent{};
-    if (capabilities.currentExtent.width != UINT32_MAX) {
-        // The surface dictates its own extent (the common case for a
-        // real window) — desc.width/height are ignored in favor of it.
-        extent = capabilities.currentExtent;
-    } else {
-        extent.width = std::clamp(desc.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-        extent.height = std::clamp(desc.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-    }
-
-    uint32_t imageCount = std::max(desc.preferredImageCount, capabilities.minImageCount);
-    if (capabilities.maxImageCount > 0) {
-        imageCount = std::min(imageCount, capabilities.maxImageCount);
-    }
-
-    VkSwapchainCreateInfoKHR createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface = vkSurface;
-    createInfo.minImageCount = imageCount;
-    createInfo.imageFormat = chosenFormat.format;
-    createInfo.imageColorSpace = chosenFormat.colorSpace;
-    createInfo.imageExtent = extent;
-    createInfo.imageArrayLayers = 1;
-    // COLOR_ATTACHMENT for a normal render-pass-based draw, TRANSFER_DST
-    // so Phase 5.5's "clear to a solid color" proof can use either a
-    // render pass clear or a plain vkCmdClearColorImage — left open on
-    // purpose rather than betting on which one 5.5 picks.
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    createInfo.preTransform = capabilities.currentTransform;
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode = chosenPresentMode;
-    createInfo.clipped = VK_TRUE;
-    createInfo.oldSwapchain = VK_NULL_HANDLE;
-
-    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-    if (const VkResult result = vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &swapchain);
-        result != VK_SUCCESS) {
+    if (vkSurface != handle->surface) {
         return std::unexpected(
             RenderError{
                 RenderErrorCode::InitializationFailed,
-                "vkCreateSwapchainKHR failed (VkResult=" + std::to_string(result) + ")"
+                "Swapchain::Recreate called with a different Surface than the swapchain was created from"
             }
         );
     }
 
-    uint32_t actualImageCount = 0;
-    vkGetSwapchainImagesKHR(m_device, swapchain, &actualImageCount, nullptr);
-    std::vector<VkImage> images(actualImageCount);
-    vkGetSwapchainImagesKHR(m_device, swapchain, &actualImageCount, images.data());
-
-    std::vector<VkImageView> imageViews(actualImageCount, VK_NULL_HANDLE);
-    for (uint32_t i = 0; i < actualImageCount; ++i) {
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = images[i];
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = chosenFormat.format;
-        viewInfo.components = {
-            VK_COMPONENT_SWIZZLE_IDENTITY,
-            VK_COMPONENT_SWIZZLE_IDENTITY,
-            VK_COMPONENT_SWIZZLE_IDENTITY,
-            VK_COMPONENT_SWIZZLE_IDENTITY
-        };
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
-
-        if (const VkResult result = vkCreateImageView(m_device, &viewInfo, nullptr, &imageViews[i]);
-            result != VK_SUCCESS) {
-            // Roll back everything already created before bailing —
-            // this is still inside CreateSwapchain(), so nothing has
-            // been handed to the caller yet for them to release.
-            for (uint32_t created = 0; created < i; ++created) {
-                vkDestroyImageView(m_device, imageViews[created], nullptr);
-            }
-            vkDestroySwapchainKHR(m_device, swapchain, nullptr);
-            return std::unexpected(
-                RenderError{RenderErrorCode::InitializationFailed, "vkCreateImageView failed for a swapchain image"}
-            );
-        }
+    // Everything that can be checked without creating anything happens
+    // first, so ZeroExtent & co. leave the existing swapchain untouched.
+    auto config = QuerySwapchainConfig(m_physicalDevice, m_graphicsQueueFamily, vkSurface, desc);
+    if (!config) {
+        return std::unexpected(std::move(config.error()));
     }
 
-    auto* handle =
-        new VulkanSwapchainHandle{swapchain, chosenFormat.format, extent, std::move(images), std::move(imageViews)};
-    return RenderDevice::MakeSwapchain(this, handle, actualImageCount);
+    // Nothing tracks frames in flight yet (Phase 6.4), so the only way to
+    // know the old images are no longer in use is to wait for the device.
+    WaitIdle();
+
+    // Handing the old swapchain over lets the driver recycle its
+    // resources for the new one. Either way it is retired by this call.
+    auto resources = CreateSwapchainResources(m_device, *config, handle->swapchain);
+    DestroySwapchainResources(m_device, *handle);
+
+    if (!resources) {
+        // The old swapchain is gone and there is no replacement: leave
+        // an empty-but-valid object that a later Recreate() can revive
+        // (Acquire()/Present() report OutOfDate meanwhile).
+        info = SwapchainInfo{};
+        return std::unexpected(std::move(resources.error()));
+    }
+
+    *handle = std::move(*resources);
+    info.imageCount = static_cast<std::uint32_t>(handle->images.size());
+    info.extent = Extent2D{handle->extent.width, handle->extent.height};
+    return {};
 }
 
 void VulkanRenderDevice::ReleaseSwapchain(void* nativeHandle) noexcept
@@ -679,10 +814,7 @@ void VulkanRenderDevice::ReleaseSwapchain(void* nativeHandle) noexcept
         return;
     }
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
-    for (VkImageView view : handle->imageViews) {
-        vkDestroyImageView(m_device, view, nullptr);
-    }
-    vkDestroySwapchainKHR(m_device, handle->swapchain, nullptr);
+    DestroySwapchainResources(m_device, *handle);
     delete handle;
 }
 
@@ -691,6 +823,12 @@ VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaph
 {
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
     const auto semaphore = static_cast<VkSemaphore>(signalSemaphore);
+
+    // Emptied by a failed Swapchain::Recreate(): there is nothing to
+    // acquire from until a later Recreate() succeeds.
+    if (handle->swapchain == VK_NULL_HANDLE) {
+        return AcquireResult{0, SwapchainStatus::OutOfDate};
+    }
 
     VkFence fence = VK_NULL_HANDLE;
     if (semaphore == VK_NULL_HANDLE) {
@@ -739,6 +877,10 @@ VulkanRenderDevice::PresentSwapchainImage(void* nativeHandle, std::uint32_t imag
 {
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
     const auto semaphore = static_cast<VkSemaphore>(waitSemaphore);
+
+    if (handle->swapchain == VK_NULL_HANDLE) {
+        return SwapchainStatus::OutOfDate; // emptied by a failed Recreate(), see Acquire
+    }
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;

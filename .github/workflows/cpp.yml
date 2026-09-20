@@ -43,7 +43,7 @@ jobs:
                   devkit/scripts/setup/shell/bootstrap.sh
 
             # X11 and Wayland dev libraries are deliberately NOT part of
-            # bootstrap.sh - an end user building CoreVerse on their own
+            # bootstrap.sh - an end user building Coreverse on their own
             # desktop already has whatever windowing system they're
             # running under, and bootstrap.sh doesn't try to guess which
             # one to install for them. A CI runner has neither, so this
