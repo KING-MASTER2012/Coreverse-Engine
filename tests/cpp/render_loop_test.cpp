@@ -34,7 +34,7 @@ struct DummyWindow {
         WNDCLASSW wc{};
         wc.lpfnWndProc = DefWindowProcW;
         wc.hInstance = GetModuleHandleW(nullptr);
-        wc.lpszClassName = L"CoreverseFaz55DummyWindow";
+        wc.lpszClassName = L"CoreversePhase55DummyWindow";
         RegisterClassW(&wc);
 
         hwnd = CreateWindowExW(

@@ -6,7 +6,7 @@ Last changed 20.09.2026 by KING-MASTER2012.
 - fixed: the Formatting CI job checked with Ubuntu's clang-format 18 while the project requires 22.1.8, so correctly formatted code was rejected. CI now installs the version from tool-versions.json and reports all violations at once. tests/cpp/ffi_vfs_test.cpp was really unformatted and is fixed.
 - added: devkit/scripts/format.sh and devkit/scripts/format.ps1 (rustfmt + clang-format over the whole project, `--check` / `-Check` for a dry run).
 - fixed: bootstrap.sh's vcpkg install used a doubled --x-install-root (`<root>/./<root>/vcpkg_installed`), so on Linux/macOS Bootstrap and the CMake presets never shared ./vcpkg_installed.
-- changed: the macOS CI job installs its tools explicitly instead of running bootstrap.sh (see the comment in cpp.yml).
+- changed: the macOS CI job installs its tools explicitly instead of running bootstrap.sh (see the comment in cpp.yml), including autoconf-archive, which vcpkg's libb2 port needs.
 
 ## What will be done?
 - Phase 6.2: Qt native-handle bridge (ViewportWidget).
