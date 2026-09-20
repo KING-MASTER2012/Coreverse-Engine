@@ -1,4 +1,4 @@
-// Faz 5 (Wayland milestone) proof: the exact same single-shot render
+// Phase 5 (Wayland milestone) proof: the exact same single-shot render
 // loop render_loop_test.cpp already proved against Xlib (acquire ->
 // clear -> submit -> present), but through a real wl_surface backed by
 // a running Wayland compositor instead. This is a *separate* test

@@ -38,9 +38,18 @@ fi
 
 VCPKG_INSTALL_ARGS=("--x-manifest-root=$MANIFEST_DIR")
 if [ -n "$INSTALLED_DIR" ]; then
-    # vcpkgInstalledDir from project-paths.json - kept relative to the manifest
-    # dir, matching vcpkg's own default layout convention.
-    VCPKG_INSTALL_ARGS+=("--x-install-root=$MANIFEST_DIR/$INSTALLED_DIR")
+    # vcpkgInstalledDir from project-paths.json. bootstrap.sh already resolves it
+    # to an ABSOLUTE path (to_abs_path), so it must be used as-is: joining it onto
+    # the manifest dir again produced "<root>/./<root>/vcpkg_installed", a bogus
+    # nested directory that nothing else ever looked at - CMake (presets and the
+    # plain configure) then found no installed packages and installed them a
+    # second time. A relative value (script run by hand) stays relative to the
+    # manifest dir, matching vcpkg's own default layout convention.
+    case "$INSTALLED_DIR" in
+        /*) VCPKG_INSTALL_ROOT="$INSTALLED_DIR" ;;
+        *) VCPKG_INSTALL_ROOT="$MANIFEST_DIR/$INSTALLED_DIR" ;;
+    esac
+    VCPKG_INSTALL_ARGS+=("--x-install-root=$VCPKG_INSTALL_ROOT")
 fi
 
 if [ "$DRY_RUN" = "true" ]; then

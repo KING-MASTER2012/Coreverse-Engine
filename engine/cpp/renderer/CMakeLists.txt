@@ -1,7 +1,7 @@
 # renderer: static library exposing a graphics-API-agnostic interface
 # (include/renderer/) with backend implementations under src/backend/.
 #
-# Only Vulkan is built today (Faz 5); RENDERER_HAS_<API>_BACKEND compile
+# Only Vulkan is built today (Phase  5); RENDERER_HAS_<API>_BACKEND compile
 # definitions gate each backend so RenderDeviceFactory.cpp's switch gains
 # a `#if`-guarded case per backend without every platform having to
 # build every backend it doesn't have (e.g. no D3D12 on Linux).
@@ -69,7 +69,7 @@ target_compile_definitions(renderer
         $<$<CONFIG:Debug>:RENDERER_ENABLE_VALIDATION>
 )
 
-# Faz 5.3: Vulkan's platform surface structs/functions (VkWin32SurfaceCreateInfoKHR,
+# Phase 5.3: Vulkan's platform surface structs/functions (VkWin32SurfaceCreateInfoKHR,
 # vkCreateXlibSurfaceKHR, ...) are only declared when the matching
 # VK_USE_PLATFORM_* macro is defined before <vulkan/vulkan.h> is first
 # included — CMake is what actually knows the target platform, so it's
@@ -94,7 +94,7 @@ if(WIN32)
 elseif(APPLE)
     target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_METAL_EXT)
 elseif(UNIX)
-    # Faz 5 (Wayland milestone): Xlib and Wayland are independent WSI
+    # Phase 5 (Wayland milestone): Xlib and Wayland are independent WSI
     # extensions — Vulkan-Headers allows VK_USE_PLATFORM_XLIB_KHR and
     # VK_USE_PLATFORM_WAYLAND_KHR to be defined together, and
     # vulkan_wayland.h only forward-declares `struct wl_display` /
