@@ -6,7 +6,8 @@ on:
 permissions:
     contents: read
 
-# All three jobs follow the same shape:
+# The Linux and Windows jobs follow the same shape (macOS provisions its
+# tools by hand, see the comment on that job):
 #
 #   1. Bootstrap        - installs the toolchain and the vcpkg dependencies
 #                         (into ./vcpkg_installed). Its own trailing plain
@@ -42,7 +43,7 @@ jobs:
                   devkit/scripts/setup/shell/bootstrap.sh
 
             # X11 and Wayland dev libraries are deliberately NOT part of
-            # bootstrap.sh - an end user building Coreverse on their own
+            # bootstrap.sh - an end user building CoreVerse on their own
             # desktop already has whatever windowing system they're
             # running under, and bootstrap.sh doesn't try to guess which
             # one to install for them. A CI runner has neither, so this
@@ -132,21 +133,45 @@ jobs:
     # Metal-surface path and the vcpkg arm64-osx dependencies are still
     # unverified), so a failure here is reported on the job but does not
     # fail the workflow. Remove `continue-on-error` once it has gone green.
+    #
+    # This job does NOT run devkit/scripts/setup/shell/bootstrap.sh. In the
+    # first macOS run the step after Bootstrap found neither
+    # third_party/vcpkg nor a Ninja, so the macOS path of bootstrap can't be
+    # relied on yet. Known suspects: parallel-runner.sh uses `declare -A`
+    # (bash 4+; macOS ships bash 3.2), and a Ninja installed by check-ninja.sh's
+    # upstream fallback lands in ~/.local/coreverse-bootstrap, which no later
+    # step has on PATH. Everything the presets need is installed explicitly
+    # here instead; the preset configure step then installs the vcpkg packages
+    # (manifest mode) into ./vcpkg_installed by itself. Bootstrap on macOS can
+    # be debugged separately, from its own log.
     macos:
         runs-on: macos-latest
         continue-on-error: true
 
-        env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
         steps:
             - uses: actions/checkout@v5
 
-            - name: Bootstrap
+            # CMake and Rust (rustup + stable) are already on the runner.
+            # autoconf/automake/libtool/pkg-config are what vcpkg's
+            # autotools-based ports (qtbase's dependencies) shell out to.
+            - name: Install build tools (Homebrew)
               shell: bash
               run: |
-                  chmod +x devkit/scripts/setup/shell/bootstrap.sh
-                  devkit/scripts/setup/shell/bootstrap.sh
+                  brew install ninja cbindgen autoconf automake libtool pkg-config
+                  cmake --version | head -n1
+                  ninja --version
+                  cbindgen --version
+                  cargo --version
+
+            # The whole history is needed (vcpkg.json pins a builtin-baseline),
+            # so this is deliberately not a shallow clone.
+            - name: Set up vcpkg
+              shell: bash
+              run: |
+                  rm -rf third_party/vcpkg
+                  git clone https://github.com/microsoft/vcpkg.git third_party/vcpkg
+                  ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+                  test -f third_party/vcpkg/scripts/buildsystems/vcpkg.cmake
 
             - name: Configure (macos-arm64-clang)
               shell: bash

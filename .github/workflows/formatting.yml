@@ -11,24 +11,61 @@ jobs:
             - uses: actions/checkout@v5
 
             - uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: rustfmt
 
-            - name: Install Clang
-              run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy
-
-            - name: Rustfmt
-              run: cargo fmt --all -- --check
-
-            - name: Clang format
+            # clang-format's output differs between LLVM major versions (the
+            # same source can be "clean" under 22 and a violation under 18),
+            # so the check must run the SAME version developers format with.
+            # Ubuntu's apt package is 18.x while the project (bootstrap +
+            # devkit/scripts/setup/config/tool-versions.json) requires
+            # 22.1.8+, which is why this used to reject code that had been
+            # formatted correctly. The version is read from tool-versions.json
+            # so there is a single place to bump it, and installed from PyPI's
+            # clang-format wheels (a venv, because Ubuntu's system Python
+            # refuses global pip installs).
+            - name: Install clang-format (version from tool-versions.json)
               shell: bash
               run: |
                   set -euo pipefail
 
-                  find engine/cpp tests/cpp \
-                    -type f \
-                    \( -name '*.cpp' -o -name '*.cc' -o -name '*.cxx' \
-                    -o -name '*.h' -o -name '*.hpp' -o -name '*.hxx' \) \
-                    -print0 |
+                  version="$(jq -r '.clangFormat.minVersion' devkit/scripts/setup/config/tool-versions.json)"
+                  venv="$RUNNER_TEMP/clang-format-venv"
+
+                  python3 -m venv "$venv"
+                  "$venv/bin/pip" install --quiet "clang-format==${version}"
+
+                  echo "$venv/bin" >> "$GITHUB_PATH"
+                  "$venv/bin/clang-format" --version
+
+            - name: Rustfmt
+              run: cargo fmt --all -- --check
+
+            # Checks every file and reports ALL violations at the end, instead
+            # of stopping at the first one.
+            - name: Clang format
+              shell: bash
+              run: |
+                  set -uo pipefail
+
+                  failed=()
+
                   while IFS= read -r -d '' file; do
                     echo "Checking: $file"
-                    clang-format --dry-run --Werror "$file"
-                  done
+                    clang-format --dry-run --Werror "$file" || failed+=("$file")
+                  done < <(
+                    find engine/cpp tests/cpp \
+                      -type f \
+                      \( -name '*.cpp' -o -name '*.cc' -o -name '*.cxx' \
+                      -o -name '*.h' -o -name '*.hpp' -o -name '*.hxx' \) \
+                      -print0
+                  )
+
+                  if [ "${#failed[@]}" -gt 0 ]; then
+                    echo
+                    echo "clang-format violations in ${#failed[@]} file(s):"
+                    printf '  %s\n' "${failed[@]}"
+                    echo
+                    echo "Fix them with devkit/scripts/format.sh (or devkit/scripts/format.ps1 on Windows)."
+                    exit 1
+                  fi
