@@ -34,7 +34,7 @@ jobs:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v7
 
             - name: Bootstrap
               shell: bash
@@ -99,7 +99,7 @@ jobs:
         runs-on: windows-latest
 
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v7
 
             - name: Bootstrap
               shell: pwsh
@@ -150,7 +150,7 @@ jobs:
         continue-on-error: true
 
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v7
 
             # CMake and Rust (rustup + stable) are already on the runner.
             # autoconf, autoconf-archive, automake and libtool are what
