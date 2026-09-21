@@ -50,4 +50,4 @@ void NativeWindowBridge::pixelSizeChanged(const QSize& pixelSize, qreal devicePi
     m_impl->layer.drawableSize = CGSizeMake(pixelSize.width(), pixelSize.height());
 }
 
-} // namespace editor
+} // namespace editor.
