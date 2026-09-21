@@ -64,9 +64,9 @@ std::expected<void, RenderError> Swapchain::Recreate(const Surface& surface, con
     return result;
 }
 
-std::expected<AcquireResult, RenderError> Swapchain::Acquire(void* signalSemaphore) noexcept
+std::expected<AcquireResult, RenderError> Swapchain::Acquire(void* signalSemaphore, std::uint64_t timeoutNs) noexcept
 {
-    return m_device->AcquireSwapchainImage(m_nativeHandle, signalSemaphore);
+    return m_device->AcquireSwapchainImage(m_nativeHandle, signalSemaphore, timeoutNs);
 }
 
 std::expected<SwapchainStatus, RenderError> Swapchain::Present(std::uint32_t imageIndex, void* waitSemaphore) noexcept

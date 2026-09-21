@@ -60,6 +60,15 @@ jobs:
             # dlopen()s at runtime, and xvfb + xauth (xvfb-run needs it) give
             # the Xlib surface/swapchain/render-loop tests an X server.
             # vulkan-tools is only here for the diagnostics step below.
+            #
+            # vulkan-validationlayers is VK_LAYER_KHRONOS_validation: with it
+            # (and -DRENDERER_FORCE_VALIDATION=ON below) the Release GPU tests
+            # run under validation, and frame_sync_test / editor_render_smoke
+            # fail on any validation error (renderer/Diagnostics.hpp).
+            #
+            # The libxcb-* / libxkbcommon-x11 packages are what Qt's "xcb"
+            # platform plugin loads at runtime; the editor smoke test (below)
+            # opens a real Qt window on Xvfb through it.
             - name: Install X11, Wayland and software-Vulkan test dependencies
               shell: bash
               run: |
@@ -73,7 +82,17 @@ jobs:
                       xauth \
                       mesa-vulkan-drivers \
                       libvulkan1 \
-                      vulkan-tools
+                      vulkan-tools \
+                      vulkan-validationlayers \
+                      libxcb-cursor0 \
+                      libxcb-icccm4 \
+                      libxcb-image0 \
+                      libxcb-keysyms1 \
+                      libxcb-randr0 \
+                      libxcb-render-util0 \
+                      libxcb-shape0 \
+                      libxcb-xkb1 \
+                      libxkbcommon-x11-0
 
             # Non-fatal: it only exists so a red GPU test in the log below
             # can be told apart from "the runner has no Vulkan device at all".
@@ -81,19 +100,42 @@ jobs:
               shell: bash
               run: vulkaninfo --summary || true
 
+            # RENDERER_FORCE_VALIDATION requests the Vulkan validation layers
+            # in this Release build too (they are Debug-only by default).
             - name: Configure (linux-x64-gcc)
               shell: bash
-              run: cmake --preset linux-x64-gcc
+              run: cmake --preset linux-x64-gcc -DRENDERER_FORCE_VALIDATION=ON
 
             - name: Build (Release)
               shell: bash
               run: cmake --build --preset linux-gcc-release
 
+            # CV_REQUIRE_VALIDATION=1 makes the validation-checking tests fail
+            # if the layer turned out not to be running, instead of passing
+            # having checked nothing. The editor smoke test is held back
+            # (-LE editor) and runs in the next step.
             - name: Test (Release, ffi + gpu)
               shell: bash
+              env:
+                  CV_REQUIRE_VALIDATION: "1"
               run: |
                   xvfb-run -a --server-args="-screen 0 1280x720x24" \
-                      ctest --preset linux-gcc-release
+                      ctest --preset linux-gcc-release -LE editor
+
+            # Experimental, like the macOS job: the editor smoke test needs
+            # the vcpkg Qt build to ship the xcb platform plugin, which has
+            # not been verified on a CI runner yet (PROGRESS.md). A failure
+            # is reported on the step but does not fail the workflow. Remove
+            # `continue-on-error` once it has gone green.
+            - name: Test (Release, editor smoke)
+              shell: bash
+              continue-on-error: true
+              env:
+                  CV_REQUIRE_VALIDATION: "1"
+                  QT_QPA_PLATFORM: xcb
+              run: |
+                  xvfb-run -a --server-args="-screen 0 1280x800x24" \
+                      ctest --preset linux-gcc-release -L editor
 
     windows:
         runs-on: windows-latest

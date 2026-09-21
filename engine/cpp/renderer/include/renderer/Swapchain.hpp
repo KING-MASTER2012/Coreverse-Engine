@@ -10,6 +10,9 @@ namespace renderer {
 class RenderDevice;
 class Surface;
 
+/// "Wait as long as it takes" for Swapchain::Acquire()'s `timeoutNs`.
+inline constexpr std::uint64_t kNoTimeout = ~std::uint64_t{0};
+
 /// A size in pixels.
 struct Extent2D {
     std::uint32_t width = 0;
@@ -27,6 +30,7 @@ enum class SwapchainStatus {
     Ok,
     Suboptimal, ///< Still presentable, but should be rebuilt soon.
     OutOfDate,  ///< Must be rebuilt before acquiring/presenting again.
+    NotReady,   ///< Acquire() only: no image became available within the timeout. Nothing was acquired; try again.
 };
 
 struct AcquireResult {
@@ -98,9 +102,10 @@ public:
     /// acquired image indices, and anything built on them (framebuffers,
     /// ...). GetImageCount()/GetExtent() reflect the new state.
     ///
-    /// Waits for the device to go idle first — there is no per-frame
-    /// synchronization to wait on yet (Phase 6.4) — so this is a
-    /// resize-time operation, not something to call every frame.
+    /// Waits for the device to go idle first, so this is a resize-time
+    /// operation, not something to call every frame. A FrameSync
+    /// (FrameSync.hpp) needs no notification afterwards: it notices the
+    /// rebuilt swapchain on its next BeginFrame().
     ///
     /// Failure semantics:
     ///  * Anything detected before the old swapchain is touched — e.g.
@@ -115,26 +120,33 @@ public:
     ///    Destroying it is always fine.
     [[nodiscard]] std::expected<void, RenderError> Recreate(const Surface& surface, const SwapchainDesc& desc) noexcept;
 
-    /// Acquires the next presentable image; blocks until one is ready.
+    /// Acquires the next presentable image; blocks until one is ready or
+    /// `timeoutNs` nanoseconds have passed (kNoTimeout, the default, never
+    /// gives up). A timeout is reported as SwapchainStatus::NotReady, not
+    /// as an error: nothing was acquired and the call can simply be
+    /// repeated — which is what a GUI thread wants for a window that is
+    /// hidden or occluded, where images may not be handed back for a while.
     /// `signalSemaphore` is a backend-native semaphore handle (e.g. a
     /// VkSemaphore) the GPU signals once the image is actually
     /// available — pass one obtained through the backend's own escape
     /// hatch so a subsequent Submit() can wait on it before rendering.
     /// nullptr (the default) makes this call synchronous instead: it
     /// blocks the CPU until the image is ready using an internal fence,
-    /// which is enough before any real submission work exists.
+    /// which is enough for a single-shot render. A real render loop
+    /// should use FrameSync (FrameSync.hpp), which owns all of this.
     /// Suboptimal/OutOfDate are not errors — they mean the swapchain
     /// should be rebuilt (typically after a resize). The caller decides
     /// when; a Suboptimal result still hands back a usable image index.
-    [[nodiscard]] std::expected<AcquireResult, RenderError> Acquire(void* signalSemaphore = nullptr) noexcept;
+    [[nodiscard]] std::expected<AcquireResult, RenderError>
+    Acquire(void* signalSemaphore = nullptr, std::uint64_t timeoutNs = kNoTimeout) noexcept;
 
     /// Presents a previously acquired image. `waitSemaphore` is a
     /// backend-native semaphore handle (e.g. a VkSemaphore signaled by
     /// the work that rendered into this image); nullptr presents
-    /// without waiting on anything, which is only meaningful before any
-    /// rendering has been wired up (Phase 5.4) — Phase 5.5's render loop is
-    /// expected to pass a real one obtained through the backend's own
-    /// escape hatch (see RenderDevice.hpp's class comment).
+    /// without waiting on anything, which is only correct for a
+    /// single-shot render that already waited for the GPU itself (see
+    /// render_loop_test). A real render loop uses FrameSync
+    /// (FrameSync.hpp), which passes the right semaphore.
     [[nodiscard]] std::expected<SwapchainStatus, RenderError>
     Present(std::uint32_t imageIndex, void* waitSemaphore = nullptr) noexcept;
 

@@ -1,18 +1,23 @@
 # PROGRESS.md
-Last changed 20.09.2026 by KING-MASTER2012.
+Last changed 21.09.2026 by KING-MASTER2012.
 
 ## What happened compared to the previous commit?
-- added (Phase 6.2): the native-window bridge. `ViewportWidget` is a QWidget with its own native window (Qt::WA_NativeWindow + WA_PaintOnScreen) that the renderer presents into; `NativeWindowBridge` turns it into a `renderer::NativeWindowHandle` - Windows: HWND/HINSTANCE, Linux: X11 Window + an Xlib Display* (Qt's "xcb" platform, i.e. X11 or XWayland), macOS: a CAMetalLayer set on the NSView (Objective-C++, NativeWindowBridge_macos.mm).
-- added (Phase 6.3): the editor links `renderer`. `ViewportRenderer` owns the device, surface and swapchain of the viewport, is started from EditorWindow::showEvent (queued) and shut down in closeEvent in the order the renderer requires (swapchain, surface, device, native window). Resizes are coalesced into one swapchain rebuild per event-loop turn. A missing/unsupported Vulkan setup is not fatal: the editor opens and the status bar says why.
-- added: `Swapchain::Recreate()` (rebuild in place on resize, hands the old swapchain to Vulkan), `Swapchain::GetExtent()`, `Extent2D`, `RenderErrorCode::ZeroExtent` (a minimized window is not an error) and `RenderDevice::RebuildSwapchain()` for backends. The Vulkan swapchain creation was split into query / create / destroy helpers. swapchain_test now resizes its window twice and checks the rebuilt extent.
-- note: nothing is rendered in the viewport yet (Phase 6.4).
-- note: on Linux only Qt's "xcb" platform is supported; under a native Wayland Qt platform the editor shows a message telling to run with QT_QPA_PLATFORM=xcb.
+- added (Phase 6.4): `renderer::FrameSync` (renderer/FrameSync.hpp) - the frame-level synchronization abstraction. `RenderDevice::CreateFrameSync()` builds it; `BeginFrame(swapchain)` waits for the in-flight slot's previous frame, acquires an image (100 ms timeout, so a hidden window can never block the GUI thread) and hands out a reset command buffer; `EndFrame(swapchain, frame)` submits and presents. Semaphores/fences stay inside the backend (acquire semaphore + fence + command buffer per in-flight slot, render-finished semaphore per swapchain image); a rebuilt swapchain is noticed by the next `BeginFrame()`, no extra call. Vulkan implementation in VulkanRenderDevice.cpp; `framesInFlight` is clamped to [1, 8].
+- added (Phase 6.4): the editor render loop. `ViewportRenderer` owns a `FrameSync` (after the swapchain, so it dies first) and renders from a ~60 Hz timer on the GUI thread: a clear to a slowly cycling color, FPS in the status bar. The loop rests while the viewport is hidden or the window is minimized, and while the swapchain cannot be rebuilt yet (zero-sized viewport, failed rebuild - retried on the next resize and every 250 ms). `rebuildSwapchain(force)` no longer skips a rebuild just because the size is unchanged, so `OutOfDate` is always handled. Fatal errors (device lost, failed submit/present) stop rendering and show up in the status bar; recovering from them is not implemented.
+- added: `Swapchain::Acquire(semaphore, timeoutNs)` and `SwapchainStatus::NotReady` (timeout expired, nothing acquired). `VK_ERROR_DEVICE_LOST` / `VK_ERROR_OUT_OF_*_MEMORY` now map to `RenderErrorCode::DeviceLost` / `OutOfMemory` for acquire, present, submit and begin/end instead of `Unknown`.
+- added: validation as a test signal. `renderer::ValidationErrorCount()` (renderer/Diagnostics.hpp) counts validation-layer errors, `RenderDevice::IsValidationEnabled()` says whether the layer is running, `RENDERER_FORCE_VALIDATION` (CMake option) enables the layer in every build type. Linux CI installs `vulkan-validationlayers`, configures with the option and sets `CV_REQUIRE_VALIDATION=1`, which makes the tests fail if the layer is not actually running.
+- added: `frame_sync_test` (gpu): 1, 2 and more-frames-than-images in flight, ~140 frames each with a resize in the middle, Acquire timeout, misuse checks, move semantics, zero validation errors. `editor --smoke-frames N` + ctest `editor_render_smoke` (labels `gpu;editor`): the real Qt window renders N frames, is resized half-way, quits by itself and must find no validation errors. CI runs it in its own non-blocking step (`continue-on-error`, like macOS) because the vcpkg Qt xcb plugin is unverified there.
+- note: `AcquireCommandBuffer()` allocates a new command buffer on every call and only frees them at `Shutdown()` - use it once per long-lived buffer; per-frame buffers come from `FrameSync`. Documented on the function.
+- note: `Submit()` still waits at the TRANSFER stage (right for a clear). The first real graphics pass must change it to COLOR_ATTACHMENT_OUTPUT (comment in `VulkanRenderDevice::Submit`).
+- note: nothing is drawn in the viewport except the clear color yet.
 
 ## What will be done?
-- Phase 6.4: frame synchronization abstraction (frames in flight) and a real render loop in the viewport.
-- Check that the vcpkg Qt build on Linux ships the xcb platform plugin (the editor needs it to open a window there).
+- Check that the vcpkg Qt build on Linux ships the xcb platform plugin (the editor and its smoke test need it to open a window there); then drop `continue-on-error` from the CI editor smoke step.
+- A multi-frame variant of the Wayland render loop test (needs a look at how Weston's frame callbacks interact with acquire).
 - Native Wayland support for the editor viewport (needs Qt's private wl_surface accessor).
-- Phase 7c: VFS FFI extensions (list_dir/metadata/remove), C++ RAII wrappers, renderer logging through the ffi logger.
+- Device-lost recovery for the editor (rebuild device, surface, swapchain and frame sync).
+- First real graphics pass (pipeline + draw); render thread when the GUI thread becomes the bottleneck.
+- Phase 7c: VFS FFI extensions (list_dir/metadata/remove), C++ RAII wrappers, renderer logging through the ffi logger (the validation callback and `ValidationErrorCount()` are the place to hook it into), VfsContext re-init decision.
 - Debug bootstrap.sh on macOS (needs the Bootstrap step's log).
 - Asset system will be added.
 - IO system will be added.

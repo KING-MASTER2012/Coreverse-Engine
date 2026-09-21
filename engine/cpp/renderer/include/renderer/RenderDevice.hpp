@@ -6,6 +6,7 @@
 
 #include "renderer/Buffer.hpp"
 #include "renderer/CommandBuffer.hpp"
+#include "renderer/FrameSync.hpp"
 #include "renderer/GraphicsAPI.hpp"
 #include "renderer/RenderError.hpp"
 #include "renderer/Surface.hpp"
@@ -21,8 +22,8 @@ namespace renderer {
 /// This is deliberately a *thin* common base, not a lowest-common-
 /// denominator API: it only covers what every backend can do the same
 /// way (report itself, tear itself down, allocate a buffer, create a
-/// presentation surface, build a swapchain, record and submit a minimal
-/// command buffer). Anything backend-specific stays out of this
+/// presentation surface, build a swapchain, keep frames in flight, record
+/// and submit a minimal command buffer). Anything backend-specific stays out of this
 /// interface entirely — callers who need it check GetAPI() and downcast
 /// to the concrete backend type (e.g. VulkanRenderDevice::GetVkDevice())
 /// rather than this class growing a GetNativeHandle()-style grab bag
@@ -55,19 +56,29 @@ public:
     [[nodiscard]] virtual std::string_view GetDeviceName() const noexcept = 0;
 
     /// Blocks until this device has finished all outstanding GPU work.
-    /// Shutdown() calls this itself before releasing anything, but a
-    /// caller that created its own backend-native sync objects (via the
-    /// escape hatch — e.g. Phase 5.5's render loop creating VkSemaphores
-    /// directly) must call this before destroying those objects itself;
-    /// this device has no way to track resources it didn't hand out.
+    /// Shutdown() calls this itself before releasing anything, and so do
+    /// Swapchain::Recreate() and the FrameSync destructor; a caller that
+    /// created its own backend-native sync objects (via the escape hatch)
+    /// must call this before destroying those objects itself — this device
+    /// has no way to track resources it didn't hand out.
     virtual void WaitIdle() noexcept = 0;
+
+    /// Whether this device is running with the graphics API's validation
+    /// layer active (Vulkan: VK_LAYER_KHRONOS_validation). Requested by
+    /// the build (RENDERER_ENABLE_VALIDATION) and silently skipped when
+    /// the layer is not installed, so this is the way to find out whether
+    /// ValidationErrorCount() (Diagnostics.hpp) can actually catch anything.
+    [[nodiscard]] virtual bool IsValidationEnabled() const noexcept
+    {
+        return false;
+    }
 
     /// Releases every backend resource this device owns. Safe to call
     /// more than once; the destructor calls it too, so an explicit call
     /// is only needed when teardown order must be controlled (e.g.
     /// before destroying a window this device's surface depends on).
-    /// Every Buffer/Surface/Swapchain this device created must already
-    /// be destroyed before this runs.
+    /// Every Buffer/Surface/Swapchain/FrameSync this device created must
+    /// already be destroyed before this runs.
     virtual void Shutdown() noexcept = 0;
 
     /// Allocates a GPU buffer. The returned Buffer must be destroyed
@@ -96,10 +107,22 @@ public:
     [[nodiscard]] virtual std::expected<Swapchain, RenderError>
     CreateSwapchain(const Surface& surface, const SwapchainDesc& desc) noexcept = 0;
 
+    /// Creates the per-frame synchronization state for a render loop
+    /// presenting into `swapchain` — see FrameSync.hpp. `swapchain` is only
+    /// used to size the per-image state; the FrameSync is not bound to it
+    /// (a rebuilt swapchain is picked up automatically). The returned
+    /// FrameSync must be destroyed before this device's Shutdown() — same
+    /// ordering rule as Buffer/Surface/Swapchain.
+    [[nodiscard]] virtual std::expected<FrameSync, RenderError>
+    CreateFrameSync(const Swapchain& swapchain, const FrameSyncDesc& desc) noexcept = 0;
+
     /// Borrows a command buffer from a pool this device owns. Unlike
     /// Create*() above, the returned CommandBuffer is not RAII-owned —
     /// see CommandBuffer.hpp's class comment — so there is no matching
-    /// Destroy call for it.
+    /// Destroy call for it. Every call allocates a new one that lives
+    /// until Shutdown(): call it once per long-lived use, never once per
+    /// frame. A render loop gets its per-frame command buffers from
+    /// FrameSync instead, which reuses them.
     [[nodiscard]] virtual std::expected<CommandBuffer, RenderError> AcquireCommandBuffer() noexcept = 0;
 
     /// Submits a recorded (Begin()/.../End()'d) command buffer to this
@@ -117,6 +140,7 @@ protected:
     friend class Surface;
     friend class Swapchain;
     friend class CommandBuffer;
+    friend class FrameSync;
 
     /// Lets a derived backend construct a Buffer. Buffer's constructor
     /// is private with only RenderDevice as a friend, and friendship
@@ -147,6 +171,12 @@ protected:
         return CommandBuffer(device, nativeHandle);
     }
 
+    /// Same purpose as MakeBuffer(), for FrameSync — see there.
+    static FrameSync MakeFrameSync(RenderDevice* device, void* nativeHandle, std::uint32_t framesInFlight) noexcept
+    {
+        return FrameSync(device, nativeHandle, framesInFlight);
+    }
+
     /// Releases the backend resource behind a Buffer's native handle.
     /// Called only by Buffer's destructor/move-assignment — never call
     /// this directly; release a buffer by letting its Buffer object be
@@ -161,11 +191,22 @@ protected:
     /// Swapchain's destructor/move-assignment.
     virtual void ReleaseSwapchain(void* nativeHandle) noexcept = 0;
 
+    /// Same contract as ReleaseBuffer(), for FrameSync — called only by
+    /// FrameSync's destructor/move-assignment.
+    virtual void ReleaseFrameSync(void* nativeHandle) noexcept = 0;
+
+    /// Backs FrameSync::BeginFrame()/EndFrame() — called only by
+    /// FrameSync, never directly.
+    virtual std::expected<BeginFrameResult, RenderError>
+    BeginFrameSync(void* frameSyncHandle, Swapchain& swapchain) noexcept = 0;
+    virtual std::expected<SwapchainStatus, RenderError>
+    EndFrameSync(void* frameSyncHandle, Swapchain& swapchain, const Frame& frame) noexcept = 0;
+
     /// Backs Swapchain::Acquire() — called only by Swapchain, never
     /// directly. `signalSemaphore` is nullable; see Swapchain::Acquire()
-    /// for what nullptr means.
+    /// for what nullptr means, and for `timeoutNs`.
     virtual std::expected<AcquireResult, RenderError>
-    AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore) noexcept = 0;
+    AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore, std::uint64_t timeoutNs) noexcept = 0;
 
     /// Backs Swapchain::Present() — called only by Swapchain, never
     /// directly.

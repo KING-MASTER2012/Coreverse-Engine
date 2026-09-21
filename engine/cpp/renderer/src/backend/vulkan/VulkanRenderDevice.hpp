@@ -6,6 +6,7 @@
 
 #include "renderer/Buffer.hpp"
 #include "renderer/CommandBuffer.hpp"
+#include "renderer/FrameSync.hpp"
 #include "renderer/RenderDevice.hpp"
 #include "renderer/RenderError.hpp"
 #include "renderer/Surface.hpp"
@@ -24,8 +25,8 @@ namespace renderer::backend::vulkan {
 /// Vulkan implementation of RenderDevice. Owns the VkInstance, the
 /// (optional) debug messenger, the selected VkPhysicalDevice, the
 /// VkDevice, the graphics queue pulled from it, the VMA allocator used
-/// to back every buffer this device creates, and (Phase 5.5) the command
-/// pool CommandBuffers are borrowed from.
+/// to back every buffer this device creates, and the command pool
+/// CommandBuffers are borrowed from.
 ///
 /// This header lives under src/, not include/renderer/ — it is never
 /// part of the public renderer API. Callers only ever see this type
@@ -61,6 +62,11 @@ public:
 
     void WaitIdle() noexcept override;
 
+    [[nodiscard]] bool IsValidationEnabled() const noexcept override
+    {
+        return m_validationEnabled;
+    }
+
     void Shutdown() noexcept override;
 
     [[nodiscard]] std::expected<Buffer, RenderError> CreateBuffer(const BufferDesc& desc) noexcept override;
@@ -69,6 +75,9 @@ public:
 
     [[nodiscard]] std::expected<Swapchain, RenderError>
     CreateSwapchain(const Surface& surface, const SwapchainDesc& desc) noexcept override;
+
+    [[nodiscard]] std::expected<FrameSync, RenderError>
+    CreateFrameSync(const Swapchain& swapchain, const FrameSyncDesc& desc) noexcept override;
 
     [[nodiscard]] std::expected<CommandBuffer, RenderError> AcquireCommandBuffer() noexcept override;
 
@@ -113,8 +122,13 @@ protected:
     void ReleaseBuffer(void* nativeHandle) noexcept override;
     void ReleaseSurface(void* nativeHandle) noexcept override;
     void ReleaseSwapchain(void* nativeHandle) noexcept override;
+    void ReleaseFrameSync(void* nativeHandle) noexcept override;
+    std::expected<BeginFrameResult, RenderError>
+    BeginFrameSync(void* frameSyncHandle, Swapchain& swapchain) noexcept override;
+    std::expected<SwapchainStatus, RenderError>
+    EndFrameSync(void* frameSyncHandle, Swapchain& swapchain, const Frame& frame) noexcept override;
     std::expected<AcquireResult, RenderError>
-    AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore) noexcept override;
+    AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore, std::uint64_t timeoutNs) noexcept override;
     std::expected<SwapchainStatus, RenderError>
     PresentSwapchainImage(void* nativeHandle, std::uint32_t imageIndex, void* waitSemaphore) noexcept override;
     std::expected<void, RenderError> RebuildSwapchain(

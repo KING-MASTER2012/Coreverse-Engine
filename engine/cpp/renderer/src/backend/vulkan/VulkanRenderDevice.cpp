@@ -3,14 +3,47 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include "renderer/Diagnostics.hpp"
 
 namespace renderer::backend::vulkan {
 
 namespace {
 
 constexpr const char* kValidationLayerName = "VK_LAYER_KHRONOS_validation";
+
+/// How long FrameSync::BeginFrame() waits for a swapchain image before
+/// reporting FrameStatus::NotReady. Long enough to ride out a vsync
+/// interval (even a 30 Hz one) without spurious skips, short enough that a
+/// GUI thread driving the loop from a timer stays responsive when the
+/// window is hidden or occluded and the presentation engine hands no
+/// images back.
+constexpr std::uint64_t kFrameAcquireTimeoutNs = 100'000'000; // 100 ms
+
+/// Turns a failed Vulkan call into a RenderError. Device loss and memory
+/// exhaustion get their own codes (a render loop reacts to them very
+/// differently from anything else); everything else keeps `fallback`, and
+/// the VkResult is always in the detail string.
+RenderError MakeVkError(RenderErrorCode fallback, const char* call, VkResult result)
+{
+    RenderErrorCode code = fallback;
+    switch (result) {
+        case VK_ERROR_DEVICE_LOST:
+            code = RenderErrorCode::DeviceLost;
+            break;
+        case VK_ERROR_OUT_OF_HOST_MEMORY:
+        case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+            code = RenderErrorCode::OutOfMemory;
+            break;
+        default:
+            break;
+    }
+    return RenderError{code, std::string(call) + " failed (VkResult=" + std::to_string(result) + ")"};
+}
 
 /// Pairs the two handles VMA needs to free a buffer. Buffer.hpp only
 /// stores a backend-agnostic void*, so this is what that void* actually
@@ -249,6 +282,114 @@ CreateSwapchainResources(VkDevice device, const SwapchainConfig& config, VkSwapc
     return handle;
 }
 
+/// Resources of one in-flight slot: what a frame needs to itself, as
+/// opposed to what it needs per swapchain image.
+struct FrameSlot {
+    /// Signaled by vkAcquireNextImageKHR when the acquired image can be
+    /// written; waited on by this slot's submit.
+    VkSemaphore imageAvailable = VK_NULL_HANDLE;
+    /// Signaled when this slot's submit has finished on the GPU. Created
+    /// signaled, so the very first wait on it passes.
+    VkFence inFlight = VK_NULL_HANDLE;
+    /// Reused every time this slot comes around (the pool allows resetting
+    /// individual command buffers); freed with the FrameSync.
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+};
+
+/// What FrameSync's void* actually points at for the Vulkan backend; only
+/// CreateFrameSync/ReleaseFrameSync/BeginFrameSync/EndFrameSync (this
+/// file) ever interpret it.
+///
+/// Semaphore ownership follows the one rule that holds up under both
+/// FIFO and MAILBOX presentation: the semaphore acquire signals belongs to
+/// the in-flight *slot* (a slot's previous submit is known to be finished
+/// once its fence passed), while the semaphore the submit signals for
+/// present to wait on belongs to the swapchain *image* (only the image
+/// coming back from the presentation engine proves that the previous
+/// present of it consumed the semaphore).
+struct VulkanFrameSyncHandle {
+    std::vector<FrameSlot> slots;
+    std::vector<VkSemaphore> renderFinished; ///< One per swapchain image.
+    /// One per swapchain image: the fence of the slot whose frame last
+    /// rendered into that image (not owned). Needed when there are more
+    /// slots than images, where a slot's own fence does not cover the
+    /// image it is handed.
+    std::vector<VkFence> imageInFlight;
+    /// The VkSwapchainKHR the per-image state above was sized for; a
+    /// different one (or a different image count) means the swapchain was
+    /// rebuilt since.
+    VkSwapchainKHR trackedSwapchain = VK_NULL_HANDLE;
+    std::uint32_t currentSlot = 0;
+    bool frameOpen = false;         ///< BeginFrame() returned Ready and EndFrame() has not run yet.
+    bool acquireSuboptimal = false; ///< The open frame's acquire reported VK_SUBOPTIMAL_KHR.
+    bool failed = false;            ///< A failed EndFrame() (or half-done BeginFrame()) left the state unusable.
+};
+
+/// Destroys everything a VulkanFrameSyncHandle owns. Safe on a partially
+/// built or already emptied handle (vkDestroy*(VK_NULL_HANDLE) are valid
+/// no-ops). The caller guarantees the device is idle.
+void DestroyFrameSyncResources(VkDevice device, VkCommandPool commandPool, VulkanFrameSyncHandle& handle) noexcept
+{
+    std::vector<VkCommandBuffer> commandBuffers;
+    for (FrameSlot& slot : handle.slots) {
+        vkDestroySemaphore(device, slot.imageAvailable, nullptr);
+        vkDestroyFence(device, slot.inFlight, nullptr);
+        if (slot.commandBuffer != VK_NULL_HANDLE) {
+            commandBuffers.push_back(slot.commandBuffer);
+        }
+    }
+    if (!commandBuffers.empty()) {
+        vkFreeCommandBuffers(
+            device, commandPool, static_cast<std::uint32_t>(commandBuffers.size()), commandBuffers.data()
+        );
+    }
+    for (VkSemaphore semaphore : handle.renderFinished) {
+        vkDestroySemaphore(device, semaphore, nullptr);
+    }
+
+    handle.slots.clear();
+    handle.renderFinished.clear();
+    handle.imageInFlight.clear();
+    handle.trackedSwapchain = VK_NULL_HANDLE;
+}
+
+/// (Re)sizes the per-swapchain-image state to `swapchain` and remembers
+/// which swapchain that was. The caller guarantees the device is idle:
+/// nothing may still be using the semaphores this may replace.
+std::expected<void, RenderError>
+SyncPerImageState(VkDevice device, VulkanFrameSyncHandle& handle, const VulkanSwapchainHandle& swapchain) noexcept
+{
+    const std::size_t imageCount = swapchain.images.size();
+
+    if (handle.renderFinished.size() != imageCount) {
+        for (VkSemaphore semaphore : handle.renderFinished) {
+            vkDestroySemaphore(device, semaphore, nullptr);
+        }
+        handle.renderFinished.clear();
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        for (std::size_t i = 0; i < imageCount; ++i) {
+            VkSemaphore semaphore = VK_NULL_HANDLE;
+            if (const VkResult result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore);
+                result != VK_SUCCESS) {
+                for (VkSemaphore created : handle.renderFinished) {
+                    vkDestroySemaphore(device, created, nullptr);
+                }
+                handle.renderFinished.clear();
+                return std::unexpected(MakeVkError(RenderErrorCode::InitializationFailed, "vkCreateSemaphore", result));
+            }
+            handle.renderFinished.push_back(semaphore);
+        }
+    }
+
+    // Whatever fences the old images were tied to no longer say anything
+    // about the new ones.
+    handle.imageInFlight.assign(imageCount, VK_NULL_HANDLE);
+    handle.trackedSwapchain = swapchain.swapchain;
+    return {};
+}
+
 VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     VkDebugUtilsMessageTypeFlagsEXT /*messageType*/,
@@ -256,11 +397,15 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
     void* /*userData*/
 )
 {
-    // Phase 5.1/5.2 only need validation output to land somewhere visible
-    // so leak/misuse checks aren't silent; this gets routed through
-    // cv-log once the renderer is wired to ffi (later phase).
+    // Validation output lands on stderr so leak/misuse checks aren't
+    // silent; this gets routed through cv-log once the renderer is wired
+    // to ffi (Phase 7c). Errors are additionally counted
+    // (renderer/Diagnostics.hpp) so a test can fail on them.
     if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
         std::fprintf(stderr, "[vulkan] %s\n", callbackData->pMessage);
+    }
+    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        detail::NoteValidationError();
     }
     return VK_FALSE;
 }
@@ -566,10 +711,9 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateCommandPool()
 {
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    // RESET_COMMAND_BUFFER: Phase 5.5's render loop needs to be able to
-    // re-record (or just re-Begin, implicitly resetting) a command
-    // buffer across frames rather than allocating a fresh one every
-    // time — cheap to allow now, costs nothing when unused.
+    // RESET_COMMAND_BUFFER: FrameSync re-records the same command buffers
+    // across frames (vkResetCommandBuffer, then Begin) instead of
+    // allocating fresh ones every time.
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     poolInfo.queueFamilyIndex = m_graphicsQueueFamily;
 
@@ -819,7 +963,7 @@ void VulkanRenderDevice::ReleaseSwapchain(void* nativeHandle) noexcept
 }
 
 std::expected<AcquireResult, RenderError>
-VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore) noexcept
+VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore, std::uint64_t timeoutNs) noexcept
 {
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
     const auto semaphore = static_cast<VkSemaphore>(signalSemaphore);
@@ -834,19 +978,19 @@ VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaph
     if (semaphore == VK_NULL_HANDLE) {
         // No semaphore for the GPU to signal into — fall back to a
         // fence and wait on it ourselves, so this call stays usable
-        // stand-alone (Phase 5.4's test still calls it exactly this way).
-        // Vulkan requires at least one of {semaphore, fence} to be
-        // valid; this is the "no real submission pipeline yet" path.
+        // stand-alone (the single-shot tests still call it exactly this
+        // way; a render loop goes through FrameSync instead). Vulkan
+        // requires at least one of {semaphore, fence} to be valid.
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         if (const VkResult result = vkCreateFence(m_device, &fenceInfo, nullptr, &fence); result != VK_SUCCESS) {
-            return std::unexpected(RenderError{RenderErrorCode::InitializationFailed, "vkCreateFence failed"});
+            return std::unexpected(MakeVkError(RenderErrorCode::InitializationFailed, "vkCreateFence", result));
         }
     }
 
     uint32_t imageIndex = 0;
     const VkResult acquireResult =
-        vkAcquireNextImageKHR(m_device, handle->swapchain, UINT64_MAX, semaphore, fence, &imageIndex);
+        vkAcquireNextImageKHR(m_device, handle->swapchain, timeoutNs, semaphore, fence, &imageIndex);
 
     if (fence != VK_NULL_HANDLE) {
         if (acquireResult == VK_SUCCESS || acquireResult == VK_SUBOPTIMAL_KHR) {
@@ -862,13 +1006,11 @@ VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaph
             return AcquireResult{imageIndex, SwapchainStatus::Suboptimal};
         case VK_ERROR_OUT_OF_DATE_KHR:
             return AcquireResult{0, SwapchainStatus::OutOfDate};
+        case VK_TIMEOUT:
+        case VK_NOT_READY:
+            return AcquireResult{0, SwapchainStatus::NotReady};
         default:
-            return std::unexpected(
-                RenderError{
-                    RenderErrorCode::Unknown,
-                    "vkAcquireNextImageKHR failed (VkResult=" + std::to_string(acquireResult) + ")"
-                }
-            );
+            return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vkAcquireNextImageKHR", acquireResult));
     }
 }
 
@@ -901,11 +1043,7 @@ VulkanRenderDevice::PresentSwapchainImage(void* nativeHandle, std::uint32_t imag
         case VK_ERROR_OUT_OF_DATE_KHR:
             return SwapchainStatus::OutOfDate;
         default:
-            return std::unexpected(
-                RenderError{
-                    RenderErrorCode::Unknown, "vkQueuePresentKHR failed (VkResult=" + std::to_string(result) + ")"
-                }
-            );
+            return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vkQueuePresentKHR", result));
     }
 }
 
@@ -955,11 +1093,7 @@ std::expected<void, RenderError> VulkanRenderDevice::BeginCommandBuffer(void* co
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
     if (const VkResult result = vkBeginCommandBuffer(commandBuffer, &beginInfo); result != VK_SUCCESS) {
-        return std::unexpected(
-            RenderError{
-                RenderErrorCode::Unknown, "vkBeginCommandBuffer failed (VkResult=" + std::to_string(result) + ")"
-            }
-        );
+        return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vkBeginCommandBuffer", result));
     }
     return {};
 }
@@ -969,9 +1103,7 @@ std::expected<void, RenderError> VulkanRenderDevice::EndCommandBuffer(void* comm
     const auto commandBuffer = static_cast<VkCommandBuffer>(commandBufferHandle);
 
     if (const VkResult result = vkEndCommandBuffer(commandBuffer); result != VK_SUCCESS) {
-        return std::unexpected(
-            RenderError{RenderErrorCode::Unknown, "vkEndCommandBuffer failed (VkResult=" + std::to_string(result) + ")"}
-        );
+        return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vkEndCommandBuffer", result));
     }
     return {};
 }
@@ -1065,7 +1197,10 @@ std::expected<void, RenderError> VulkanRenderDevice::Submit(
 
     // Matches RecordClearColor()'s first barrier: whatever waits on
     // `wait` only needs to block the transfer stage, not the whole
-    // pipeline, since a clear is the only work this milestone submits.
+    // pipeline, since a clear is the only work submitted so far. The first
+    // real graphics pass must change this to
+    // VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT (the stage where the
+    // swapchain image is first written).
     constexpr VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 
     VkSubmitInfo submitInfo{};
@@ -1083,11 +1218,241 @@ std::expected<void, RenderError> VulkanRenderDevice::Submit(
     }
 
     if (const VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, vkFence); result != VK_SUCCESS) {
-        return std::unexpected(
-            RenderError{RenderErrorCode::Unknown, "vkQueueSubmit failed (VkResult=" + std::to_string(result) + ")"}
-        );
+        return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vkQueueSubmit", result));
     }
     return {};
+}
+
+std::expected<FrameSync, RenderError>
+VulkanRenderDevice::CreateFrameSync(const Swapchain& swapchain, const FrameSyncDesc& desc) noexcept
+{
+    if (!swapchain.IsValid()) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::InitializationFailed, "CreateFrameSync called with an invalid Swapchain"}
+        );
+    }
+    const auto* swapchainHandle = static_cast<const VulkanSwapchainHandle*>(swapchain.GetNativeHandle());
+    const std::uint32_t slotCount = std::clamp(desc.framesInFlight, std::uint32_t{1}, kMaxFramesInFlight);
+
+    auto handle = std::make_unique<VulkanFrameSyncHandle>();
+    handle->slots.resize(slotCount);
+
+    // Nothing has been handed out yet, so a failure rolls back everything
+    // created so far right here.
+    const auto fail = [&](RenderError error) {
+        DestroyFrameSyncResources(m_device, m_commandPool, *handle);
+        return std::unexpected(std::move(error));
+    };
+
+    for (FrameSlot& slot : handle->slots) {
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        if (const VkResult result = vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &slot.imageAvailable);
+            result != VK_SUCCESS) {
+            return fail(MakeVkError(RenderErrorCode::InitializationFailed, "vkCreateSemaphore", result));
+        }
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags =
+            VK_FENCE_CREATE_SIGNALED_BIT; // the first frame of every slot must not wait for a frame that never ran
+        if (const VkResult result = vkCreateFence(m_device, &fenceInfo, nullptr, &slot.inFlight);
+            result != VK_SUCCESS) {
+            return fail(MakeVkError(RenderErrorCode::InitializationFailed, "vkCreateFence", result));
+        }
+
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = m_commandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+        if (const VkResult result = vkAllocateCommandBuffers(m_device, &allocInfo, &slot.commandBuffer);
+            result != VK_SUCCESS) {
+            return fail(MakeVkError(RenderErrorCode::InitializationFailed, "vkAllocateCommandBuffers", result));
+        }
+    }
+
+    if (auto result = SyncPerImageState(m_device, *handle, *swapchainHandle); !result) {
+        return fail(std::move(result.error()));
+    }
+
+    return RenderDevice::MakeFrameSync(this, handle.release(), slotCount);
+}
+
+void VulkanRenderDevice::ReleaseFrameSync(void* nativeHandle) noexcept
+{
+    if (nativeHandle == nullptr) {
+        return;
+    }
+    auto* handle = static_cast<VulkanFrameSyncHandle*>(nativeHandle);
+
+    // If the device is already gone (the FrameSync outlived Shutdown(),
+    // against the documented order) there is nothing left to destroy the
+    // Vulkan objects with; freeing the bookkeeping is all that can be done.
+    if (m_device != VK_NULL_HANDLE) {
+        WaitIdle();
+        DestroyFrameSyncResources(m_device, m_commandPool, *handle);
+    }
+    delete handle;
+}
+
+std::expected<BeginFrameResult, RenderError>
+VulkanRenderDevice::BeginFrameSync(void* frameSyncHandle, Swapchain& swapchain) noexcept
+{
+    auto* fs = static_cast<VulkanFrameSyncHandle*>(frameSyncHandle);
+    auto* sc = static_cast<VulkanSwapchainHandle*>(swapchain.GetNativeHandle());
+
+    if (fs->failed) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::Unknown, "FrameSync is unusable after an earlier failure; recreate it"}
+        );
+    }
+    if (fs->frameOpen) {
+        // Waiting on the slot's fence below would never return: it was
+        // reset when that frame began and is only signaled by its submit.
+        return std::unexpected(RenderError{RenderErrorCode::Unknown, "BeginFrame() called again before EndFrame()"});
+    }
+
+    // Emptied by a failed Swapchain::Recreate(): nothing to acquire from
+    // until a later Recreate() succeeds.
+    if (sc->swapchain == VK_NULL_HANDLE) {
+        return BeginFrameResult{FrameStatus::OutOfDate, {}};
+    }
+
+    // Swapchain::Recreate() waited for the device to go idle, so nothing
+    // still uses the old per-image state; a swapchain this FrameSync was
+    // never used with gets the same treatment. The image-count check
+    // catches a rebuild that happened twice between frames and handed back
+    // an equal VkSwapchainKHR value.
+    if (sc->swapchain != fs->trackedSwapchain || sc->images.size() != fs->renderFinished.size()) {
+        WaitIdle();
+        if (auto result = SyncPerImageState(m_device, *fs, *sc); !result) {
+            return std::unexpected(std::move(result.error()));
+        }
+    }
+
+    FrameSlot& slot = fs->slots[fs->currentSlot];
+
+    // The GPU is done with this slot's previous frame — and so with its
+    // acquire semaphore and its command buffer — once its fence passed.
+    if (const VkResult result = vkWaitForFences(m_device, 1, &slot.inFlight, VK_TRUE, UINT64_MAX);
+        result != VK_SUCCESS) {
+        return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vkWaitForFences", result));
+    }
+
+    // Nothing is modified until the acquire succeeded: OutOfDate/NotReady
+    // leave the fence signaled (a reset fence with no submit coming would
+    // deadlock the next wait) and the acquire semaphore untouched.
+    std::uint32_t imageIndex = 0;
+    const VkResult acquireResult = vkAcquireNextImageKHR(
+        m_device, sc->swapchain, kFrameAcquireTimeoutNs, slot.imageAvailable, VK_NULL_HANDLE, &imageIndex
+    );
+    switch (acquireResult) {
+        case VK_SUCCESS:
+            fs->acquireSuboptimal = false;
+            break;
+        case VK_SUBOPTIMAL_KHR:
+            fs->acquireSuboptimal =
+                true; // still a usable image and a signaled semaphore: render it, rebuild afterwards
+            break;
+        case VK_ERROR_OUT_OF_DATE_KHR:
+            return BeginFrameResult{FrameStatus::OutOfDate, {}};
+        case VK_TIMEOUT:
+        case VK_NOT_READY:
+            return BeginFrameResult{FrameStatus::NotReady, {}};
+        default:
+            return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vkAcquireNextImageKHR", acquireResult));
+    }
+
+    // From here on the acquire semaphore is signaled and only this frame's
+    // submit can consume it: a failure below cannot be skipped past.
+    const auto failFrame = [&](RenderError error) {
+        fs->failed = true;
+        return std::unexpected(std::move(error));
+    };
+
+    // More slots than swapchain images: this image may still be in use by
+    // a frame of another slot.
+    if (const VkFence previous = fs->imageInFlight[imageIndex];
+        previous != VK_NULL_HANDLE && previous != slot.inFlight) {
+        if (const VkResult result = vkWaitForFences(m_device, 1, &previous, VK_TRUE, UINT64_MAX);
+            result != VK_SUCCESS) {
+            return failFrame(MakeVkError(RenderErrorCode::Unknown, "vkWaitForFences", result));
+        }
+    }
+    fs->imageInFlight[imageIndex] = slot.inFlight;
+
+    if (const VkResult result = vkResetFences(m_device, 1, &slot.inFlight); result != VK_SUCCESS) {
+        return failFrame(MakeVkError(RenderErrorCode::Unknown, "vkResetFences", result));
+    }
+    if (const VkResult result = vkResetCommandBuffer(slot.commandBuffer, 0); result != VK_SUCCESS) {
+        // The fence is already reset with no submit coming, which is why
+        // this is fatal rather than skippable.
+        return failFrame(MakeVkError(RenderErrorCode::Unknown, "vkResetCommandBuffer", result));
+    }
+
+    fs->frameOpen = true;
+
+    BeginFrameResult begin;
+    begin.status = FrameStatus::Ready;
+    begin.frame.frameIndex = fs->currentSlot;
+    begin.frame.imageIndex = imageIndex;
+    begin.frame.imageHandle = sc->images[imageIndex];
+    begin.frame.extent = Extent2D{sc->extent.width, sc->extent.height};
+    begin.frame.commandBuffer = RenderDevice::MakeCommandBuffer(this, slot.commandBuffer);
+    return begin;
+}
+
+std::expected<SwapchainStatus, RenderError>
+VulkanRenderDevice::EndFrameSync(void* frameSyncHandle, Swapchain& swapchain, const Frame& frame) noexcept
+{
+    auto* fs = static_cast<VulkanFrameSyncHandle*>(frameSyncHandle);
+
+    if (fs->failed) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::Unknown, "FrameSync is unusable after an earlier failure; recreate it"}
+        );
+    }
+    if (!fs->frameOpen) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::Unknown, "EndFrame() called without a matching BeginFrame()"}
+        );
+    }
+
+    FrameSlot& slot = fs->slots[fs->currentSlot];
+    if (frame.frameIndex != fs->currentSlot || frame.imageIndex >= fs->renderFinished.size() ||
+        frame.commandBuffer.GetNativeHandle() != slot.commandBuffer) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::Unknown, "EndFrame() called with a Frame that BeginFrame() did not hand out"}
+        );
+    }
+
+    const bool acquireSuboptimal = fs->acquireSuboptimal;
+    VkSemaphore renderFinished = fs->renderFinished[frame.imageIndex];
+
+    // Advance first: whatever happens below, the slot's fence state is
+    // what it is and the next BeginFrame() must look at the next slot.
+    fs->frameOpen = false;
+    fs->acquireSuboptimal = false;
+    fs->currentSlot = (fs->currentSlot + 1) % static_cast<std::uint32_t>(fs->slots.size());
+
+    // Waits for the acquire semaphore, signals the image's render-finished
+    // semaphore and this slot's fence.
+    if (auto result = Submit(frame.commandBuffer, slot.imageAvailable, renderFinished, slot.inFlight); !result) {
+        fs->failed = true; // the fence was reset for a submit that did not happen
+        return std::unexpected(std::move(result.error()));
+    }
+
+    auto present = PresentSwapchainImage(swapchain.GetNativeHandle(), frame.imageIndex, renderFinished);
+    if (!present) {
+        fs->failed = true;
+        return std::unexpected(std::move(present.error()));
+    }
+
+    if (*present == SwapchainStatus::Ok && acquireSuboptimal) {
+        return SwapchainStatus::Suboptimal;
+    }
+    return *present;
 }
 
 void VulkanRenderDevice::WaitIdle() noexcept

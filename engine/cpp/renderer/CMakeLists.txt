@@ -20,6 +20,8 @@ add_library(renderer STATIC
         src/Surface.cpp
         src/Swapchain.cpp
         src/CommandBuffer.cpp
+        src/FrameSync.cpp
+        src/Diagnostics.cpp
         src/backend/vulkan/VulkanRenderDevice.cpp
         src/backend/vulkan/VmaImpl.cpp
         src/backend/vulkan/VolkImpl.cpp
@@ -51,6 +53,13 @@ target_link_libraries(renderer
         GPUOpen::VulkanMemoryAllocator
 )
 
+# Validation layers are requested in Debug builds (RENDERER_ENABLE_VALIDATION);
+# RENDERER_FORCE_VALIDATION requests them in every build type — CI uses it so
+# the Release GPU tests catch synchronization errors too
+# (renderer/Diagnostics.hpp counts them). A machine without the layer
+# installed just runs without: RenderDevice::IsValidationEnabled() tells.
+option(RENDERER_FORCE_VALIDATION "Request the Vulkan validation layers in every build type, not only Debug" OFF)
+
 target_compile_definitions(renderer
         PRIVATE
         RENDERER_HAS_VULKAN_BACKEND
@@ -66,7 +75,7 @@ target_compile_definitions(renderer
         # order. See VmaImpl.cpp's comment for the (now secondary,
         # belt-and-suspenders) same-file ordering.
         VK_NO_PROTOTYPES
-        $<$<CONFIG:Debug>:RENDERER_ENABLE_VALIDATION>
+        $<$<OR:$<CONFIG:Debug>,$<BOOL:${RENDERER_FORCE_VALIDATION}>>:RENDERER_ENABLE_VALIDATION>
 )
 
 # Phase 5.3: Vulkan's platform surface structs/functions (VkWin32SurfaceCreateInfoKHR,

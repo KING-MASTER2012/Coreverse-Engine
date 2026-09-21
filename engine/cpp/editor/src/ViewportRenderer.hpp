@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QSize>
 #include <QString>
@@ -9,6 +10,7 @@
 
 #include <QTimer>
 
+#include "renderer/FrameSync.hpp"
 #include "renderer/RenderDevice.hpp"
 #include "renderer/Surface.hpp"
 #include "renderer/Swapchain.hpp"
@@ -18,19 +20,26 @@ namespace editor {
 class NativeWindowBridge;
 class ViewportWidget;
 
-/// Phase 6.3: owns everything the renderer needs to present into one
-/// ViewportWidget — the RenderDevice, the Surface on the widget's native
-/// window and the Swapchain on that surface — and keeps the swapchain in
-/// step with the widget's size.
+/// Owns everything the renderer needs to present into one ViewportWidget —
+/// the RenderDevice, the Surface on the widget's native window, the
+/// Swapchain on that surface (Phase 6.3) and the FrameSync that keeps
+/// frames in flight (Phase 6.4) — keeps the swapchain in step with the
+/// widget's size, and drives the render loop.
 ///
-/// Lifetime rules (renderer/RenderDevice.hpp): a Swapchain must die before
-/// its Surface, a Surface before the device's Shutdown(), and the native
-/// window (and, on X11, the Display* the bridge holds) must outlive the
-/// Surface. shutdown() enforces exactly that order, and the members are
-/// declared so that the destructor's automatic teardown follows it too.
+/// The render loop (Phase 6.4) is a ~60 Hz timer on the GUI thread; each
+/// tick renders one frame: FrameSync::BeginFrame(), record a clear to a
+/// slowly cycling color, FrameSync::EndFrame(). It rests whenever nothing
+/// could be seen (viewport hidden, window minimized) and whenever the
+/// swapchain has to be rebuilt but cannot be yet (zero-sized viewport, a
+/// failed rebuild — those retry on the next resize and on a slow timer).
+/// Nothing but a clear is drawn: pipelines and draw calls are later phases.
 ///
-/// This class does not render anything yet: acquiring, recording and
-/// presenting frames is Phase 6.4.
+/// Lifetime rules (renderer/RenderDevice.hpp): a FrameSync and a Swapchain
+/// must die before the Surface they present to, a Surface before the
+/// device's Shutdown(), and the native window (and, on X11, the Display* the
+/// bridge holds) must outlive the Surface. shutdown() enforces exactly that
+/// order, and the members are declared so that the destructor's automatic
+/// teardown follows it too.
 class ViewportRenderer : public QObject
 {
     Q_OBJECT
@@ -44,15 +53,16 @@ public:
     ViewportRenderer(const ViewportRenderer&) = delete;
     ViewportRenderer& operator=(const ViewportRenderer&) = delete;
 
-    /// Creates the device, the surface and the swapchain, in that order.
-    /// On failure everything already created is torn down again and the
-    /// reason is returned; the renderer stays usable for a retry. Calling
-    /// it while already initialized is a no-op.
+    /// Creates the device, the surface, the swapchain and the frame
+    /// synchronization, in that order, and starts the render loop. On
+    /// failure everything already created is torn down again and the reason
+    /// is returned; the renderer stays usable for a retry. Calling it while
+    /// already initialized is a no-op.
     [[nodiscard]] std::expected<void, QString> initialize();
 
-    /// Tears everything down in the order the renderer requires
-    /// (swapchain, surface, device, then the native window bridge).
-    /// Idempotent; the destructor calls it too.
+    /// Stops the loop and tears everything down in the order the renderer
+    /// requires (frame sync, swapchain, surface, device, then the native
+    /// window bridge). Idempotent; the destructor calls it too.
     void shutdown() noexcept;
 
     [[nodiscard]] bool isInitialized() const noexcept
@@ -61,6 +71,9 @@ public:
     }
 
     [[nodiscard]] QString deviceName() const;
+
+    /// Whether the graphics API's validation layer is running on this device.
+    [[nodiscard]] bool validationEnabled() const noexcept;
 
     /// Actual size of the swapchain's images — what the surface gave, not
     /// necessarily the widget's size at that instant (resizes are applied
@@ -72,39 +85,99 @@ public:
         return m_swapchain.GetImageCount();
     }
 
+    /// Frames rendered and presented since initialize().
+    [[nodiscard]] quint64 framesRendered() const noexcept
+    {
+        return m_framesRendered;
+    }
+
+    /// Whether the render loop is currently ticking (as opposed to resting
+    /// or stopped for good after an error).
+    [[nodiscard]] bool isRendering() const noexcept
+    {
+        return m_frameTimer.isActive();
+    }
+
     /// Rebuilds the swapchain for the widget's current size right now.
-    /// A minimized/zero-sized viewport is not an error: the old swapchain
-    /// is kept until the widget has a size again. Normally called through
-    /// the resize timer; public so callers (and tests) can force it.
-    [[nodiscard]] std::expected<void, QString> rebuildSwapchain();
+    /// Returns true if it was rebuilt and false if there was nothing to do:
+    /// the viewport has no size right now (hidden, collapsed, minimized —
+    /// the old swapchain is kept until it has one again), or it already has
+    /// the right size. `force` skips the "already the right size" shortcut,
+    /// for when the swapchain has to be rebuilt regardless of size
+    /// (SwapchainStatus::OutOfDate). Normally called through the resize
+    /// timer; public so callers (and tests) can force it.
+    [[nodiscard]] std::expected<bool, QString> rebuildSwapchain(bool force = false);
 
 public slots:
     /// Coalesces a burst of resizes (a window drag sends dozens) into a
     /// single rebuild on the next event-loop turn.
     void scheduleSwapchainRebuild();
 
+    /// The top-level window was minimized/restored: nothing to draw for
+    /// while minimized. (Hiding the viewport itself is noticed on its own.)
+    void setWindowMinimized(bool minimized);
+
 signals:
     /// The swapchain was rebuilt; carries its new size and image count.
     void swapchainRebuilt(const QSize& extent, quint32 imageCount);
 
     /// A rebuild failed with something other than "the viewport has no
-    /// size right now". The swapchain is unusable until a later rebuild
-    /// succeeds.
+    /// size right now". The render loop rests until a later rebuild
+    /// succeeds (retried on the next resize and every few hundred ms).
     void swapchainRebuildFailed(const QString& reason);
+
+    /// One frame was rendered and presented; carries the running total.
+    void frameRendered(quint64 totalFrames);
+
+    /// Roughly once a second while rendering: frames per second over the
+    /// last interval and the running total.
+    void frameStatsUpdated(double framesPerSecond, quint64 totalFrames);
+
+    /// Rendering stopped for good: the device or surface is unusable (device
+    /// lost, out of memory, a failed submit/present). Recovery — rebuilding
+    /// the whole renderer — is not implemented yet; the editor keeps
+    /// running without a viewport image.
+    void renderingFailed(const QString& reason);
+
+private slots:
+    void renderFrame();
 
 private:
     [[nodiscard]] renderer::SwapchainDesc makeSwapchainDesc() const;
 
+    /// Starts or stops the frame timer according to the state flags below.
+    void updateFrameTimer();
+
+    /// rebuildSwapchain() plus the loop bookkeeping around it: a rebuild that
+    /// has to happen (`force`) but cannot yet — no size, or an error — puts
+    /// the loop to rest until one succeeds.
+    void rebuildAndUpdate(bool force);
+
+    /// Stops rendering for good and tells the world why.
+    void failRendering(const QString& reason);
+
     ViewportWidget& m_viewport;
     QTimer m_resizeTimer;
+    QTimer m_frameTimer;
+    QTimer m_retryTimer;
+    QElapsedTimer m_clock;      ///< Drives the clear color animation.
+    QElapsedTimer m_statsClock; ///< Measures the interval for frameStatsUpdated().
+    quint64 m_framesRendered = 0;
+    quint64 m_framesAtLastStats = 0;
 
-    // Declaration order is teardown order in reverse: the swapchain goes
-    // first, then the surface, then the device, and the bridge — which
-    // owns the platform resource the surface points at — goes last.
+    bool m_viewportVisible = false;
+    bool m_windowMinimized = false;
+    bool m_awaitingRebuild = false; ///< The swapchain cannot present until a rebuild succeeds.
+    bool m_renderingFailed = false;
+
+    // Declaration order is teardown order in reverse: the frame sync goes
+    // first, then the swapchain, the surface, the device, and the bridge —
+    // which owns the platform resource the surface points at — goes last.
     std::unique_ptr<NativeWindowBridge> m_bridge;
     std::unique_ptr<renderer::RenderDevice> m_device;
     renderer::Surface m_surface;
     renderer::Swapchain m_swapchain;
+    renderer::FrameSync m_frameSync;
 };
 
 } // namespace editor

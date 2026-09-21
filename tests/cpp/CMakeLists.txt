@@ -12,6 +12,17 @@
 #        tests, a display server (Win32, an X server such as Xvfb,
 #        or — for the Wayland test — a compositor).
 #
+# The editor smoke test additionally carries `editor`: it also needs a Qt
+# platform plugin that can open a window (on Linux, "xcb" — see the test
+# below), which is more than the renderer tests need, so CI can run it
+# separately (`ctest -L editor`) and hold it back from the main run
+# (`ctest -LE editor`) while that setup is being proven out.
+#
+# Set CV_REQUIRE_VALIDATION=1 when running the gpu tests to make the ones
+# that check for validation errors (frame_sync_test, editor_render_smoke)
+# fail if the Vulkan validation layer is not actually running — without it
+# they pass on a machine that has no layer installed, having checked nothing.
+#
 # The timeout keeps a wedged driver or a missing display from hanging
 # a whole CI run: Acquire/Present can block indefinitely otherwise.
 # ------------------------------------------------------------------
@@ -102,6 +113,22 @@ endif()
 add_test(NAME render_loop_test COMMAND render_loop_test)
 set_tests_properties(render_loop_test PROPERTIES ${CV_GPU_TEST_PROPERTIES})
 
+# Phase 6.4 proof: FrameSync keeps 1, 2 and more-than-swapchain-images frames
+# in flight through hundreds of acquire/record/submit/present rounds with a
+# window resize in the middle, and fails on any validation-layer error
+# (renderer::ValidationErrorCount()). Also covers Swapchain::Acquire()'s
+# timeout (SwapchainStatus::NotReady) and FrameSync's misuse checks.
+add_executable(frame_sync_test frame_sync_test.cpp)
+target_link_libraries(frame_sync_test PRIVATE compiler_warnings renderer::renderer)
+if(WIN32)
+    target_link_libraries(frame_sync_test PRIVATE user32)
+elseif(UNIX AND NOT APPLE)
+    find_package(X11 REQUIRED)
+    target_link_libraries(frame_sync_test PRIVATE X11::X11)
+endif()
+add_test(NAME frame_sync_test COMMAND frame_sync_test)
+set_tests_properties(frame_sync_test PROPERTIES ${CV_GPU_TEST_PROPERTIES})
+
 # Phase 5 (Wayland milestone) proof: the same single-shot render loop as
 # render_loop_test.cpp above, but through a real wl_surface instead of
 # Xlib. Only built when Wayland is actually compiled into `renderer`
@@ -134,4 +161,22 @@ if(UNIX AND NOT APPLE AND RENDERER_ENABLE_WAYLAND)
             COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run-with-weston-headless.sh"
             "$<TARGET_FILE:wayland_render_loop_test>")
     set_tests_properties(wayland_render_loop_test PROPERTIES LABELS "gpu;wayland" TIMEOUT 120)
+endif()
+
+# Phase 6.4 proof, through the real Qt window: the editor renders 120 frames
+# into its viewport, is resized half-way (the swapchain must follow), quits by
+# itself and finds no validation errors after tearing everything down — see
+# EditorWindow::enableSmokeTest(). Only exists when the editor is built.
+#
+# Linux runs it on Qt's "xcb" platform (X11; under Xvfb in CI), which is the
+# only platform the editor's native-window bridge supports there. That needs
+# the vcpkg Qt build to ship the xcb platform plugin and the system to have
+# its runtime libraries (libxcb-cursor0, ...): if either is missing this is
+# the test that says so.
+if(TARGET editor)
+    add_test(NAME editor_render_smoke COMMAND editor --smoke-frames 120)
+    set_tests_properties(editor_render_smoke PROPERTIES LABELS "gpu;editor" TIMEOUT 120)
+    if(UNIX AND NOT APPLE)
+        set_property(TEST editor_render_smoke APPEND PROPERTY ENVIRONMENT "QT_QPA_PLATFORM=xcb")
+    endif()
 endif()
