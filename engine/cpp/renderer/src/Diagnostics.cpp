@@ -4,30 +4,30 @@
 
 namespace renderer {
 
-    namespace {
+namespace {
 
-        // Validation callbacks can arrive from any driver/layer thread.
-        std::atomic<std::uint64_t> g_validationErrors{0};
+// Validation callbacks can arrive from any driver/layer thread.
+std::atomic<std::uint64_t> g_validationErrors{0};
 
-    } // namespace
+} // namespace
 
-    std::uint64_t ValidationErrorCount() noexcept
-    {
-        return g_validationErrors.load(std::memory_order_relaxed);
-    }
+std::uint64_t ValidationErrorCount() noexcept
+{
+    return g_validationErrors.load(std::memory_order_relaxed);
+}
 
-    void ResetValidationErrorCount() noexcept
-    {
-        g_validationErrors.store(0, std::memory_order_relaxed);
-    }
+void ResetValidationErrorCount() noexcept
+{
+    g_validationErrors.store(0, std::memory_order_relaxed);
+}
 
-    namespace detail {
+namespace detail {
 
-        void NoteValidationError() noexcept
-        {
-            g_validationErrors.fetch_add(1, std::memory_order_relaxed);
-        }
+void NoteValidationError() noexcept
+{
+    g_validationErrors.fetch_add(1, std::memory_order_relaxed);
+}
 
-    } // namespace detail
+} // namespace detail
 
 } // namespace renderer
