@@ -43,6 +43,27 @@ impl VfsMode {
 /// The single global entry point into the VFS. Call [`VfsContext::init`]
 /// once at startup (before any [`crate::file_manager`] call), then reach it
 /// from anywhere via [`VfsContext::global`].
+///
+/// # Re-init
+/// [`Self::init`]/[`Self::init_with_fs`] can succeed **at most once per
+/// process** ([`VFS`] is a [`OnceLock`](std::sync::OnceLock), which has
+/// no safe "clear" — resetting it would need either `unsafe` code
+/// overwriting a shared `static` behind other threads' backs, or
+/// replacing it with a lock every [`Self::global`] call would then pay
+/// for, and this crate has no caller that needs a mid-process re-init
+/// (switching projects in the editor is a process restart today; see
+/// PROGRESS.md). If that changes, revisit this decision rather than
+/// reaching for the `unsafe` route above.
+///
+/// A consequence for this crate's own tests: every `#[test]` that calls
+/// [`Self::init_with_fs`] needs the global to still be empty, so each
+/// one belongs in its own file under `tests/` (a separate test
+/// binary/process — `cargo test` gives every integration test file its
+/// own process already) rather than sharing a file with another
+/// VFS-init test. `tests/public_api.rs`'s `init_with_fs` test and
+/// `tests/list_dir_and_metadata.rs` (added alongside the FFI's
+/// `list_dir`/`metadata` support) follow this rule; keep it for any
+/// test added later that also needs a live [`VfsContext`].
 pub struct VfsContext {
     backends: HashMap<Root, Box<dyn Backend>>,
     fs: Arc<dyn FileSystem>,

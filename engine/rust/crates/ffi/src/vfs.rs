@@ -48,14 +48,33 @@
 //! variant — rather than adding an FFI-only variant to
 //! `vfs_crate::VfsError`.
 //!
-//! ## Scope of this first pass
-//! `init`, `read_to_string`, `read_bytes`, `write_bytes`, `exists`.
-//! `remove`, `list_dir`, `metadata`, `add_file`/`add_file_to`, and
-//! `new_temp_path` all exist on `vfs_crate::file_manager` already and
-//! are the same pattern to add on top of this — left out until there's
-//! an actual caller for them (matching this crate's general "don't grow
-//! the ABI ahead of a real need" approach — see `diagnostic`'s module
-//! docs for the same call on `DiagnosticBuilder`'s optional fields).
+//! ## `list_dir` / string arrays
+//! [`ffi_vfs_list_dir`] hands back a `char**` of `*out_count` entries
+//! (each `rel()`'s worth — `root` is already the call's own `root`
+//! argument, no point repeating it per entry) rather than a single
+//! delimited string, so a directory entry containing any separator
+//! byte can never be misparsed. There is no single-element analog to
+//! [`crate::ffi_free_string`] for it: the caller MUST free the whole
+//! array (elements and all) with [`ffi_vfs_free_string_array`], passing
+//! back the exact same count, and MUST NOT free the individual
+//! elements separately.
+//!
+//! ## `add_file`: one function, an optional destination
+//! [`ffi_vfs_add_file`] covers both [`vfs_crate::file_manager::add_file`]
+//! and [`vfs_crate::file_manager::add_file_to`] through one function —
+//! `dest_rel == null` keeps the source file name (the `add_file`
+//! behavior), non-null renames/relocates it within `dest_root` (the
+//! `add_file_to` behavior). Same "null means absent, not an error"
+//! convention as `diagnostic`'s optional fields (e.g.
+//! `ffi_diagnostic_builder_set_line`).
+//!
+//! ## `new_temp_path`: no opaque `VfsPath` handle
+//! [`ffi_vfs_new_temp_path`] returns the root/rel pair a fresh
+//! [`VfsPath`] would carry (`*out_root`, `*out_rel`) rather than a new
+//! opaque handle type — every function in this module already takes a
+//! `VfsPath` apart into exactly that pair on the way in, so handing the
+//! same pair back out keeps this module to one path representation
+//! instead of two.
 
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -391,6 +410,275 @@ pub unsafe extern "C" fn ffi_vfs_exists(
             unsafe { *out_exists = exists };
             true
         }
+        Err(e) => {
+            set_last_error(e);
+            false
+        }
+    }
+}
+
+/// Removes `root:/rel` (see [`vfs_crate::file_manager::remove`]).
+/// Returns `false` on failure — check
+/// [`ffi_vfs_last_error_code`]/[`ffi_vfs_last_error_message`].
+///
+/// # Safety
+/// `rel` must be a valid, NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_vfs_remove(root: u8, rel: *const c_char) -> bool {
+    clear_last_error();
+    // SAFETY: forwarded from the caller's contract.
+    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+        return false;
+    };
+    match vfs_crate::file_manager::remove(&path) {
+        Ok(()) => true,
+        Err(e) => {
+            set_last_error(e);
+            false
+        }
+    }
+}
+
+/// Reads `root:/rel`'s metadata (see
+/// [`vfs_crate::file_manager::metadata`]). On success, `*out_is_dir`
+/// and `*out_len` are set and this returns `true`. On failure,
+/// both are left untouched — check
+/// [`ffi_vfs_last_error_code`]/[`ffi_vfs_last_error_message`].
+///
+/// # Safety
+/// `rel` must be a valid, NUL-terminated UTF-8 C string. `out_is_dir`
+/// and `out_len` must each be valid, non-null, writable pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_vfs_metadata(
+    root: u8,
+    rel: *const c_char,
+    out_is_dir: *mut bool,
+    out_len: *mut u64,
+) -> bool {
+    clear_last_error();
+    if out_is_dir.is_null() || out_len.is_null() {
+        set_last_error(VfsError::InvalidPath(
+            "out_is_dir/out_len was null".into(),
+        ));
+        return false;
+    }
+    // SAFETY: forwarded from the caller's contract.
+    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+        return false;
+    };
+    match vfs_crate::file_manager::metadata(&path) {
+        Ok(meta) => {
+            // SAFETY: caller guarantees out_is_dir/out_len are valid,
+            // writable, non-null (checked above).
+            unsafe {
+                *out_is_dir = meta.is_dir;
+                *out_len = meta.len;
+            }
+            true
+        }
+        Err(e) => {
+            set_last_error(e);
+            false
+        }
+    }
+}
+
+/// Lists the entries of the directory `root:/rel` (see
+/// [`vfs_crate::file_manager::list_dir`]). On success, `*out_entries`
+/// is set to a heap-allocated array of `*out_count` heap-allocated,
+/// NUL-terminated UTF-8 C strings (each entry's path relative to
+/// `root`, matching what [`vfs_crate::VfsPath::rel`] would give for
+/// it — `root` itself is not repeated per entry), and this returns
+/// `true`. The caller MUST free it with [`ffi_vfs_free_string_array`],
+/// passing back the exact same count — freeing the entries individually
+/// (e.g. with [`crate::ffi_free_string`]) is not supported, since the
+/// array itself is also heap-allocated and must go with them. On
+/// failure, `*out_entries`/`*out_count` are left untouched — check
+/// [`ffi_vfs_last_error_code`]/[`ffi_vfs_last_error_message`].
+///
+/// # Safety
+/// `rel` must be a valid, NUL-terminated UTF-8 C string. `out_entries`
+/// and `out_count` must each be valid, non-null, writable pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_vfs_list_dir(
+    root: u8,
+    rel: *const c_char,
+    out_entries: *mut *mut *mut c_char,
+    out_count: *mut usize,
+) -> bool {
+    clear_last_error();
+    if out_entries.is_null() || out_count.is_null() {
+        set_last_error(VfsError::InvalidPath(
+            "out_entries/out_count was null".into(),
+        ));
+        return false;
+    }
+    // SAFETY: forwarded from the caller's contract.
+    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+        return false;
+    };
+    match vfs_crate::file_manager::list_dir(&path) {
+        Ok(entries) => {
+            // Every entry's `rel` is plain camino UTF-8 text built from
+            // path components the backend enumerated itself — never
+            // caller-supplied, so an interior NUL here would mean a
+            // corrupt backend, not a malformed request. Skip such an
+            // entry rather than fail the whole listing over it.
+            let mut strings: Vec<*mut c_char> = Vec::with_capacity(entries.len());
+            for entry in entries {
+                if let Ok(c) = CString::new(entry.rel().as_str()) {
+                    strings.push(c.into_raw());
+                }
+            }
+            let len = strings.len();
+            let boxed = strings.into_boxed_slice();
+            let ptr = Box::into_raw(boxed).cast::<*mut c_char>();
+            // SAFETY: caller guarantees out_entries/out_count are
+            // valid, writable, non-null (checked above).
+            unsafe {
+                *out_entries = ptr;
+                *out_count = len;
+            }
+            true
+        }
+        Err(e) => {
+            set_last_error(e);
+            false
+        }
+    }
+}
+
+/// Frees an array previously returned by [`ffi_vfs_list_dir`].
+///
+/// # Safety
+/// `entries`/`count` must be exactly the `*out_entries`/`*out_count`
+/// pair a prior [`ffi_vfs_list_dir`] call wrote (not a pointer/length
+/// crafted any other way), not yet freed. `entries` may be null (a
+/// no-op) only when no such call ever wrote a non-null pointer there.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_vfs_free_string_array(entries: *mut *mut c_char, count: usize) {
+    if entries.is_null() {
+        return;
+    }
+    // SAFETY: caller upholds the contract documented above -- `entries`
+    // originated from a `Box<[*mut c_char]>` of exactly `count`
+    // elements via ffi_vfs_list_dir, and each element originated from
+    // `CString::into_raw` there.
+    let boxed = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count)) };
+    for ptr in boxed.iter() {
+        if !ptr.is_null() {
+            // SAFETY: each element is a live CString::into_raw pointer
+            // from ffi_vfs_list_dir, per the contract above.
+            drop(unsafe { CString::from_raw(*ptr) });
+        }
+    }
+}
+
+/// Copies `src` (read through the VFS's own [`fs::FileSystem`] — see
+/// [`vfs_crate::file_manager::add_file_to`]) into `dest_root`. With
+/// `dest_rel == null`, keeps `src`'s file name at `dest_root`'s top
+/// level (see [`vfs_crate::file_manager::add_file`]); with a non-null
+/// `dest_rel`, copies to that exact path within `dest_root` instead
+/// (see [`vfs_crate::file_manager::add_file_to`]). Returns `false` on
+/// failure — check
+/// [`ffi_vfs_last_error_code`]/[`ffi_vfs_last_error_message`].
+///
+/// # Safety
+/// `src` must be a valid, NUL-terminated UTF-8 C string. `dest_rel`
+/// must be null or point to a valid, NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_vfs_add_file(
+    src: *const c_char,
+    dest_root: u8,
+    dest_rel: *const c_char,
+) -> bool {
+    clear_last_error();
+    // SAFETY: forwarded from the caller's contract.
+    let Ok(src) = (unsafe { required_str(src, "src") }) else {
+        return false;
+    };
+    let Ok(dest_root) = required_root(dest_root) else {
+        return false;
+    };
+    let src_path = Utf8Path::new(src);
+
+    let result = if dest_rel.is_null() {
+        vfs_crate::file_manager::add_file(src_path, dest_root)
+    } else {
+        // SAFETY: forwarded from the caller's contract.
+        let Ok(dest_rel) = (unsafe { required_str(dest_rel, "dest_rel") }) else {
+            return false;
+        };
+        match VfsPath::new(dest_root, dest_rel) {
+            Ok(dest) => vfs_crate::file_manager::add_file_to(src_path, &dest),
+            Err(e) => {
+                set_last_error(e);
+                return false;
+            }
+        }
+    };
+
+    match result {
+        Ok(()) => true,
+        Err(e) => {
+            set_last_error(e);
+            false
+        }
+    }
+}
+
+/// Builds a fresh scratch path under [`Root::Temp`], unique within
+/// this process (see [`vfs_crate::file_manager::new_temp_path`]). On
+/// success, `*out_root` and `*out_rel` are set (the latter to a
+/// heap-allocated string the caller MUST free with
+/// [`crate::ffi_free_string`]) and this returns `true`. On failure,
+/// both are left untouched — check
+/// [`ffi_vfs_last_error_code`]/[`ffi_vfs_last_error_message`].
+///
+/// # Safety
+/// `name_hint` must be a valid, NUL-terminated UTF-8 C string.
+/// `out_root` and `out_rel` must each be valid, non-null, writable
+/// pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffi_vfs_new_temp_path(
+    name_hint: *const c_char,
+    out_root: *mut u8,
+    out_rel: *mut *mut c_char,
+) -> bool {
+    clear_last_error();
+    if out_root.is_null() || out_rel.is_null() {
+        set_last_error(VfsError::InvalidPath(
+            "out_root/out_rel was null".into(),
+        ));
+        return false;
+    }
+    // SAFETY: forwarded from the caller's contract.
+    let Ok(name_hint) = (unsafe { required_str(name_hint, "name_hint") }) else {
+        return false;
+    };
+    match vfs_crate::file_manager::new_temp_path(name_hint) {
+        Ok(path) => match CString::new(path.rel().as_str()) {
+            Ok(rel) => {
+                // SAFETY: caller guarantees out_root/out_rel are
+                // valid, writable, non-null (checked above).
+                unsafe {
+                    *out_root = path.root().as_u8();
+                    *out_rel = rel.into_raw();
+                }
+                true
+            }
+            Err(_) => {
+                // process id + name_hint: can't actually contain a NUL
+                // unless name_hint itself smuggled one in past its own
+                // UTF-8 check above, which can't happen either -- kept
+                // for the same reason ffi_build_info_string keeps its
+                // .expect() rather than silently returning garbage.
+                set_last_error(VfsError::InvalidPath(
+                    "temp path contains an interior NUL byte".into(),
+                ));
+                false
+            }
+        },
         Err(e) => {
             set_last_error(e);
             false
