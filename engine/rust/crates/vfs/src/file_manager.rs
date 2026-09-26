@@ -86,6 +86,15 @@ pub fn metadata(path: &VfsPath) -> Result<FsMetadata, VfsError> {
 /// Convenience for the common "give me a fresh scratch file under Temp"
 /// pattern - guarantees a unique name within this process.
 pub fn new_temp_path(name_hint: &str) -> Result<VfsPath, VfsError> {
-    let unique = format!("{}_{}", std::process::id(), name_hint);
+    // `process::id()` only tells two *processes* apart; it's constant for
+    // every call within this one, so two calls with the same `name_hint`
+    // (a very likely pattern - e.g. "scratch") would otherwise produce the
+    // exact same path. A process-local, monotonically increasing counter
+    // makes each call within this process unique too, which is what the
+    // doc comment above actually promises.
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    let unique = format!("{}_{}_{}", std::process::id(), seq, name_hint);
     VfsPath::new(Root::Temp, unique)
 }
