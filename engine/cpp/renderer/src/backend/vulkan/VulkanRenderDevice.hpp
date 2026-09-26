@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <expected>
+#include <mutex>
 #include <string>
+#include <string_view>
 
 #include "renderer/Buffer.hpp"
 #include "renderer/CommandBuffer.hpp"
@@ -66,6 +68,16 @@ public:
     {
         return m_validationEnabled;
     }
+
+    void SetLogCallback(LogCallback callback) noexcept override;
+
+    /// Called by the free-function DebugMessengerCallback (VulkanRenderDevice.cpp)
+    /// for every message the debug messenger surfaces — public because
+    /// that callback is a plain `VKAPI_CALL` C function, not a member/friend,
+    /// and reaches this device only through the `pUserData` pointer Vulkan
+    /// hands back. Not part of the RenderDevice interface; not meant to be
+    /// called from anywhere else.
+    void NotifyLogCallback(LogSeverity severity, std::string_view message) noexcept;
 
     void Shutdown() noexcept override;
 
@@ -161,6 +173,15 @@ private:
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::string m_deviceName;
     bool m_validationEnabled = false;
+
+    // The debug messenger callback can run on any thread the driver
+    // chooses (see RenderDevice::LogCallback's doc comment), concurrently
+    // with a SetLogCallback() call from whatever thread owns this device —
+    // a mutex around both sides is simpler to reason about than trying to
+    // make a bare std::function assignment lock-free, and validation
+    // messages are rare enough that the lock is never a hot path.
+    std::mutex m_logCallbackMutex;
+    LogCallback m_logCallback;
 };
 
 } // namespace renderer::backend::vulkan

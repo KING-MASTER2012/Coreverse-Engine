@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <string_view>
 
 #include "renderer/Buffer.hpp"
@@ -72,6 +73,52 @@ public:
     {
         return false;
     }
+
+    /// Severity of a message passed to a LogCallback — deliberately this
+    /// library's own small enum rather than reusing some other crate's
+    /// (e.g. cv-ffi's `Severity`, or a graphics-API-native one): renderer
+    /// has no dependency on cv-ffi (see LogCallback's comment for why) and
+    /// stays graphics-API-agnostic, so it can't reuse either. A caller that
+    /// forwards these into another logging system maps this enum to that
+    /// system's own severities — see ViewportRenderer::initialize() for the
+    /// mapping into cv_ffi::Severity.
+    enum class LogSeverity {
+        Verbose,
+        Info,
+        Warning,
+        Error,
+    };
+
+    /// Called for every backend log/validation message this device
+    /// surfaces (Vulkan: every VK_EXT_debug_utils messenger callback this
+    /// device's messenger is configured to receive — currently warnings and
+    /// errors; see VulkanRenderDevice::SetupDebugMessenger for the exact
+    /// filter. Informational/verbose driver chatter is filtered out before
+    /// it ever reaches this callback, not silently dropped by it).
+    /// Replaces any previously set
+    /// callback; pass an empty std::function to stop receiving messages.
+    ///
+    /// This is a callback, not a dependency on any particular logging
+    /// crate/library, on purpose: renderer is a standalone C++ library with
+    /// no link to `ffi`/Rust (see the include/renderer/ directory's lack of
+    /// any such include) — deliberately, so it stays usable outside an
+    /// engine built around that logger (a headless tool, a future non-Rust
+    /// host). The editor is what has an `ffi`-backed logger, so the editor
+    /// is what supplies this callback; see ViewportRenderer::initialize().
+    ///
+    /// Called from whatever thread the backend's validation layer/driver
+    /// calls its callback from — for Vulkan, that can be any thread the
+    /// driver chooses, not necessarily the one that made the Vulkan call
+    /// that triggered the message. A callback that touches anything not
+    /// itself thread-safe must synchronize internally.
+    ///
+    /// The callback is not itself owned by/tied to any resource this device
+    /// hands out — unlike Buffer/Surface/Swapchain/FrameSync, there is
+    /// nothing here to release before Shutdown(); Shutdown() simply stops
+    /// calling it (matching WaitIdle() having already drained in-flight
+    /// backend work that could still produce messages).
+    using LogCallback = std::function<void(LogSeverity severity, std::string_view message)>;
+    virtual void SetLogCallback(LogCallback callback) noexcept = 0;
 
     /// Releases every backend resource this device owns. Safe to call
     /// more than once; the destructor calls it too, so an explicit call

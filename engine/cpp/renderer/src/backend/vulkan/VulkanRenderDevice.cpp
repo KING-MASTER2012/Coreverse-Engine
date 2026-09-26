@@ -390,16 +390,35 @@ SyncPerImageState(VkDevice device, VulkanFrameSyncHandle& handle, const VulkanSw
     return {};
 }
 
+/// Maps a Vulkan message severity bit to RenderDevice::LogSeverity for
+/// SetLogCallback() — see that method's doc comment for why this is the
+/// renderer's own small enum rather than passing the VkDebugUtils* bits
+/// straight through.
+RenderDevice::LogSeverity ToLogSeverity(VkDebugUtilsMessageSeverityFlagBitsEXT severity)
+{
+    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        return RenderDevice::LogSeverity::Error;
+    }
+    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        return RenderDevice::LogSeverity::Warning;
+    }
+    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+        return RenderDevice::LogSeverity::Info;
+    }
+    return RenderDevice::LogSeverity::Verbose;
+}
+
 VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     VkDebugUtilsMessageTypeFlagsEXT /*messageType*/,
     const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
-    void* /*userData*/
+    void* userData
 )
 {
     // Validation output lands on stderr so leak/misuse checks aren't
-    // silent; this gets routed through cv-log once the renderer is wired
-    // to ffi (Phase 7c). Errors are additionally counted
+    // silent, regardless of whether a LogCallback is also set (stderr is
+    // always there even before/without a logger; a LogCallback is
+    // additional, not a replacement). Errors are additionally counted
     // (renderer/Diagnostics.hpp) so a test can fail on them.
     if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
         std::fprintf(stderr, "[vulkan] %s\n", callbackData->pMessage);
@@ -407,6 +426,15 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
     if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         detail::NoteValidationError();
     }
+
+    // pUserData is set to the owning VulkanRenderDevice in
+    // SetupDebugMessenger() below; forward to whatever LogCallback (if
+    // any) SetLogCallback() last installed on it.
+    if (userData != nullptr) {
+        auto* device = static_cast<VulkanRenderDevice*>(userData);
+        device->NotifyLogCallback(ToLogSeverity(severity), callbackData->pMessage);
+    }
+
     return VK_FALSE;
 }
 
@@ -557,6 +585,7 @@ std::expected<void, RenderError> VulkanRenderDevice::SetupDebugMessenger()
                              VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.pfnUserCallback = DebugMessengerCallback;
+    createInfo.pUserData = this; // see DebugMessengerCallback's use of userData above
 
     // volk loads extension entry points (incl. vkCreateDebugUtilsMessengerEXT)
     // automatically once volkLoadInstance() ran with the extension enabled —
@@ -1453,6 +1482,26 @@ VulkanRenderDevice::EndFrameSync(void* frameSyncHandle, Swapchain& swapchain, co
         return SwapchainStatus::Suboptimal;
     }
     return *present;
+}
+
+void VulkanRenderDevice::SetLogCallback(LogCallback callback) noexcept
+{
+    const std::lock_guard<std::mutex> lock(m_logCallbackMutex);
+    m_logCallback = std::move(callback);
+}
+
+/// Called by DebugMessengerCallback (via the `pUserData` set in
+/// SetupDebugMessenger) for every message the debug messenger surfaces.
+/// Not part of the RenderDevice interface — only DebugMessengerCallback
+/// calls this, through the `VulkanRenderDevice*` it gets back from
+/// pUserData, which is why this is a plain (non-override) method rather
+/// than something declared on RenderDevice itself.
+void VulkanRenderDevice::NotifyLogCallback(LogSeverity severity, std::string_view message) noexcept
+{
+    const std::lock_guard<std::mutex> lock(m_logCallbackMutex);
+    if (m_logCallback) {
+        m_logCallback(severity, message);
+    }
 }
 
 void VulkanRenderDevice::WaitIdle() noexcept
