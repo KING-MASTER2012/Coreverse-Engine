@@ -15,6 +15,10 @@
 #include "renderer/Surface.hpp"
 #include "renderer/Swapchain.hpp"
 
+namespace cv_ffi {
+class Logger;
+}
+
 namespace editor {
 
 class NativeWindowBridge;
@@ -46,8 +50,15 @@ class ViewportRenderer : public QObject
 
 public:
     /// `viewport` must outlive this object (EditorWindow owns both, and
-    /// destroys the renderer first).
-    explicit ViewportRenderer(ViewportWidget& viewport, QObject* parent = nullptr);
+    /// destroys the renderer first). `logger`, if non-null, must also
+    /// outlive this object — every validation/log message the renderer
+    /// produces while initialized is routed to it (Phase 7c; see
+    /// initialize()'s doc comment) — which EditorWindow's member
+    /// declaration order guarantees the same way it already guarantees
+    /// `viewport`'s. Pass nullptr (the default) to skip that routing
+    /// entirely — messages still reach the renderer's own stderr output
+    /// and renderer::ValidationErrorCount() either way.
+    explicit ViewportRenderer(ViewportWidget& viewport, cv_ffi::Logger* logger = nullptr, QObject* parent = nullptr);
     ~ViewportRenderer() override;
 
     ViewportRenderer(const ViewportRenderer&) = delete;
@@ -58,11 +69,21 @@ public:
     /// failure everything already created is torn down again and the reason
     /// is returned; the renderer stays usable for a retry. Calling it while
     /// already initialized is a no-op.
+    ///
+    /// If this ViewportRenderer was constructed with a non-null `logger`,
+    /// also installs a RenderDevice::LogCallback (renderer/RenderDevice.hpp)
+    /// on the new device that turns every backend log/validation message
+    /// into a diagnostic emitted through that Logger — producer
+    /// `"CV-RENDERER"`, category `"VULKAN"` (see RegisterProducer() having
+    /// been called for that code — EditorWindow does this once at startup,
+    /// not here, since it's a process-global registration, not a per-device
+    /// one). shutdown() clears the callback again before the device goes
+    /// away.
     [[nodiscard]] std::expected<void, QString> initialize();
 
     /// Stops the loop and tears everything down in the order the renderer
-    /// requires (frame sync, swapchain, surface, device, then the native
-    /// window bridge). Idempotent; the destructor calls it too.
+    /// requires (log callback, frame sync, swapchain, surface, device, then
+    /// the native window bridge). Idempotent; the destructor calls it too.
     void shutdown() noexcept;
 
     [[nodiscard]] bool isInitialized() const noexcept
@@ -157,6 +178,7 @@ private:
     void failRendering(const QString& reason);
 
     ViewportWidget& m_viewport;
+    cv_ffi::Logger* m_logger = nullptr; // not owned; see the constructor's doc comment
     QTimer m_resizeTimer;
     QTimer m_frameTimer;
     QTimer m_retryTimer;

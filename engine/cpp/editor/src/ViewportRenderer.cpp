@@ -3,10 +3,13 @@
 #include <QColor>
 #include <QDebug>
 #include <cmath>
+#include <string_view>
 #include <utility>
 
 #include "NativeWindowBridge.hpp"
 #include "ViewportWidget.hpp"
+#include "cv-ffi/Diagnostic.hpp"
+#include "cv-ffi/Logger.hpp"
 #include "renderer/GraphicsAPI.hpp"
 #include "renderer/RenderDeviceFactory.hpp"
 #include "renderer/RenderError.hpp"
@@ -37,6 +40,30 @@ QString ToQString(const renderer::RenderError& error)
     return QString::fromStdString(error.detail);
 }
 
+/// Producer/category this ViewportRenderer's renderer log messages are
+/// emitted under — see EditorWindow's constructor for where
+/// `"CV-RENDERER"` is registered as a producer (once, process-wide;
+/// registering it here on every ViewportRenderer::initialize() call would
+/// fail every time after the first — see
+/// `log_core::producer::register_dynamic`'s "collides" failure mode).
+constexpr std::string_view kRendererLogProducer = "CV-RENDERER";
+constexpr std::string_view kRendererLogCategory = "VULKAN";
+
+cv_ffi::Severity ToCvFfiSeverity(renderer::RenderDevice::LogSeverity severity)
+{
+    switch (severity) {
+        case renderer::RenderDevice::LogSeverity::Verbose:
+            return cv_ffi::Severity::Trace;
+        case renderer::RenderDevice::LogSeverity::Info:
+            return cv_ffi::Severity::Info;
+        case renderer::RenderDevice::LogSeverity::Warning:
+            return cv_ffi::Severity::Warning;
+        case renderer::RenderDevice::LogSeverity::Error:
+            return cv_ffi::Severity::Error;
+    }
+    return cv_ffi::Severity::Info; // unreachable: every enumerator above is handled
+}
+
 renderer::ClearColor ClearColorAt(qint64 elapsedMs)
 {
     const float seconds = static_cast<float>(elapsedMs) / 1000.0F;
@@ -49,7 +76,8 @@ renderer::ClearColor ClearColorAt(qint64 elapsedMs)
 
 } // namespace
 
-ViewportRenderer::ViewportRenderer(ViewportWidget& viewport, QObject* parent) : QObject(parent), m_viewport(viewport)
+ViewportRenderer::ViewportRenderer(ViewportWidget& viewport, cv_ffi::Logger* logger, QObject* parent)
+    : QObject(parent), m_viewport(viewport), m_logger(logger)
 {
     m_viewportVisible = m_viewport.isVisible();
 
@@ -139,6 +167,27 @@ std::expected<void, QString> ViewportRenderer::initialize()
     }
     m_frameSync = std::move(*frameSync);
 
+    if (m_logger != nullptr) {
+        // Captures `this` and the (not-owned) `m_logger` pointer, not a
+        // Logger by value: this lambda's lifetime is exactly this device's
+        // lifetime (cleared in shutdown() before the device is torn down),
+        // and m_logger's own lifetime is EditorWindow's responsibility (see
+        // the constructor's doc comment).
+        m_device->SetLogCallback([this](renderer::RenderDevice::LogSeverity severity, std::string_view message) {
+            auto builder = cv_ffi::DiagnosticBuilder::Create(
+                kRendererLogProducer, kRendererLogCategory, 0, ToCvFfiSeverity(severity), message
+            );
+            if (builder) {
+                std::move(*builder).Emit(*m_logger);
+            }
+            // A failed Create() (message/producer/category not valid UTF-8 —
+            // practically unreachable, see DiagnosticBuilder::Create's doc
+            // comment) just drops this one message; the same message is
+            // still on stderr via the renderer's own unconditional logging
+            // (RenderDevice::LogCallback's doc comment).
+        });
+    }
+
     m_framesRendered = 0;
     m_framesAtLastStats = 0;
     m_awaitingRebuild = false;
@@ -157,6 +206,12 @@ void ViewportRenderer::shutdown() noexcept
     m_retryTimer.stop();
 
     if (m_device != nullptr) {
+        // Cleared before WaitIdle()/teardown below: once this returns, the
+        // device may still produce messages (Shutdown() itself can log) but
+        // this ViewportRenderer is no longer certain m_logger is safe to
+        // reach through -- see the constructor's doc comment on m_logger's
+        // lifetime being the caller's responsibility, not this object's.
+        m_device->SetLogCallback(nullptr);
         // The GPU must be done with the swapchain images (and everything the
         // frame sync recorded) before any of it goes away.
         m_device->WaitIdle();
