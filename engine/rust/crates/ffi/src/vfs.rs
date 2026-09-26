@@ -457,9 +457,7 @@ pub unsafe extern "C" fn ffi_vfs_metadata(
 ) -> bool {
     clear_last_error();
     if out_is_dir.is_null() || out_len.is_null() {
-        set_last_error(VfsError::InvalidPath(
-            "out_is_dir/out_len was null".into(),
-        ));
+        set_last_error(VfsError::InvalidPath("out_is_dir/out_len was null".into()));
         return false;
     }
     // SAFETY: forwarded from the caller's contract.
@@ -647,9 +645,7 @@ pub unsafe extern "C" fn ffi_vfs_new_temp_path(
 ) -> bool {
     clear_last_error();
     if out_root.is_null() || out_rel.is_null() {
-        set_last_error(VfsError::InvalidPath(
-            "out_root/out_rel was null".into(),
-        ));
+        set_last_error(VfsError::InvalidPath("out_root/out_rel was null".into()));
         return false;
     }
     // SAFETY: forwarded from the caller's contract.

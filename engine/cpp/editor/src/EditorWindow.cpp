@@ -8,36 +8,35 @@
 #include <QShowEvent>
 #include <QSize>
 #include <QStatusBar>
-#include <cstdlib>
+#include <memory>
+#include <string_view>
 
 #include <QTimer>
 
 #include "ViewportRenderer.hpp"
 #include "ViewportWidget.hpp"
-#include "ffi.h"
+#include "cv-ffi/BuildInfo.hpp"
+#include "cv-ffi/Diagnostic.hpp"
 
 namespace editor {
 
 namespace {
-/// Builds the window title via ffi_build_info_string(), freeing the
-/// Rust-allocated string before returning. This exercises the full
-/// FFI round trip (call across the boundary + the matching
-/// ffi_free_string, per ffi's ownership contract — see
-/// engine/rust/crates/ffi/src/lib.rs) rather than just proving the
-/// crate links.
+/// Builds the window title via cv_ffi::BuildInfoString() (git hash,
+/// profile, target, build date). Exercises the full FFI round trip (a
+/// call across the boundary + its matching free, both handled inside
+/// cv_ffi::BuildInfoString() — see engine/cpp/ffi-cpp/src/BuildInfo.cpp)
+/// rather than just proving the crate links.
 QString MakeWindowTitle()
 {
-    char* info = ffi_build_info_string();
-    if (info == nullptr) {
-        // Documented as always non-null (see ffi_build_info_string's
-        // doc comment) — this branch is defensive, not expected.
-        return QStringLiteral("Coreverse Editor — <build info unavailable>");
-    }
-
-    const QString title = QStringLiteral("Coreverse Editor — %1").arg(QString::fromUtf8(info));
-    ffi_free_string(info);
-    return title;
+    return QStringLiteral("Coreverse Editor — %1").arg(QString::fromStdString(cv_ffi::BuildInfoString()));
 }
+
+/// The producer code every diagnostic ViewportRenderer emits on this
+/// window's behalf is registered under — see ViewportRenderer.cpp's
+/// kRendererLogProducer, which must match this exactly, and
+/// RegisterProducer()'s doc comment for why this only happens once, here,
+/// rather than per-ViewportRenderer.
+constexpr std::string_view kRendererLogProducer = "CV-RENDERER";
 
 /// The smoke test as a whole must not take longer than this: a renderer
 /// that never starts or a loop that never reaches its frame count has to
@@ -58,10 +57,29 @@ EditorWindow::EditorWindow()
     setWindowTitle(MakeWindowTitle());
     resize(1280, 800);
 
+    // ffi_logger_create is documented as always succeeding (see
+    // cv_ffi::Logger::Create()'s doc comment) -- this branch exists so a
+    // future change to that contract is reported rather than silently
+    // leaving every diagnostic in this process with nowhere to go.
+    if (auto logger = cv_ffi::Logger::Create()) {
+        m_logger = std::move(*logger);
+        m_logger.AddConsoleSink();
+        // No file sink yet: it needs a project root, and this editor has no
+        // "open project" flow to get one from yet (PROGRESS.md).
+    } else {
+        qCritical().noquote() << "editor: logger unavailable:" << QString::fromStdString(logger.error());
+    }
+
+    if (auto registered = cv_ffi::RegisterProducer(kRendererLogProducer, "Coreverse Renderer", "Coreverse");
+        !registered) {
+        qWarning().noquote() << "editor: could not register the renderer log producer:"
+                             << QString::fromStdString(registered.error());
+    }
+
     m_viewport = new ViewportWidget(this);
     setCentralWidget(m_viewport);
 
-    m_renderer = std::make_unique<ViewportRenderer>(*m_viewport);
+    m_renderer = std::make_unique<ViewportRenderer>(*m_viewport, &m_logger);
     connect(m_renderer.get(), &ViewportRenderer::swapchainRebuilt, this, [this] {
         ++m_smokeRebuilds;
         showRendererStatus();
@@ -89,8 +107,10 @@ EditorWindow::~EditorWindow()
 {
     // closeEvent() normally got here first; this covers every other way a
     // window can go away. Either way the renderer must be gone before the
-    // viewport's native window is destroyed (by ~QMainWindow, after this).
+    // viewport's native window is destroyed (by ~QMainWindow, after this),
+    // and before the logger it was routing messages into is shut down.
     shutdownRenderer();
+    m_logger.Shutdown();
 }
 
 void EditorWindow::enableSmokeTest(quint64 frames)

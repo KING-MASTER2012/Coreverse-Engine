@@ -5,6 +5,8 @@
 
 #include <QtGlobal>
 
+#include "cv-ffi/Logger.hpp"
+
 class QCloseEvent;
 class QEvent;
 class QShowEvent;
@@ -38,6 +40,16 @@ inline constexpr int kValidationMissing = 5;
 /// the native window goes away, which the renderer's teardown order
 /// requires. If Vulkan is unavailable the editor still opens; the status
 /// bar says why.
+///
+/// Phase 7c: owns the cv_ffi::Logger every diagnostic in this process goes
+/// through — a console sink always, a file sink under the project root once
+/// one is open (not yet wired up to an actual "open project" flow; see
+/// PROGRESS.md). Registers the `"CV-RENDERER"` producer once at
+/// construction and hands `&m_logger` to ViewportRenderer, which routes the
+/// renderer's own validation/log messages through it (see
+/// ViewportRenderer::initialize()'s doc comment). m_logger is declared
+/// before m_renderer below specifically so it outlives it, matching that
+/// requirement.
 class EditorWindow : public QMainWindow
 {
     Q_OBJECT
@@ -74,6 +86,13 @@ private:
     void onFrameRendered(quint64 totalFrames);
 
     ViewportWidget* m_viewport = nullptr; // owned by Qt (central widget)
+    // Declaration order matters: m_logger must outlive m_renderer, which
+    // holds a pointer to it for the lifetime of every ViewportRenderer it
+    // owns (see the class comment above and ViewportRenderer's own
+    // constructor doc comment) -- members are destroyed in reverse
+    // declaration order, so m_logger going after m_renderer here would
+    // destroy it first.
+    cv_ffi::Logger m_logger;
     std::unique_ptr<ViewportRenderer> m_renderer;
     bool m_rendererStartScheduled = false;
     double m_framesPerSecond = 0.0; ///< Last measurement, 0 until the first one.

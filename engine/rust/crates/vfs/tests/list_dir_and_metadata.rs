@@ -79,8 +79,7 @@ fn list_dir_metadata_remove_and_add_file() {
     ctx.fs()
         .write_bytes(Utf8Path::new("external/dropped.txt"), b"dropped")
         .expect("seed external file");
-    file_manager::add_file(Utf8Path::new("external/dropped.txt"), Root::Cache)
-        .expect("add_file");
+    file_manager::add_file(Utf8Path::new("external/dropped.txt"), Root::Cache).expect("add_file");
     let copied = VfsPath::new(Root::Cache, "dropped.txt").expect("valid path");
     assert_eq!(
         file_manager::read_bytes(&copied).expect("read dropped.txt"),
@@ -89,8 +88,7 @@ fn list_dir_metadata_remove_and_add_file() {
 
     // add_file_to (explicit destination)
     let dest = VfsPath::new(Root::Cache, "renamed/dest.txt").expect("valid path");
-    file_manager::add_file_to(Utf8Path::new("external/dropped.txt"), &dest)
-        .expect("add_file_to");
+    file_manager::add_file_to(Utf8Path::new("external/dropped.txt"), &dest).expect("add_file_to");
     assert_eq!(
         file_manager::read_bytes(&dest).expect("read renamed/dest.txt"),
         b"dropped"

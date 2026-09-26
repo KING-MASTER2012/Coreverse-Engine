@@ -117,7 +117,12 @@ if(BUILD_RENDERER)
     add_subdirectory(engine/cpp/renderer)
 endif()
 
+# cv-ffi (C++ RAII wrappers over ffi.h — see engine/cpp/ffi-cpp/CMakeLists.txt)
+# is built whenever the editor is, since it's currently the only consumer;
+# split this out from BUILD_EDITOR the day something else needs it (e.g. a
+# headless tool) without needing the whole Qt editor.
 if(BUILD_EDITOR)
+    add_subdirectory(engine/cpp/ffi-cpp)
     add_subdirectory(engine/cpp/editor)
 endif()
 

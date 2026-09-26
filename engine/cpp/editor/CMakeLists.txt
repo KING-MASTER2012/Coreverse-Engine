@@ -11,12 +11,21 @@
 # Phase 6.3 links `renderer` and lets ViewportRenderer own the device,
 # surface and swapchain for that widget.
 #
+# Phase 7c moves every direct ffi.h call (ffi_build_info_string, the
+# Logger/DiagnosticBuilder/VFS calls) behind cv-ffi (engine/cpp/ffi-cpp) --
+# this target links that instead of calling link_ffi(editor)/including
+# ffi.h itself now.
+#
 # Qt6 comes from vcpkg (qtbase[widgets] in vcpkg.json), so the vcpkg
 # toolchain finds it — no QT6_DIR / CMAKE_PREFIX_PATH needed.
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 if(NOT TARGET renderer::renderer)
     message(FATAL_ERROR "The editor presents through the renderer library: enable BUILD_RENDERER (or disable BUILD_EDITOR).")
+endif()
+
+if(NOT TARGET cv-ffi::cv-ffi)
+    message(FATAL_ERROR "The editor talks to the VFS/logger through cv-ffi, which BUILD_EDITOR should have already added (see the root CMakeLists.txt).")
 endif()
 
 set(EDITOR_SOURCES
@@ -67,6 +76,7 @@ target_link_libraries(editor
         PRIVATE
         compiler_warnings
         renderer::renderer
+        cv-ffi::cv-ffi
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
@@ -81,4 +91,6 @@ elseif(UNIX)
     target_link_libraries(editor PRIVATE X11)
 endif()
 
-link_ffi(editor)
+# ffi.h/the Rust staticlib are reached through cv-ffi (see
+# engine/cpp/ffi-cpp/CMakeLists.txt) -- the editor itself no longer talks
+# to the raw C ABI directly, so no link_ffi(editor) call here.
