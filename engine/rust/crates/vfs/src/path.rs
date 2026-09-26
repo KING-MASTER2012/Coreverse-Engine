@@ -20,6 +20,21 @@ impl VfsPath {
     pub fn new(root: Root, rel: impl AsRef<Utf8Path>) -> Result<Self, VfsError> {
         let rel = rel.as_ref();
 
+        // `VfsPath`'s relative part is a portable identifier - it's used as
+        // a stable string/key across backends (e.g. `MemoryFileSystem`'s
+        // map, `rel()` string comparisons) and must not depend on the
+        // host's path-separator convention. Normalize any `\` to `/` up
+        // front so a Windows-style input (or one built via `join`, see
+        // below) can never smuggle a backslash into that identifier, and
+        // so the `..`-escape check below can't be bypassed by a
+        // platform-specific separator it doesn't recognize.
+        let normalized = if rel.as_str().contains('\\') {
+            Utf8PathBuf::from(rel.as_str().replace('\\', "/"))
+        } else {
+            rel.to_path_buf()
+        };
+        let rel = normalized.as_path();
+
         if rel.is_absolute() {
             return Err(VfsError::InvalidPath(format!(
                 "'{rel}' must be relative to its root, not absolute"
@@ -33,7 +48,7 @@ impl VfsPath {
 
         Ok(Self {
             root,
-            rel: rel.to_path_buf(),
+            rel: normalized,
         })
     }
 
@@ -47,7 +62,17 @@ impl VfsPath {
 
     /// Builds a child path, e.g. `assets_dir.join("textures/hero.png")?`.
     pub fn join(&self, segment: impl AsRef<Utf8Path>) -> Result<Self, VfsError> {
-        Self::new(self.root, self.rel.join(segment.as_ref()))
+        let segment = segment.as_ref();
+        // Built with an explicit `/` rather than `Utf8PathBuf::join` (which
+        // inserts the *platform* separator - `\` on Windows). See the note
+        // in `new()`: this relative part must stay `/`-separated on every
+        // platform.
+        let joined = if self.rel.as_str().is_empty() {
+            segment.to_path_buf()
+        } else {
+            Utf8PathBuf::from(format!("{}/{}", self.rel, segment))
+        };
+        Self::new(self.root, joined)
     }
 
     pub fn extension(&self) -> Option<&str> {
