@@ -73,7 +73,7 @@ pub mod diagnostic;
 /// have a real `enum`'s worth of distinct failure reasons).
 pub mod vfs;
 
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::raw::c_char;
 
 /// Returns a heap-allocated, null-terminated C string describing this
@@ -119,6 +119,7 @@ pub unsafe extern "C" fn ffi_free_string(ptr: *mut c_char) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CStr;
 
     #[test]
     fn build_info_string_round_trips() {

@@ -20,6 +20,8 @@ pub struct LooseBackend {
 }
 
 impl LooseBackend {
+    /// Mounts `root` at `base` (an absolute or process-relative directory),
+    /// resolving every relative path through `fs`.
     pub fn new(root: Root, base: impl Into<Utf8PathBuf>, fs: Arc<dyn FileSystem>) -> Self {
         Self {
             root,
@@ -28,6 +30,7 @@ impl LooseBackend {
         }
     }
 
+    /// The [`Root`] this backend is mounted on.
     pub fn root(&self) -> Root {
         self.root
     }

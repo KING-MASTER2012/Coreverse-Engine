@@ -73,14 +73,17 @@ macro_rules! define_persistent_id {
                 Self($crate::__private::Uuid::new_v4())
             }
 
+            /// Wraps an existing UUID as this id type without generating a new one.
             pub const fn from_uuid(uuid: $crate::__private::Uuid) -> Self {
                 Self(uuid)
             }
 
+            /// A nil (all-zero) id, useful as a sentinel "no id assigned yet" value.
             pub const fn nil() -> Self {
                 Self($crate::__private::Uuid::nil())
             }
 
+            /// The underlying UUID.
             pub const fn uuid(&self) -> $crate::__private::Uuid {
                 self.0
             }

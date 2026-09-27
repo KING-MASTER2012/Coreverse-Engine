@@ -57,6 +57,11 @@ impl FileSystem for OsFileSystem {
         Ok(out)
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "memmap2::Mmap::map is an unsafe fn with no safe equivalent; \
+                  see the Safety comment below for why this call upholds its contract"
+    )]
     fn mmap_read(&self, path: &Utf8Path) -> io::Result<MmapHandle> {
         let file = File::open(path)?;
         // Safety: the engine treats mapped files (packed archives) as

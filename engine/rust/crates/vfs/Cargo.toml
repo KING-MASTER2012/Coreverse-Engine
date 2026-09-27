@@ -10,3 +10,6 @@ fs = { path = "../fs" }
 camino.workspace = true
 inventory.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true

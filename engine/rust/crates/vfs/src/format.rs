@@ -45,8 +45,11 @@ fn id_to_root(id: u8) -> Result<Root, VfsError> {
 /// One `(root, path)` -> file to bake into the archive, with its raw bytes.
 /// Built by whatever export/build tool assembles the release.
 pub struct PackedEntry {
+    /// Root the file is mounted under.
     pub root: Root,
+    /// Root-relative path of the file.
     pub rel: Utf8PathBuf,
+    /// Raw contents to write into the archive's data section.
     pub data: Vec<u8>,
 }
 
@@ -113,9 +116,12 @@ pub fn write_archive(
     w.flush().map_err(|e| io_err(out_path, e))
 }
 
+/// One file's location within the archive's data section.
 #[derive(Debug, Clone, Copy)]
 pub struct PackedIndexEntry {
+    /// Byte offset from the start of the data section.
     pub offset: u64,
+    /// Length in bytes.
     pub len: u64,
 }
 
@@ -123,7 +129,10 @@ pub struct PackedIndexEntry {
 /// section begins (needed to translate an entry's `offset` into an
 /// absolute position in the mapped file).
 pub struct PackedIndex {
+    /// Every file baked into the archive, keyed by root and relative path.
     pub entries: HashMap<(Root, Utf8PathBuf), PackedIndexEntry>,
+    /// Absolute byte offset, from the start of the file, where entry
+    /// offsets are measured from.
     pub data_start: u64,
 }
 

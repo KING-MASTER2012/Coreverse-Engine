@@ -3,34 +3,54 @@ use thiserror::Error;
 
 use root::Root;
 
+/// Every fallible outcome the VFS's public API can return.
 #[derive(Debug, Error)]
 pub enum VfsError {
+    /// A [`Root`] was used that no `RootDescriptor` registered.
     #[error("root '{0:?}' is not registered in the VFS context")]
     RootNotRegistered(Root),
 
+    /// No file exists at `path` under `root`.
     #[error("path not found: {root:?}:/{path}")]
-    NotFound { root: Root, path: Utf8PathBuf },
+    NotFound {
+        /// The root the lookup was scoped to.
+        root: Root,
+        /// The root-relative path that was not found.
+        path: Utf8PathBuf,
+    },
 
+    /// A write/remove was attempted on a root whose backend is read-only
+    /// (a packed archive with no writable overlay).
     #[error("backend for root '{0:?}' is read-only (packed), write rejected")]
     ReadOnlyBackend(Root),
 
+    /// The underlying OS filesystem or archive read/write failed.
     #[error("io error at {root:?}:/{path}: {source}")]
     Io {
+        /// The root the operation was scoped to.
         root: Root,
+        /// The root-relative path being accessed.
         path: Utf8PathBuf,
+        /// The underlying OS error.
         #[source]
         source: std::io::Error,
     },
 
+    /// A `VfsPath` failed to parse or validate.
     #[error("invalid vfs path: {0}")]
     InvalidPath(String),
 
+    /// A `.coreproject` archive's index or layout could not be read.
     #[error("packed archive is corrupt: {0}")]
     CorruptArchive(String),
 
+    /// [`crate::context::VfsContext::init`]/`init_with_fs` was called more
+    /// than once in this process.
     #[error("vfs context is already initialized")]
     AlreadyInitialized,
 
+    /// A VFS call was made before [`crate::context::VfsContext::init`]/
+    /// `init_with_fs` ran.
     #[error("vfs context not initialized - call VfsContext::init() first")]
     NotInitialized,
 }

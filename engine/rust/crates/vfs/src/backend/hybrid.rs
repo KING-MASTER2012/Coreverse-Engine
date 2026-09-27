@@ -19,6 +19,9 @@ pub struct HybridBackend {
 }
 
 impl HybridBackend {
+    /// Builds a hybrid backend over an already-open `packed` archive and an
+    /// already-open `overlay` directory. Both must be mounted on the same
+    /// [`Root`].
     pub fn new(packed: PackedBackend, overlay: LooseBackend) -> Self {
         Self { packed, overlay }
     }

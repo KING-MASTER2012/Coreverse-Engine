@@ -17,6 +17,8 @@ pub struct VfsPath {
 }
 
 impl VfsPath {
+    /// Builds a `VfsPath` from `root` and a relative path, normalizing `\`
+    /// to `/` and rejecting absolute paths or `..` components.
     pub fn new(root: Root, rel: impl AsRef<Utf8Path>) -> Result<Self, VfsError> {
         let rel = rel.as_ref();
 
@@ -52,10 +54,12 @@ impl VfsPath {
         })
     }
 
+    /// The [`Root`] this path is relative to.
     pub fn root(&self) -> Root {
         self.root
     }
 
+    /// The path's root-relative, `/`-separated portion.
     pub fn rel(&self) -> &Utf8Path {
         &self.rel
     }
@@ -75,10 +79,12 @@ impl VfsPath {
         Self::new(self.root, joined)
     }
 
+    /// The file extension of [`Self::rel`], if any (no leading dot).
     pub fn extension(&self) -> Option<&str> {
         self.rel.extension()
     }
 
+    /// The final path segment of [`Self::rel`], if any.
     pub fn file_name(&self) -> Option<&str> {
         self.rel.file_name()
     }

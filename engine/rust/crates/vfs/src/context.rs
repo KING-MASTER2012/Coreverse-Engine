@@ -9,6 +9,8 @@ use crate::backend::{Backend, hybrid::HybridBackend, loose::LooseBackend, packed
 use crate::error::VfsError;
 use crate::root_registry::RootDescriptor;
 
+/// Which storage strategy [`VfsContext::init`]/[`VfsContext::init_with_fs`]
+/// build every registered root's backend from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VfsMode {
     /// Every root is a plain [`LooseBackend`] pointed at `dev_path`.
@@ -134,6 +136,9 @@ impl VfsContext {
         VFS.set(ctx).map_err(|_| VfsError::AlreadyInitialized)
     }
 
+    /// The process-wide [`VfsContext`] set up by an earlier [`Self::init`]/
+    /// [`Self::init_with_fs`] call. Fails with [`VfsError::NotInitialized`]
+    /// if neither has run yet.
     pub fn global() -> Result<&'static VfsContext, VfsError> {
         VFS.get().ok_or(VfsError::NotInitialized)
     }

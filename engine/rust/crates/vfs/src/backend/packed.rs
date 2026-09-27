@@ -23,6 +23,9 @@ pub struct PackedBackend {
 }
 
 impl PackedBackend {
+    /// Opens the `.coreproject` archive at `archive_path`, reads its index
+    /// and memory-maps its data section through `fs`. Fails if the file is
+    /// missing, unreadable, or its index is corrupt.
     pub fn open(
         root: Root,
         archive_path: &Utf8Path,
@@ -37,6 +40,7 @@ impl PackedBackend {
         Ok(Self { root, mmap, index })
     }
 
+    /// The [`Root`] this backend is mounted on.
     pub fn root(&self) -> Root {
         self.root
     }

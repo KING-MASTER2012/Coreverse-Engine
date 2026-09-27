@@ -37,36 +37,45 @@ pub fn add_file_to(src: &Utf8Path, dest: &VfsPath) -> Result<(), VfsError> {
     write_bytes(dest, &data)
 }
 
+/// Reads `path` and validates it as UTF-8. See [`crate::backend::Backend::read_to_string`].
 pub fn read_to_string(path: &VfsPath) -> Result<String, VfsError> {
     VfsContext::global()?
         .backend(path.root())?
         .read_to_string(path.rel())
 }
 
+/// Reads the whole file at `path` into memory.
 pub fn read_bytes(path: &VfsPath) -> Result<Vec<u8>, VfsError> {
     VfsContext::global()?
         .backend(path.root())?
         .read_bytes(path.rel())
 }
 
+/// Writes `data` to `path`, creating or truncating it. Fails if `path`'s
+/// root is backed by a read-only backend.
 pub fn write_bytes(path: &VfsPath, data: &[u8]) -> Result<(), VfsError> {
     VfsContext::global()?
         .backend(path.root())?
         .write_bytes(path.rel(), data)
 }
 
+/// Whether a file exists at `path`.
 pub fn exists(path: &VfsPath) -> Result<bool, VfsError> {
     Ok(VfsContext::global()?
         .backend(path.root())?
         .exists(path.rel()))
 }
 
+/// Deletes the file at `path`. Fails if `path`'s root is backed by a
+/// read-only backend.
 pub fn remove(path: &VfsPath) -> Result<(), VfsError> {
     VfsContext::global()?
         .backend(path.root())?
         .remove(path.rel())
 }
 
+/// Lists the direct children of the directory at `path`, as full `VfsPath`s
+/// on the same root.
 pub fn list_dir(path: &VfsPath) -> Result<Vec<VfsPath>, VfsError> {
     let entries = VfsContext::global()?
         .backend(path.root())?
@@ -77,6 +86,7 @@ pub fn list_dir(path: &VfsPath) -> Result<Vec<VfsPath>, VfsError> {
         .collect()
 }
 
+/// Size and file/directory status for `path`.
 pub fn metadata(path: &VfsPath) -> Result<FsMetadata, VfsError> {
     VfsContext::global()?
         .backend(path.root())?
