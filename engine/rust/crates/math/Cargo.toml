@@ -1,6 +1,27 @@
 [package]
 name = "math"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Coreverse's core math library: scalars, angles, interpolation, integer/bit math, vectors, matrices and quaternions."
 
 [dependencies]
+math-macros = { path = "../../macros/math-macros" }
+libm = { workspace = true, optional = true }
+
+[features]
+# Native (std) transcendental functions - fast, uses the platform's libm.
+# Enabled by default; disable it (`default-features = false`) together with
+# `no_std` below to build without `std`.
+default = ["std"]
+std = []
+# no_std build: swaps every transcendental function (sin/cos/sqrt/pow/...)
+# to the `libm` crate's pure-Rust, software implementations instead of
+# std's platform libm. Slower than `std`, but has no OS/libc dependency.
+# Only takes effect when `std` is NOT also enabled - see the crate-level
+# doc comment on feature unification.
+no_std = ["dep:libm"]
+
+[lints]
+workspace = true
