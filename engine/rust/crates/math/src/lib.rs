@@ -29,9 +29,19 @@
 //! you also need `#![no_std]` itself.
 #![cfg_attr(not(feature = "std"), no_std)]
 
+/// Approximate floating-point equality (absolute, custom-epsilon and
+/// relative). See [`approx::approx_eq`] and friends.
+pub mod approx;
+/// Ergonomic, non-generic `f32`/`f64` constants. See [`consts::f32`]/
+/// [`consts::f64`].
+pub mod consts;
+/// The internal [`Scalar`] trait every generic function in this crate is
+/// written against.
+pub mod scalar;
+
+pub use scalar::Scalar;
+
 // Modules land incrementally through Phase 1:
-// 1.2  consts, approx
-// 1.3  scalar   (the internal `Scalar` trait)
 // 1.4  interp
 // 1.5  angle, trig
 // 1.6  int_math, bits, radix (the internal `Integer` trait)
