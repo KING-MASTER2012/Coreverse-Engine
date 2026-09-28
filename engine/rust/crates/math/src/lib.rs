@@ -29,6 +29,12 @@
 //! you also need `#![no_std]` itself.
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(not(any(feature = "std", feature = "no_std")))]
+compile_error!(
+    "`math` needs a float backend: keep the default `std` feature, or build with \
+     `default-features = false, features = [\"no_std\"]` to use `libm`."
+);
+
 /// Approximate floating-point equality (absolute, custom-epsilon and
 /// relative). See [`approx::approx_eq`] and friends.
 pub mod approx;
