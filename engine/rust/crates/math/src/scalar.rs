@@ -11,19 +11,27 @@
 //! Phase 1.4 (`interp`) did not add methods, only the `Add`/`Div`
 //! supertraits it needs (`lerp` is `a + (b - a) * t`, `inverse_lerp` divides).
 //!
+//! Phase 1.5 adds the transcendental surface `trig` is built on:
+//! [`Scalar::sin`]/[`Scalar::cos`]/[`Scalar::tan`]/[`Scalar::asin`]/
+//! [`Scalar::acos`]/[`Scalar::atan2`]/[`Scalar::sqrt`]/[`Scalar::powf`]
+//! and the [`Scalar::NAN`] constant. Like `floor` and friends they exist on
+//! `f32`/`f64` only with `std`, so they go through the same private `sys`
+//! backend below. The public, typed API for them lives in `crate::trig`.
+//!
 //! Every method here (like [`Scalar::abs`] before it) is a thin,
 //! `#[inline]` wrapper. `abs`/`min`/`max`/`clamp`/`signum` exist on the
 //! primitive `f32`/`f64` types in `core`, so they need no backend.
 //! `floor`/`ceil`/`round`/`rem_euclid` do not - they only exist with
 //! `std` - so those four go through the private `sys` module below, which
 //! calls the primitive methods under the `std` feature and the `libm`
-//! crate otherwise (the same split Phase 1.5's `trig` module uses).
+//! crate otherwise.
 
 use core::fmt::Debug;
 use core::ops::{Add, Div, Mul, Sub};
 
-/// Backend for the four operations `core` lacks: primitive methods under
-/// `std`, the `libm` crate otherwise.
+/// Backend for the operations `core` lacks (rounding, Euclidean remainder
+/// and everything transcendental): primitive methods under `std`, the
+/// `libm` crate otherwise.
 #[cfg(feature = "std")]
 mod sys {
     pub(super) fn floor_f32(x: f32) -> f32 {
@@ -50,10 +58,75 @@ mod sys {
     pub(super) fn rem_euclid_f64(x: f64, y: f64) -> f64 {
         x.rem_euclid(y)
     }
+    #[inline]
+    pub(super) fn sin_f32(x: f32) -> f32 {
+        x.sin()
+    }
+    #[inline]
+    pub(super) fn cos_f32(x: f32) -> f32 {
+        x.cos()
+    }
+    #[inline]
+    pub(super) fn tan_f32(x: f32) -> f32 {
+        x.tan()
+    }
+    #[inline]
+    pub(super) fn asin_f32(x: f32) -> f32 {
+        x.asin()
+    }
+    #[inline]
+    pub(super) fn acos_f32(x: f32) -> f32 {
+        x.acos()
+    }
+    #[inline]
+    pub(super) fn sqrt_f32(x: f32) -> f32 {
+        x.sqrt()
+    }
+    #[inline]
+    pub(super) fn atan2_f32(y: f32, x: f32) -> f32 {
+        y.atan2(x)
+    }
+    #[inline]
+    pub(super) fn powf_f32(x: f32, y: f32) -> f32 {
+        x.powf(y)
+    }
+    #[inline]
+    pub(super) fn sin_f64(x: f64) -> f64 {
+        x.sin()
+    }
+    #[inline]
+    pub(super) fn cos_f64(x: f64) -> f64 {
+        x.cos()
+    }
+    #[inline]
+    pub(super) fn tan_f64(x: f64) -> f64 {
+        x.tan()
+    }
+    #[inline]
+    pub(super) fn asin_f64(x: f64) -> f64 {
+        x.asin()
+    }
+    #[inline]
+    pub(super) fn acos_f64(x: f64) -> f64 {
+        x.acos()
+    }
+    #[inline]
+    pub(super) fn sqrt_f64(x: f64) -> f64 {
+        x.sqrt()
+    }
+    #[inline]
+    pub(super) fn atan2_f64(y: f64, x: f64) -> f64 {
+        y.atan2(x)
+    }
+    #[inline]
+    pub(super) fn powf_f64(x: f64, y: f64) -> f64 {
+        x.powf(y)
+    }
 }
 
 /// `libm::round*` rounds ties away from zero, same as `f32`/`f64::round`.
 /// `rem_euclid` is rebuilt from `fmod` exactly the way std defines it.
+/// `libm` names the `f32` versions with an `f` suffix (`sinf`, `powf`...).
 #[cfg(not(feature = "std"))]
 mod sys {
     pub(super) fn floor_f32(x: f32) -> f32 {
@@ -81,6 +154,70 @@ mod sys {
     pub(super) fn rem_euclid_f64(x: f64, y: f64) -> f64 {
         let r = libm::fmod(x, y);
         if r < 0.0 { r + y.abs() } else { r }
+    }
+    #[inline]
+    pub(super) fn sin_f32(x: f32) -> f32 {
+        libm::sinf(x)
+    }
+    #[inline]
+    pub(super) fn cos_f32(x: f32) -> f32 {
+        libm::cosf(x)
+    }
+    #[inline]
+    pub(super) fn tan_f32(x: f32) -> f32 {
+        libm::tanf(x)
+    }
+    #[inline]
+    pub(super) fn asin_f32(x: f32) -> f32 {
+        libm::asinf(x)
+    }
+    #[inline]
+    pub(super) fn acos_f32(x: f32) -> f32 {
+        libm::acosf(x)
+    }
+    #[inline]
+    pub(super) fn sqrt_f32(x: f32) -> f32 {
+        libm::sqrtf(x)
+    }
+    #[inline]
+    pub(super) fn atan2_f32(y: f32, x: f32) -> f32 {
+        libm::atan2f(y, x)
+    }
+    #[inline]
+    pub(super) fn powf_f32(x: f32, y: f32) -> f32 {
+        libm::powf(x, y)
+    }
+    #[inline]
+    pub(super) fn sin_f64(x: f64) -> f64 {
+        libm::sin(x)
+    }
+    #[inline]
+    pub(super) fn cos_f64(x: f64) -> f64 {
+        libm::cos(x)
+    }
+    #[inline]
+    pub(super) fn tan_f64(x: f64) -> f64 {
+        libm::tan(x)
+    }
+    #[inline]
+    pub(super) fn asin_f64(x: f64) -> f64 {
+        libm::asin(x)
+    }
+    #[inline]
+    pub(super) fn acos_f64(x: f64) -> f64 {
+        libm::acos(x)
+    }
+    #[inline]
+    pub(super) fn sqrt_f64(x: f64) -> f64 {
+        libm::sqrt(x)
+    }
+    #[inline]
+    pub(super) fn atan2_f64(y: f64, x: f64) -> f64 {
+        libm::atan2(y, x)
+    }
+    #[inline]
+    pub(super) fn powf_f64(x: f64, y: f64) -> f64 {
+        libm::pow(x, y)
     }
 }
 
@@ -115,6 +252,10 @@ pub trait Scalar:
     const DEG_TO_RAD: Self;
     /// Multiply a value in radians by this to get degrees (`180 / PI`).
     const RAD_TO_DEG: Self;
+    /// Not a number. What the domain-restricted functions in `crate::trig`
+    /// (`asin(2)`, `nth_root(-4, 2)`, ...) return for input they have no
+    /// real answer for.
+    const NAN: Self;
     /// This type's machine epsilon - the default tolerance
     /// [`crate::approx::approx_eq`]/[`crate::approx::approx_zero`] compare
     /// against. Reach for [`crate::approx::approx_eq_eps`] or
@@ -166,6 +307,34 @@ pub trait Scalar:
     /// regardless of either operand's sign, unlike `%`/`Rem`, which keeps
     /// `self`'s sign and can return a negative result.
     fn modulo(self, other: Self) -> Self;
+
+    /// The sine of `self`, in radians.
+    fn sin(self) -> Self;
+
+    /// The cosine of `self`, in radians.
+    fn cos(self) -> Self;
+
+    /// The tangent of `self`, in radians.
+    fn tan(self) -> Self;
+
+    /// The arcsine of `self`, in radians within `[-PI/2, PI/2]`. `NaN` if
+    /// `self` is outside `[-1, 1]`.
+    fn asin(self) -> Self;
+
+    /// The arccosine of `self`, in radians within `[0, PI]`. `NaN` if
+    /// `self` is outside `[-1, 1]`.
+    fn acos(self) -> Self;
+
+    /// The four-quadrant arctangent of `self` (the `y` coordinate) and
+    /// `x`, in radians within `[-PI, PI]`. The angle of the point `(x, y)`
+    /// measured counterclockwise from the positive `x` axis.
+    fn atan2(self, x: Self) -> Self;
+
+    /// The square root of `self`. `NaN` if `self` is negative.
+    fn sqrt(self) -> Self;
+
+    /// `self` raised to the (floating-point) power `exp`.
+    fn powf(self, exp: Self) -> Self;
 }
 
 impl Scalar for f32 {
@@ -176,6 +345,7 @@ impl Scalar for f32 {
     const E: Self = core::f32::consts::E;
     const DEG_TO_RAD: Self = Self::PI / 180.0;
     const RAD_TO_DEG: Self = 180.0 / Self::PI;
+    const NAN: Self = f32::NAN;
     const DEFAULT_EPSILON: Self = f32::EPSILON;
 
     #[inline]
@@ -231,6 +401,46 @@ impl Scalar for f32 {
     fn modulo(self, other: Self) -> Self {
         sys::rem_euclid_f32(self, other)
     }
+
+    #[inline]
+    fn sin(self) -> Self {
+        sys::sin_f32(self)
+    }
+
+    #[inline]
+    fn cos(self) -> Self {
+        sys::cos_f32(self)
+    }
+
+    #[inline]
+    fn tan(self) -> Self {
+        sys::tan_f32(self)
+    }
+
+    #[inline]
+    fn asin(self) -> Self {
+        sys::asin_f32(self)
+    }
+
+    #[inline]
+    fn acos(self) -> Self {
+        sys::acos_f32(self)
+    }
+
+    #[inline]
+    fn sqrt(self) -> Self {
+        sys::sqrt_f32(self)
+    }
+
+    #[inline]
+    fn atan2(self, x: Self) -> Self {
+        sys::atan2_f32(self, x)
+    }
+
+    #[inline]
+    fn powf(self, exp: Self) -> Self {
+        sys::powf_f32(self, exp)
+    }
 }
 
 impl Scalar for f64 {
@@ -241,6 +451,7 @@ impl Scalar for f64 {
     const E: Self = core::f64::consts::E;
     const DEG_TO_RAD: Self = Self::PI / 180.0;
     const RAD_TO_DEG: Self = 180.0 / Self::PI;
+    const NAN: Self = f64::NAN;
     const DEFAULT_EPSILON: Self = f64::EPSILON;
 
     #[inline]
@@ -295,6 +506,46 @@ impl Scalar for f64 {
     #[inline]
     fn modulo(self, other: Self) -> Self {
         sys::rem_euclid_f64(self, other)
+    }
+
+    #[inline]
+    fn sin(self) -> Self {
+        sys::sin_f64(self)
+    }
+
+    #[inline]
+    fn cos(self) -> Self {
+        sys::cos_f64(self)
+    }
+
+    #[inline]
+    fn tan(self) -> Self {
+        sys::tan_f64(self)
+    }
+
+    #[inline]
+    fn asin(self) -> Self {
+        sys::asin_f64(self)
+    }
+
+    #[inline]
+    fn acos(self) -> Self {
+        sys::acos_f64(self)
+    }
+
+    #[inline]
+    fn sqrt(self) -> Self {
+        sys::sqrt_f64(self)
+    }
+
+    #[inline]
+    fn atan2(self, x: Self) -> Self {
+        sys::atan2_f64(self, x)
+    }
+
+    #[inline]
+    fn powf(self, exp: Self) -> Self {
+        sys::powf_f64(self, exp)
     }
 }
 
@@ -370,6 +621,25 @@ mod tests {
         assert_eq!(Scalar::ceil(-1.7_f32), -1.0_f32);
         assert_eq!(Scalar::round(2.5_f32), 3.0_f32);
         assert_eq!(Scalar::round(-2.5_f32), -3.0_f32);
+    }
+
+    #[test]
+    fn nan_constant_is_nan() {
+        assert!(f32::NAN.is_nan());
+        assert!(<f64 as Scalar>::NAN.is_nan());
+    }
+
+    #[test]
+    fn transcendental_methods_match_known_values() {
+        assert!((Scalar::sin(f32::PI / 2.0) - 1.0).abs() < 1e-6);
+        assert!((Scalar::cos(0.0_f64) - 1.0).abs() < 1e-12);
+        assert!((Scalar::tan(f64::PI / 4.0) - 1.0).abs() < 1e-12);
+        assert!((Scalar::asin(1.0_f32) - f32::PI / 2.0).abs() < 1e-6);
+        assert!((Scalar::acos(1.0_f64)).abs() < 1e-12);
+        assert!((Scalar::atan2(1.0_f64, 1.0) - f64::PI / 4.0).abs() < 1e-12);
+        assert_eq!(Scalar::sqrt(16.0_f32), 4.0_f32);
+        assert_eq!(Scalar::powf(2.0_f64, 8.0), 256.0_f64);
+        assert!(Scalar::sqrt(-1.0_f32).is_nan());
     }
 
     #[test]
