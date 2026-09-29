@@ -30,5 +30,13 @@ jobs:
             - name: Cargo Test
               run: cargo test --workspace --all-features
 
+            # `--all-features` enables `std` and `no_std` together and `std`
+            # wins, so the `libm` backend needs its own build and test run.
+            - name: Cargo Check (math, no_std backend)
+              run: cargo check -p math --no-default-features --features no_std
+
+            - name: Cargo Test (math, no_std backend)
+              run: cargo test -p math --no-default-features --features no_std
+
             - name: Clippy
               run: cargo clippy --workspace --all-features

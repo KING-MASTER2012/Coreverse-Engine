@@ -32,9 +32,9 @@ tempfile = "3.27.0"
 libm = "0.2.16"
 
 [workspace.lints.rust]
-unsafe_code = "warn"
+unsafe_code = "deny"
 unused_must_use = "warn"
-missing_docs = "warn"
+missing_docs = "deny"
 
 [workspace.lints.clippy]
 all = "warn"

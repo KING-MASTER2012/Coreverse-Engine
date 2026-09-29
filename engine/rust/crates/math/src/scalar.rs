@@ -8,6 +8,9 @@
 //! [`Scalar::signum`]/[`Scalar::floor`]/[`Scalar::ceil`]/[`Scalar::round`]/
 //! [`Scalar::modulo`] to this same trait.
 //!
+//! Phase 1.4 (`interp`) did not add methods, only the `Add`/`Div`
+//! supertraits it needs (`lerp` is `a + (b - a) * t`, `inverse_lerp` divides).
+//!
 //! Every method here (like [`Scalar::abs`] before it) is a thin,
 //! `#[inline]` wrapper. `abs`/`min`/`max`/`clamp`/`signum` exist on the
 //! primitive `f32`/`f64` types in `core`, so they need no backend.
@@ -17,7 +20,7 @@
 //! crate otherwise (the same split Phase 1.5's `trig` module uses).
 
 use core::fmt::Debug;
-use core::ops::{Mul, Sub};
+use core::ops::{Add, Div, Mul, Sub};
 
 /// Backend for the four operations `core` lacks: primitive methods under
 /// `std`, the `libm` crate otherwise.
@@ -89,7 +92,14 @@ mod sys {
 /// floating-point angles and tolerances, unlike the separate integer
 /// trait `int_math` introduces in Phase 1.6.
 pub trait Scalar:
-    Copy + PartialEq + PartialOrd + Debug + Sub<Output = Self> + Mul<Output = Self>
+    Copy
+    + PartialEq
+    + PartialOrd
+    + Debug
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
 {
     /// Additive identity, `0`.
     const ZERO: Self;

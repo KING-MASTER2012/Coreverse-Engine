@@ -1,3 +1,6 @@
+//! Integration tests for the `vfs_macros` compile-time helpers (`path!`,
+//! `file!`, `file_bytes!`, `metadata!`).
+
 use vfs_macros::{file, file_bytes, metadata, path};
 
 #[test]
@@ -28,7 +31,6 @@ fn metadata_macro_returns_valid_values() {
 
     assert!(meta.modified_unix >= 0);
 
-    // bool olduğu kontrol edilmiş olur.
     let _ = meta.readonly;
 }
 

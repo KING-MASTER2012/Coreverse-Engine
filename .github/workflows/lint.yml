@@ -1,16 +1,26 @@
 name: Lint
 
 on:
-  workflow_call:
+    workflow_call:
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
+    lint:
+        runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v7
+        steps:
+            - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
+            - uses: dtolnay/rust-toolchain@stable
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-features -- -D warnings
+            - name: Clippy
+              run: cargo clippy --workspace --all-features -- -D warnings
+
+            # `--all-features` above enables `std` and `no_std` together, and `std`
+            # wins, so the `libm` backend is never compiled there. Lint it alone.
+            - name: Clippy (math, no_std backend)
+              run: cargo clippy -p math --no-default-features --features no_std -- -D warnings
+
+            - name: Rustdoc (math)
+              run: cargo doc -p math --no-deps
+              env:
+                  RUSTDOCFLAGS: -D warnings

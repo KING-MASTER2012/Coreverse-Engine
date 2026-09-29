@@ -1,3 +1,6 @@
+//! Integration tests for the `vfs` crate's public API, exercised the way a
+//! downstream crate would use it.
+
 use std::sync::Arc;
 
 use camino::Utf8Path;
