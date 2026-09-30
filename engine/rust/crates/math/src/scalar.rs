@@ -227,16 +227,16 @@ mod sys {
 /// Not meant to be implemented for anything outside this crate: the
 /// constants below (`PI`, `DEG_TO_RAD`, ...) are only meaningful for
 /// floating-point angles and tolerances, unlike the separate integer
-/// trait `int_math` introduces in Phase 1.6.
+/// trait [`crate::Integer`].
 pub trait Scalar:
-    Copy
-    + PartialEq
-    + PartialOrd
-    + Debug
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Div<Output = Self>
+Copy
++ PartialEq
++ PartialOrd
++ Debug
++ Add<Output = Self>
++ Sub<Output = Self>
++ Mul<Output = Self>
++ Div<Output = Self>
 {
     /// Additive identity, `0`.
     const ZERO: Self;
