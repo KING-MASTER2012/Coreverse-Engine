@@ -8,11 +8,13 @@
 //! crates - which must always compile as their own separate crate - out of
 //! the regular crate tree.
 //!
-//! The vector-generating macro is [`vectors!`] (Phase 1.7); the
-//! matrix-generating macro lands in Phase 1.9.
+//! The vector-generating macro is [`vectors!`] (Phase 1.7, with the vector
+//! operations of Phase 1.8); the matrix-generating macro is [`matrices!`]
+//! (Phase 1.9).
 
 use proc_macro::TokenStream;
 
+mod matrix;
 mod vector;
 mod vector_ops;
 
@@ -66,4 +68,45 @@ mod vector_ops;
 #[proc_macro]
 pub fn vectors(input: TokenStream) -> TokenStream {
     vector::vectors_impl(input.into()).into()
+}
+
+/// Generates a family of column-major matrix types per
+/// `Prefix(VectorPrefix) => scalar` entry.
+///
+/// Every entry produces `Prefix2`, `Prefix3` and `Prefix4`, whose columns are
+/// the `crate::vector::VectorPrefix2`/`3`/`4` vectors of the same scalar, so
+/// one invocation can define all of `math`'s matrices:
+///
+/// ```ignore
+/// math_macros::matrices! {
+///     Mat(Vec)   => f32,
+///     DMat(DVec) => f64,
+/// }
+/// ```
+///
+/// defines the 6 types `Mat2`..`DMat4`. Each is a `#[repr(C)]` struct whose
+/// public fields `x_axis`, `y_axis` (and `z_axis`, `w_axis`) are the columns,
+/// so the memory is the columns one after another, the layout GLSL and Vulkan
+/// expect. It has:
+///
+/// - the `IDENTITY` and `ZERO` associated constants, and `const fn`
+///   `from_cols`, `from_cols_array`, `to_cols_array`, `from_cols_array_2d`,
+///   `to_cols_array_2d`, `col` and `row`;
+/// - `transpose`, `determinant` and `inverse` (`None` for a singular
+///   matrix), `mul_mat` and `mul_vec`, all `const fn`;
+/// - `Mul<matrix>` and `Mul<column vector>` (`m * v` transforms a column
+///   vector, `a * b` applies `b` first), `MulAssign<matrix>`, `Index<usize>`
+///   and `IndexMut<usize>` (by column), `From` conversions to and from
+///   `[[scalar; N]; N]`, and `Default` (the identity).
+///
+/// The scalar must be `f32` or `f64`. Anything else, an empty list, a
+/// repeated prefix or a malformed entry is a compile error pointing at the
+/// offending entry. The generated code names `::core` items, `crate::vector`
+/// (for the column types) and nothing else, and all of it carries
+/// documentation (the generated types satisfy `#![deny(missing_docs)]`). The
+/// `crate::vector` paths mean the macro can only be invoked inside the `math`
+/// crate itself.
+#[proc_macro]
+pub fn matrices(input: TokenStream) -> TokenStream {
+    matrix::matrices_impl(input.into()).into()
 }
