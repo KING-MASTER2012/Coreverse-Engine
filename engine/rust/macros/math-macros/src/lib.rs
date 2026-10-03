@@ -14,6 +14,7 @@
 use proc_macro::TokenStream;
 
 mod vector;
+mod vector_ops;
 
 /// Generates a family of vector types per `Prefix => scalar` entry.
 ///
@@ -38,7 +39,15 @@ mod vector;
 /// - component-wise `Add` and `Sub`, `Mul<scalar>` and `Div<scalar>`, their
 ///   `*Assign` forms, and `scalar * vector`;
 /// - `Index<usize>` and `IndexMut<usize>`;
-/// - `Neg`, for float and signed-integer scalars only.
+/// - `Neg`, for float and signed-integer scalars only;
+/// - the operations of Phase 1.8, on every type: `dot`, `length_sq`,
+///   `distance_sq` and the component-wise `min`, `max` and `clamp` (all
+///   `const fn`); on the 3-component float and signed-integer types also
+///   `cross`; and on float types only `length`, `distance`, `normalize`,
+///   `try_normalize`, `normalize_or_zero`, `project_onto`, `reject_from`,
+///   `reflect`, `refract` and `angle_between`. Unsigned types get no `cross`
+///   (its subtraction would underflow), and integer types get nothing that
+///   would return a non-integer.
 ///
 /// Float and integer entries also differ in their derives: integer vectors
 /// are additionally `Eq` and `Hash`.
@@ -49,6 +58,11 @@ mod vector;
 /// code only names `::core` items, so it works in `no_std` crates, and all
 /// of it carries documentation (the generated types satisfy
 /// `#![deny(missing_docs)]`).
+///
+/// The float operations call `crate::scalar::Scalar` (for `sqrt`/`atan2`,
+/// which `core` lacks, so that they follow `math`'s `std`/`libm` backend) and
+/// return `crate::angle::Radians`. These `crate::` paths mean the macro can
+/// only be invoked inside the `math` crate itself.
 #[proc_macro]
 pub fn vectors(input: TokenStream) -> TokenStream {
     vector::vectors_impl(input.into()).into()

@@ -30,7 +30,7 @@ use syn::punctuated::Punctuated;
 use syn::{Error, Ident, Result, Token};
 
 /// Component names in order; a vector of dimension `n` uses the first `n`.
-const COMPONENTS: [&str; 4] = ["x", "y", "z", "w"];
+pub(crate) const COMPONENTS: [&str; 4] = ["x", "y", "z", "w"];
 
 /// The dimensions generated for every family.
 const DIMENSIONS: [usize; 3] = [2, 3, 4];
@@ -42,7 +42,7 @@ const UNSIGNED_SCALARS: [&str; 6] = ["u8", "u16", "u32", "u64", "u128", "usize"]
 /// What kind of number a family's components are, which decides both the
 /// literals used (`0.0` vs `0`) and which impls exist.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Kind {
+pub(crate) enum Kind {
     Float,
     Signed,
     Unsigned,
@@ -72,14 +72,14 @@ impl Kind {
         self != Self::Float
     }
 
-    fn zero(self) -> TokenStream {
+    pub(crate) fn zero(self) -> TokenStream {
         match self {
             Self::Float => quote!(0.0),
             Self::Signed | Self::Unsigned => quote!(0),
         }
     }
 
-    fn one(self) -> TokenStream {
+    pub(crate) fn one(self) -> TokenStream {
         match self {
             Self::Float => quote!(1.0),
             Self::Signed | Self::Unsigned => quote!(1),
@@ -212,6 +212,8 @@ fn vector(family: &Family, dim: usize) -> TokenStream {
             pub const #const_name: Self = Self::new(#(#args),*);
         }
     });
+
+    let operations = crate::vector_ops::operations(&name, scalar, *kind, dim, &fields);
 
     let neg_impl = kind.has_neg().then(|| {
         quote! {
@@ -369,6 +371,8 @@ fn vector(family: &Family, dim: usize) -> TokenStream {
             }
         }
 
+        #operations
+
         impl ::core::convert::From<[#scalar; #dim_literal]> for #name {
             #[inline]
             fn from(array: [#scalar; #dim_literal]) -> Self {
@@ -436,13 +440,15 @@ fn vector(family: &Family, dim: usize) -> TokenStream {
 mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};
-    use syn::{Item, Type};
+    use syn::{ImplItem, Item, Type};
 
     /// What the expansion defined: struct names, and per self-type the set of
     /// implemented traits (`Neg`, `Add`, `Mul<f32>`...) as strings.
     struct Expansion {
         structs: Vec<String>,
         traits: BTreeMap<String, BTreeSet<String>>,
+        /// Per self-type, the names of its inherent associated functions.
+        methods: BTreeMap<String, BTreeSet<String>>,
     }
 
     fn type_name(ty: &Type) -> String {
@@ -457,6 +463,7 @@ mod tests {
             syn::parse2(tokens).expect("the expansion must be a valid sequence of items");
         let mut structs = Vec::new();
         let mut traits: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut methods: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for item in file.items {
             match item {
                 Item::Struct(item) => structs.push(item.ident.to_string()),
@@ -471,12 +478,25 @@ mod tests {
                             .entry(type_name(&item.self_ty))
                             .or_default()
                             .insert(path.to_owned());
+                    } else {
+                        for member in &item.items {
+                            if let ImplItem::Fn(function) = member {
+                                methods
+                                    .entry(type_name(&item.self_ty))
+                                    .or_default()
+                                    .insert(function.sig.ident.to_string());
+                            }
+                        }
                     }
                 }
                 other => panic!("unexpected item in the expansion: {}", quote!(#other)),
             }
         }
-        Expansion { structs, traits }
+        Expansion {
+            structs,
+            traits,
+            methods,
+        }
     }
 
     fn error_message(input: TokenStream) -> String {
@@ -534,6 +554,91 @@ mod tests {
                 assert!(out.traits[scalar].contains(&format!("Mul<{name}>")));
             }
         }
+    }
+
+    const SHARED_OPERATIONS: [&str; 6] = ["dot", "length_sq", "distance_sq", "min", "max", "clamp"];
+    const FLOAT_OPERATIONS: [&str; 10] = [
+        "length",
+        "distance",
+        "normalize",
+        "try_normalize",
+        "normalize_or_zero",
+        "project_onto",
+        "reject_from",
+        "reflect",
+        "refract",
+        "angle_between",
+    ];
+
+    #[test]
+    fn every_type_gets_the_shared_operations() {
+        let out = expansion(quote! { Vec => f32, DVec => f64, IVec => i32, UVec => u32 });
+        for prefix in ["Vec", "DVec", "IVec", "UVec"] {
+            for dim in 2..=4 {
+                let name = format!("{prefix}{dim}");
+                for function in SHARED_OPERATIONS {
+                    assert!(
+                        out.methods[&name].contains(function),
+                        "{name} lacks {function}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn float_only_operations_exist_for_floats_only() {
+        let out = expansion(quote! { Vec => f32, DVec => f64, IVec => i32, UVec => u32 });
+        for prefix in ["Vec", "DVec"] {
+            for dim in 2..=4 {
+                let name = format!("{prefix}{dim}");
+                for function in FLOAT_OPERATIONS {
+                    assert!(
+                        out.methods[&name].contains(function),
+                        "{name} lacks {function}"
+                    );
+                }
+            }
+        }
+        for prefix in ["IVec", "UVec"] {
+            for dim in 2..=4 {
+                let name = format!("{prefix}{dim}");
+                for function in FLOAT_OPERATIONS {
+                    assert!(
+                        !out.methods[&name].contains(function),
+                        "{name} must not have {function}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cross_exists_only_for_three_components_and_never_unsigned() {
+        let out = expansion(quote! { Vec => f32, DVec => f64, IVec => i32, UVec => u32 });
+        for name in ["Vec3", "DVec3", "IVec3"] {
+            assert!(out.methods[name].contains("cross"), "{name} needs cross");
+        }
+        for name in [
+            "Vec2", "Vec4", "DVec2", "DVec4", "IVec2", "IVec4", "UVec2", "UVec3", "UVec4",
+        ] {
+            assert!(
+                !out.methods[name].contains("cross"),
+                "{name} must not have cross"
+            );
+        }
+    }
+
+    #[test]
+    fn integer_expansion_does_not_reference_the_scalar_trait() {
+        // Only float operations need `crate::scalar::Scalar`/`Radians`.
+        let ints = vectors_impl(quote! { IVec => i32, UVec => u32 }).to_string();
+        assert!(
+            !ints.contains("Scalar") && !ints.contains("Radians"),
+            "{ints}"
+        );
+        let floats = vectors_impl(quote! { Vec => f32 }).to_string();
+        assert!(floats.contains("Scalar") && floats.contains("Radians"));
     }
 
     #[test]
