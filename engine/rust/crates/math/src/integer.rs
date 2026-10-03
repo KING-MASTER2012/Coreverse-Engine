@@ -33,22 +33,22 @@ use core::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Not, Rem, Shl, Shr, Sub};
 /// `checked_*`/`saturating_*`/`wrapping_*` methods (and the free-function
 /// wrappers in [`crate::int_math`]) are the overflow-safe way to compute.
 pub trait Integer:
-Copy
-+ Eq
-+ Ord
-+ Hash
-+ Debug
-+ Add<Output = Self>
-+ Sub<Output = Self>
-+ Mul<Output = Self>
-+ Div<Output = Self>
-+ Rem<Output = Self>
-+ BitAnd<Output = Self>
-+ BitOr<Output = Self>
-+ BitXor<Output = Self>
-+ Not<Output = Self>
-+ Shl<u32, Output = Self>
-+ Shr<u32, Output = Self>
+    Copy
+    + Eq
+    + Ord
+    + Hash
+    + Debug
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
+    + Rem<Output = Self>
+    + BitAnd<Output = Self>
+    + BitOr<Output = Self>
+    + BitXor<Output = Self>
+    + Not<Output = Self>
+    + Shl<u32, Output = Self>
+    + Shr<u32, Output = Self>
 {
     /// The unsigned integer type with the same width as `Self`. For an
     /// unsigned type this is `Self`.

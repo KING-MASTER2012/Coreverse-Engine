@@ -221,7 +221,7 @@ pub fn from_radix<T: Integer>(text: &str, base: u32) -> Result<T, RadixError> {
         } else {
             shifted.checked_add(digit)
         }
-            .ok_or(RadixError::Overflow)?;
+        .ok_or(RadixError::Overflow)?;
     }
     Ok(value)
 }
