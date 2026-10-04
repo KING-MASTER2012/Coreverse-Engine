@@ -1,9 +1,9 @@
 //! Coreverse's core math library.
 //!
-//! Everything here is `f32`/`f64` scalar math, angles, interpolation,
-//! integer/bit math, and (once later phases land) vectors, matrices and
-//! quaternions - all `#![no_std]`-compatible with no heap allocation, so
-//! this crate never needs `alloc` either.
+//! Everything here is `f32`/`f64` scalar math, angles, interpolation and
+//! easing curves, integer/bit math, vectors, matrices and quaternions - all
+//! `#![no_std]`-compatible with no heap allocation, so this crate never
+//! needs `alloc` either.
 //!
 //! # `std` vs `no_std`
 //!
@@ -63,6 +63,7 @@ pub mod bits;
 /// Ergonomic, non-generic `f32`/`f64` constants. See [`consts::f32`]/
 /// [`consts::f64`].
 pub mod consts;
+pub mod ease;
 pub mod int_math;
 pub mod integer;
 /// Interpolation helpers: `lerp`, `inverse_lerp`, `remap`, `smoothstep`,

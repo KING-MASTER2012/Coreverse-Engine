@@ -18,6 +18,13 @@
 //! `f32`/`f64` only with `std`, so they go through the same private `sys`
 //! backend below. The public, typed API for them lives in `crate::trig`.
 //!
+//! Phase 2.1 adds [`Scalar::fract`]/[`Scalar::trunc`]/[`Scalar::exp`]/
+//! [`Scalar::ln`]/[`Scalar::log2`]/[`Scalar::log10`]/[`Scalar::atan`]/
+//! [`Scalar::hypot`]/[`Scalar::cbrt`]/[`Scalar::mul_add`]/
+//! [`Scalar::copysign`]/[`Scalar::is_finite`]/[`Scalar::is_nan`], plus
+//! [`Scalar::from_f64`] so generic code (the `ease` curves, `smooth_damp`)
+//! can write its float constants once.
+//!
 //! Every method here (like [`Scalar::abs`] before it) is a thin,
 //! `#[inline]` wrapper. `abs`/`min`/`max`/`clamp`/`signum` exist on the
 //! primitive `f32`/`f64` types in `core`, so they need no backend.
@@ -122,6 +129,41 @@ mod sys {
     pub(super) fn powf_f64(x: f64, y: f64) -> f64 {
         x.powf(y)
     }
+
+    /// Generates `fn name(args..) -> ty` forwarding to a primitive method.
+    macro_rules! forward {
+        ($($name:ident($($arg:ident),+): $ty:ty => $path:path;)+) => {
+            $(
+                #[inline]
+                pub(super) fn $name($($arg: $ty),+) -> $ty {
+                    $path($($arg),+)
+                }
+            )+
+        };
+    }
+
+    forward! {
+        trunc_f32(x): f32 => f32::trunc;
+        exp_f32(x): f32 => f32::exp;
+        ln_f32(x): f32 => f32::ln;
+        log2_f32(x): f32 => f32::log2;
+        log10_f32(x): f32 => f32::log10;
+        atan_f32(x): f32 => f32::atan;
+        cbrt_f32(x): f32 => f32::cbrt;
+        hypot_f32(x, y): f32 => f32::hypot;
+        copysign_f32(x, y): f32 => f32::copysign;
+        mul_add_f32(x, a, b): f32 => f32::mul_add;
+        trunc_f64(x): f64 => f64::trunc;
+        exp_f64(x): f64 => f64::exp;
+        ln_f64(x): f64 => f64::ln;
+        log2_f64(x): f64 => f64::log2;
+        log10_f64(x): f64 => f64::log10;
+        atan_f64(x): f64 => f64::atan;
+        cbrt_f64(x): f64 => f64::cbrt;
+        hypot_f64(x, y): f64 => f64::hypot;
+        copysign_f64(x, y): f64 => f64::copysign;
+        mul_add_f64(x, a, b): f64 => f64::mul_add;
+    }
 }
 
 /// `libm::round*` rounds ties away from zero, same as `f32`/`f64::round`.
@@ -219,6 +261,41 @@ mod sys {
     pub(super) fn powf_f64(x: f64, y: f64) -> f64 {
         libm::pow(x, y)
     }
+
+    /// Generates `fn name(args..) -> ty` forwarding to a `libm` function.
+    macro_rules! forward {
+        ($($name:ident($($arg:ident),+): $ty:ty => $path:path;)+) => {
+            $(
+                #[inline]
+                pub(super) fn $name($($arg: $ty),+) -> $ty {
+                    $path($($arg),+)
+                }
+            )+
+        };
+    }
+
+    forward! {
+        trunc_f32(x): f32 => libm::truncf;
+        exp_f32(x): f32 => libm::expf;
+        ln_f32(x): f32 => libm::logf;
+        log2_f32(x): f32 => libm::log2f;
+        log10_f32(x): f32 => libm::log10f;
+        atan_f32(x): f32 => libm::atanf;
+        cbrt_f32(x): f32 => libm::cbrtf;
+        hypot_f32(x, y): f32 => libm::hypotf;
+        copysign_f32(x, y): f32 => libm::copysignf;
+        mul_add_f32(x, a, b): f32 => libm::fmaf;
+        trunc_f64(x): f64 => libm::trunc;
+        exp_f64(x): f64 => libm::exp;
+        ln_f64(x): f64 => libm::log;
+        log2_f64(x): f64 => libm::log2;
+        log10_f64(x): f64 => libm::log10;
+        atan_f64(x): f64 => libm::atan;
+        cbrt_f64(x): f64 => libm::cbrt;
+        hypot_f64(x, y): f64 => libm::hypot;
+        copysign_f64(x, y): f64 => libm::copysign;
+        mul_add_f64(x, a, b): f64 => libm::fma;
+    }
 }
 
 /// A floating-point scalar (`f32` or `f64`) that `math`'s generic
@@ -229,14 +306,14 @@ mod sys {
 /// floating-point angles and tolerances, unlike the separate integer
 /// trait [`crate::Integer`].
 pub trait Scalar:
-    Copy
-    + PartialEq
-    + PartialOrd
-    + Debug
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Div<Output = Self>
+Copy
++ PartialEq
++ PartialOrd
++ Debug
++ Add<Output = Self>
++ Sub<Output = Self>
++ Mul<Output = Self>
++ Div<Output = Self>
 {
     /// Additive identity, `0`.
     const ZERO: Self;
@@ -335,6 +412,68 @@ pub trait Scalar:
 
     /// `self` raised to the (floating-point) power `exp`.
     fn powf(self, exp: Self) -> Self;
+
+    /// `self` with its fractional part removed (rounded towards zero):
+    /// `3.7 -> 3.0`, `-3.7 -> -3.0`. Differs from [`Scalar::floor`] for
+    /// negative numbers.
+    fn trunc(self) -> Self;
+
+    /// The fractional part of `self`, `self - self.trunc()`. Keeps `self`'s
+    /// sign (`-3.75 -> -0.75`), so it is **not** the GLSL `fract`; for that
+    /// use `self - self.floor()`.
+    fn fract(self) -> Self;
+
+    /// `e` raised to the power `self`.
+    fn exp(self) -> Self;
+
+    /// The natural logarithm of `self`. `NaN` if `self` is negative,
+    /// `-inf` for zero.
+    fn ln(self) -> Self;
+
+    /// The base-2 logarithm of `self`. `NaN` if `self` is negative, `-inf`
+    /// for zero.
+    fn log2(self) -> Self;
+
+    /// The base-10 logarithm of `self`. `NaN` if `self` is negative,
+    /// `-inf` for zero.
+    fn log10(self) -> Self;
+
+    /// The arctangent of `self`, in radians within `[-PI/2, PI/2]`. Use
+    /// [`Scalar::atan2`] when you have both coordinates.
+    fn atan(self) -> Self;
+
+    /// The length of the hypotenuse of a right triangle with legs `self`
+    /// and `other`, `sqrt(self² + other²)`, without intermediate overflow
+    /// or underflow.
+    fn hypot(self, other: Self) -> Self;
+
+    /// The real cube root of `self`. Unlike `powf(1/3)` it is defined for
+    /// negative numbers (`cbrt(-8) == -2`).
+    fn cbrt(self) -> Self;
+
+    /// The fused multiply-add `self * a + b` with a single rounding.
+    ///
+    /// Exact, but only fast where the target has a hardware FMA
+    /// instruction: elsewhere (and under `no_std`) it falls back to a
+    /// software implementation that is much slower than a plain `self * a
+    /// + b`. Reach for it for accuracy, not as a blanket speed-up.
+    fn mul_add(self, a: Self, b: Self) -> Self;
+
+    /// `self`'s magnitude with `sign`'s sign bit (so `-0.0` counts as
+    /// negative, and a `NaN` `sign` is whatever its sign bit says).
+    fn copysign(self, sign: Self) -> Self;
+
+    /// `true` if `self` is neither infinite nor `NaN`.
+    fn is_finite(self) -> bool;
+
+    /// `true` if `self` is `NaN`.
+    fn is_nan(self) -> bool;
+
+    /// Converts a `f64` constant to this type, rounding to nearest for
+    /// `f32` (out-of-range values become `inf`). Exists so generic code can
+    /// write its float constants (`0.48`, `1.70158`) once instead of
+    /// building them out of `ONE`s.
+    fn from_f64(value: f64) -> Self;
 }
 
 impl Scalar for f32 {
@@ -440,6 +579,76 @@ impl Scalar for f32 {
     #[inline]
     fn powf(self, exp: Self) -> Self {
         sys::powf_f32(self, exp)
+    }
+
+    #[inline]
+    fn trunc(self) -> Self {
+        sys::trunc_f32(self)
+    }
+
+    #[inline]
+    fn fract(self) -> Self {
+        self - sys::trunc_f32(self)
+    }
+
+    #[inline]
+    fn exp(self) -> Self {
+        sys::exp_f32(self)
+    }
+
+    #[inline]
+    fn ln(self) -> Self {
+        sys::ln_f32(self)
+    }
+
+    #[inline]
+    fn log2(self) -> Self {
+        sys::log2_f32(self)
+    }
+
+    #[inline]
+    fn log10(self) -> Self {
+        sys::log10_f32(self)
+    }
+
+    #[inline]
+    fn atan(self) -> Self {
+        sys::atan_f32(self)
+    }
+
+    #[inline]
+    fn hypot(self, other: Self) -> Self {
+        sys::hypot_f32(self, other)
+    }
+
+    #[inline]
+    fn cbrt(self) -> Self {
+        sys::cbrt_f32(self)
+    }
+
+    #[inline]
+    fn mul_add(self, a: Self, b: Self) -> Self {
+        sys::mul_add_f32(self, a, b)
+    }
+
+    #[inline]
+    fn copysign(self, sign: Self) -> Self {
+        sys::copysign_f32(self, sign)
+    }
+
+    #[inline]
+    fn is_finite(self) -> bool {
+        f32::is_finite(self)
+    }
+
+    #[inline]
+    fn is_nan(self) -> bool {
+        f32::is_nan(self)
+    }
+
+    #[inline]
+    fn from_f64(value: f64) -> Self {
+        value as f32
     }
 }
 
@@ -547,6 +756,76 @@ impl Scalar for f64 {
     fn powf(self, exp: Self) -> Self {
         sys::powf_f64(self, exp)
     }
+
+    #[inline]
+    fn trunc(self) -> Self {
+        sys::trunc_f64(self)
+    }
+
+    #[inline]
+    fn fract(self) -> Self {
+        self - sys::trunc_f64(self)
+    }
+
+    #[inline]
+    fn exp(self) -> Self {
+        sys::exp_f64(self)
+    }
+
+    #[inline]
+    fn ln(self) -> Self {
+        sys::ln_f64(self)
+    }
+
+    #[inline]
+    fn log2(self) -> Self {
+        sys::log2_f64(self)
+    }
+
+    #[inline]
+    fn log10(self) -> Self {
+        sys::log10_f64(self)
+    }
+
+    #[inline]
+    fn atan(self) -> Self {
+        sys::atan_f64(self)
+    }
+
+    #[inline]
+    fn hypot(self, other: Self) -> Self {
+        sys::hypot_f64(self, other)
+    }
+
+    #[inline]
+    fn cbrt(self) -> Self {
+        sys::cbrt_f64(self)
+    }
+
+    #[inline]
+    fn mul_add(self, a: Self, b: Self) -> Self {
+        sys::mul_add_f64(self, a, b)
+    }
+
+    #[inline]
+    fn copysign(self, sign: Self) -> Self {
+        sys::copysign_f64(self, sign)
+    }
+
+    #[inline]
+    fn is_finite(self) -> bool {
+        f64::is_finite(self)
+    }
+
+    #[inline]
+    fn is_nan(self) -> bool {
+        f64::is_nan(self)
+    }
+
+    #[inline]
+    fn from_f64(value: f64) -> Self {
+        value
+    }
 }
 
 #[cfg(test)]
@@ -650,5 +929,92 @@ mod tests {
         assert_eq!(Scalar::modulo(-5.0_f32, 3.0_f32), 1.0_f32);
         assert_eq!(Scalar::modulo(5.0_f64, 3.0_f64), 2.0_f64);
         assert_eq!(Scalar::modulo(-5.0_f64, 3.0_f64), 1.0_f64);
+    }
+
+    #[test]
+    fn trunc_and_fract() {
+        assert_eq!(Scalar::trunc(3.7_f32), 3.0);
+        assert_eq!(Scalar::trunc(-3.7_f32), -3.0);
+        assert_eq!(Scalar::trunc(-3.7_f64), -3.0);
+        assert_eq!(Scalar::fract(3.75_f32), 0.75);
+        // Keeps the sign of the input, unlike GLSL's fract.
+        assert_eq!(Scalar::fract(-3.75_f64), -0.75);
+        assert_eq!(Scalar::fract(5.0_f64), 0.0);
+        assert!(Scalar::fract(f32::INFINITY).is_nan());
+    }
+
+    #[test]
+    fn exp_and_logs_match_known_values() {
+        assert_eq!(Scalar::exp(0.0_f32), 1.0);
+        assert!((Scalar::exp(1.0_f64) - f64::E).abs() < 1e-12);
+        assert!((Scalar::ln(f32::E) - 1.0).abs() < 1e-6);
+        assert_eq!(Scalar::ln(1.0_f64), 0.0);
+        assert_eq!(Scalar::log2(8.0_f32), 3.0);
+        assert_eq!(Scalar::log2(0.25_f64), -2.0);
+        assert!((Scalar::log10(1000.0_f64) - 3.0).abs() < 1e-12);
+        assert!((Scalar::log10(100.0_f32) - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn logs_out_of_domain() {
+        assert!(Scalar::ln(-1.0_f32).is_nan());
+        assert!(Scalar::log2(-1.0_f64).is_nan());
+        assert!(Scalar::log10(-1.0_f32).is_nan());
+        assert_eq!(Scalar::ln(0.0_f32), f32::NEG_INFINITY);
+        assert_eq!(Scalar::log2(0.0_f64), f64::NEG_INFINITY);
+    }
+
+    #[test]
+    fn atan_hypot_cbrt() {
+        assert_eq!(Scalar::atan(0.0_f32), 0.0);
+        assert!((Scalar::atan(1.0_f64) - f64::PI / 4.0).abs() < 1e-12);
+        assert!((Scalar::atan(f32::INFINITY) - f32::PI / 2.0).abs() < 1e-6);
+        assert_eq!(Scalar::hypot(3.0_f32, 4.0), 5.0);
+        assert_eq!(Scalar::hypot(-3.0_f64, 4.0), 5.0);
+        // The point of hypot: no intermediate overflow.
+        assert_eq!(
+            Scalar::hypot(1.0e30_f32, 1.0e30),
+            1.0e30 * core::f32::consts::SQRT_2
+        );
+        assert_eq!(Scalar::cbrt(27.0_f32), 3.0);
+        assert_eq!(Scalar::cbrt(-8.0_f64), -2.0);
+    }
+
+    #[test]
+    fn mul_add_is_a_fused_multiply_add() {
+        assert_eq!(Scalar::mul_add(2.0_f32, 3.0, 4.0), 10.0);
+        assert_eq!(Scalar::mul_add(-2.0_f64, 3.0, 1.0), -5.0);
+        // A single rounding: (1 + e)(1 - e) - 1 is exactly -e*e only when fused.
+        let e = f64::EPSILON;
+        assert_eq!(Scalar::mul_add(1.0 + e, 1.0 - e, -1.0), -e * e);
+    }
+
+    #[test]
+    fn copysign_uses_the_sign_bit() {
+        assert_eq!(Scalar::copysign(3.0_f32, -1.0), -3.0);
+        assert_eq!(Scalar::copysign(-3.0_f64, 1.0), 3.0);
+        assert_eq!(Scalar::copysign(3.0_f32, -0.0), -3.0);
+        assert_eq!(
+            Scalar::copysign(0.0_f64, -1.0).to_bits(),
+            (-0.0_f64).to_bits()
+        );
+    }
+
+    #[test]
+    fn finite_and_nan_predicates() {
+        assert!(Scalar::is_finite(1.0_f32));
+        assert!(!Scalar::is_finite(f32::INFINITY));
+        assert!(!Scalar::is_finite(f64::NAN));
+        assert!(Scalar::is_nan(f64::NAN));
+        assert!(!Scalar::is_nan(f32::INFINITY));
+        assert!(!Scalar::is_nan(0.0_f32));
+    }
+
+    #[test]
+    fn from_f64_converts_constants() {
+        assert_eq!(<f64 as Scalar>::from_f64(0.48), 0.48);
+        assert_eq!(<f32 as Scalar>::from_f64(0.5), 0.5);
+        assert_eq!(<f32 as Scalar>::from_f64(0.1), 0.1_f32);
+        assert_eq!(<f32 as Scalar>::from_f64(f64::INFINITY), f32::INFINITY);
     }
 }

@@ -1,5 +1,7 @@
-//! Trigonometry and roots: [`sin`], [`cos`], [`tan`], [`cot`], [`asin`],
-//! [`acos`], [`atan2`], [`sqrt`], [`nth_root`] and [`pow`].
+//! Trigonometry, roots, powers and logarithms: [`sin`], [`cos`], [`tan`],
+//! [`cot`], [`asin`], [`acos`], [`atan`], [`atan2`], [`sqrt`], [`cbrt`],
+//! [`nth_root`], [`hypot`], [`pow`], [`exp`], [`ln`], [`log2`] and
+//! [`log10`].
 //!
 //! Everything is generic over [`Scalar`], so it works for `f32` and `f64`.
 //! The functions are backed by `std` by default and by the `libm` crate
@@ -34,7 +36,8 @@
 //!
 //! Nothing here panics. Input with no real answer returns `NaN`, matching
 //! `f32`/`f64`: [`asin`]/[`acos`] outside `[-1, 1]`, [`sqrt`] of a negative
-//! number, and [`nth_root`] of a negative number for an even degree.
+//! number, and [`nth_root`] of a negative number for an even degree. The
+//! logarithms are `NaN` for negative input and `-inf` for zero.
 //! [`cot`] is `±inf` where `sin` is zero.
 
 use crate::Scalar;
@@ -95,6 +98,15 @@ pub fn atan2<T: Scalar>(y: T, x: T) -> Radians<T> {
     Radians(raw::atan2(y, x))
 }
 
+/// The arctangent of `x`, as an angle in `[-π/2, π/2]`.
+///
+/// Prefer [`atan2`] when you have both coordinates: it knows the quadrant,
+/// and has no division that could be by zero.
+#[inline]
+pub fn atan<T: Scalar>(x: T) -> Radians<T> {
+    Radians(raw::atan(x))
+}
+
 /// The square root of `x`. `NaN` if `x` is negative.
 #[inline]
 pub fn sqrt<T: Scalar>(x: T) -> T {
@@ -149,13 +161,57 @@ pub fn nth_root<T: Scalar>(x: T, n: T) -> T {
     }
 }
 
+/// The real cube root of `x`. Defined for negative numbers too
+/// (`cbrt(-8) == -2`), and exact for perfect cubes on common platforms,
+/// unlike `pow(x, 1.0 / 3.0)`. See [`nth_root`] for other degrees.
+#[inline]
+pub fn cbrt<T: Scalar>(x: T) -> T {
+    x.cbrt()
+}
+
+/// The length of the hypotenuse of a right triangle with legs `x` and `y`,
+/// `sqrt(x² + y²)`, computed without intermediate overflow or underflow
+/// (so `hypot(1e30_f32, 1e30)` is finite where `sqrt(x * x + y * y)` is
+/// `inf`). Slower than the plain formula; use it when the inputs can be
+/// extreme.
+#[inline]
+pub fn hypot<T: Scalar>(x: T, y: T) -> T {
+    x.hypot(y)
+}
+
+/// `e` raised to the power `x`. `exp(0) == 1`; large `x` overflows to
+/// `inf`, very negative `x` underflows to `0`.
+#[inline]
+pub fn exp<T: Scalar>(x: T) -> T {
+    x.exp()
+}
+
+/// The natural (base `e`) logarithm of `x`. `NaN` for negative `x`, `-inf`
+/// for zero.
+#[inline]
+pub fn ln<T: Scalar>(x: T) -> T {
+    x.ln()
+}
+
+/// The base-2 logarithm of `x`. `NaN` for negative `x`, `-inf` for zero.
+#[inline]
+pub fn log2<T: Scalar>(x: T) -> T {
+    x.log2()
+}
+
+/// The base-10 logarithm of `x`. `NaN` for negative `x`, `-inf` for zero.
+#[inline]
+pub fn log10<T: Scalar>(x: T) -> T {
+    x.log10()
+}
+
 /// The same angle functions as the parent module, on bare numbers in
 /// **radians** instead of [`Radians`].
 ///
 /// Use these when the surrounding code already works with raw floats and
 /// wrapping every value in [`Radians`] would only add noise. [`sqrt`],
-/// [`pow`] and [`nth_root`] are not angle functions and
-/// have no counterpart here.
+/// [`pow`], [`nth_root`], [`exp`], [`ln`] and the other roots and
+/// logarithms are not angle functions and have no counterpart here.
 pub mod raw {
     use crate::Scalar;
 
@@ -203,6 +259,12 @@ pub mod raw {
     #[inline]
     pub fn atan2<T: Scalar>(y: T, x: T) -> T {
         y.atan2(x)
+    }
+
+    /// The arctangent of `x`, in radians within `[-π/2, π/2]`.
+    #[inline]
+    pub fn atan<T: Scalar>(x: T) -> T {
+        x.atan()
     }
 }
 
@@ -379,5 +441,61 @@ mod tests {
         for (x, n) in [(2.0_f64, 3.0), (10.0, 4.0), (0.5, 5.0), (-3.0, 3.0)] {
             assert!(approx_eq_eps(pow(nth_root(x, n), n), x, 1e-9), "{x}, {n}");
         }
+    }
+
+    #[test]
+    fn atan_returns_radians_in_half_range() {
+        let a: Radians<f64> = atan(1.0);
+        assert!(close64(a.0, core::f64::consts::FRAC_PI_4));
+        assert!(close64(atan(-1.0_f64).0, -core::f64::consts::FRAC_PI_4));
+        assert!(close32(atan(f32::INFINITY).0, core::f32::consts::FRAC_PI_2));
+        assert!(close32(
+            atan(f32::NEG_INFINITY).0,
+            -core::f32::consts::FRAC_PI_2
+        ));
+        assert_eq!(atan(0.0_f32).0, 0.0);
+        assert_eq!(raw::atan(0.5_f64), atan(0.5_f64).0);
+        // tan and atan are inverses on (-pi/2, pi/2).
+        for x in [-3.0_f64, -0.5, 0.0, 0.7, 12.0] {
+            assert!(approx_eq_eps(tan(atan(x)), x, 1e-9));
+        }
+    }
+
+    #[test]
+    fn cbrt_and_hypot() {
+        assert_eq!(cbrt(27.0_f32), 3.0);
+        assert_eq!(cbrt(-8.0_f64), -2.0);
+        assert_eq!(cbrt(0.0_f64), 0.0);
+        let c = cbrt(2.0_f64);
+        assert!(close64(c * c * c, 2.0));
+        assert_eq!(hypot(3.0_f32, 4.0), 5.0);
+        assert_eq!(hypot(-5.0_f64, 12.0), 13.0);
+        assert!((sqrt(1.0e30_f32 * 1.0e30 + 1.0e30 * 1.0e30)).is_infinite());
+        assert!(hypot(1.0e30_f32, 1.0e30).is_finite());
+    }
+
+    #[test]
+    fn exp_and_logarithms() {
+        assert_eq!(exp(0.0_f32), 1.0);
+        assert!(close64(exp(1.0_f64), core::f64::consts::E));
+        assert_eq!(exp(f64::NEG_INFINITY), 0.0);
+        assert!(exp(1000.0_f64).is_infinite());
+        assert_eq!(ln(1.0_f64), 0.0);
+        assert!(close64(ln(core::f64::consts::E), 1.0));
+        assert_eq!(log2(1024.0_f32), 10.0);
+        assert!(close64(log10(0.001_f64), -3.0));
+        for x in [0.1_f64, 1.0, 2.5, 40.0] {
+            assert!(approx_eq_eps(exp(ln(x)), x, 1e-12 * x.max(1.0)));
+            assert!(approx_eq_eps(pow(2.0, log2(x)), x, 1e-12 * x.max(1.0)));
+        }
+    }
+
+    #[test]
+    fn logarithm_domain() {
+        assert!(ln(-1.0_f32).is_nan());
+        assert!(log2(-0.5_f64).is_nan());
+        assert!(log10(-3.0_f32).is_nan());
+        assert_eq!(ln(0.0_f64), f64::NEG_INFINITY);
+        assert_eq!(log10(0.0_f32), f32::NEG_INFINITY);
     }
 }

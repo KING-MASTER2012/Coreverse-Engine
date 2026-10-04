@@ -18,7 +18,12 @@
 //! arithmetic that makes sense for one: adding or subtracting two angles of
 //! the same unit, negating one, and scaling one by a plain number. Angles are
 //! never normalized behind your back: `Degrees(450.0)` stays `450.0`, and
-//! two angles compare equal only if their stored values do.
+//! two angles compare equal only if their stored values do. Wrapping is
+//! always an explicit call: [`Radians::normalized`] (into `[0, TAU)`),
+//! [`Radians::normalized_signed`] (into `(-PI, PI]`), the shortest signed
+//! turn between two angles with [`Radians::delta_angle`], and
+//! [`Radians::lerp_angle`] to interpolate along that shortest turn (all
+//! four exist on [`Degrees`] too).
 //!
 //! The trigonometric functions that consume and produce these types live in
 //! [`crate::trig`].
@@ -186,6 +191,66 @@ impl<T: Scalar> Degrees<T> {
     }
 }
 
+/// Generates the wrapping/shortest-turn methods that [`Radians`] and
+/// [`Degrees`] share. `$full` is a full turn and `$half` half a turn, in
+/// the type's own unit (as expressions over the scalar type `T`).
+macro_rules! angle_wrapping {
+    ($name:ident, $full:expr, $half:expr) => {
+        impl<T: Scalar> $name<T> {
+            /// This angle wrapped into one full turn: `[0, TAU)` for
+            /// radians, `[0, 360)` for degrees.
+            ///
+            /// Uses the Euclidean remainder, so negative angles wrap up
+            /// (`-90°` becomes `270°`) and the result is never exactly a
+            /// full turn. `NaN` and infinite angles give `NaN`.
+            #[inline]
+            pub fn normalized(self) -> Self {
+                Self(crate::interp::repeat(self.0, $full))
+            }
+
+            /// This angle wrapped into `(-half turn, half turn]`, the
+            /// signed form of the same direction: `(-PI, PI]` for radians,
+            /// `(-180, 180]` for degrees.
+            ///
+            /// The range includes the half turn itself and excludes minus
+            /// the half turn (`-180°` becomes `180°`), the same convention
+            /// as `atan2`'s result range. `NaN` and infinite angles give
+            /// `NaN`.
+            #[inline]
+            pub fn normalized_signed(self) -> Self {
+                let wrapped = self.normalized().0;
+                if wrapped > $half {
+                    Self(wrapped - $full)
+                } else {
+                    Self(wrapped)
+                }
+            }
+
+            /// The shortest signed turn from `self` to `target`, in
+            /// `(-half turn, half turn]`: positive means counterclockwise
+            /// (increasing angle). Works for any inputs, wrapped or not
+            /// (`350°` to `10°` is `+20°`, not `-340°`).
+            #[inline]
+            pub fn delta_angle(self, target: Self) -> Self {
+                Self(target.0 - self.0).normalized_signed()
+            }
+
+            /// Interpolates from `self` towards `target` along the
+            /// shortest turn ([`Self::delta_angle`]): `t = 0` is `self`,
+            /// `t = 1` is `target` (as an equivalent angle, not
+            /// necessarily the same stored value). Does not clamp `t`, and
+            /// the result is not normalized.
+            #[inline]
+            pub fn lerp_angle(self, target: Self, t: T) -> Self {
+                Self(self.0 + self.delta_angle(target).0 * t)
+            }
+        }
+    };
+}
+
+angle_wrapping!(Radians, T::TAU, T::PI);
+angle_wrapping!(Degrees, T::from_f64(360.0), T::from_f64(180.0));
+
 impl<T: Scalar> From<Degrees<T>> for Radians<T> {
     #[inline]
     fn from(degrees: Degrees<T>) -> Self {
@@ -306,5 +371,124 @@ mod tests {
     fn zero_converts_to_zero() {
         let r: Radians<f32> = Degrees::ZERO.into();
         assert_eq!(r, Radians::ZERO);
+    }
+
+    // ---- wrapping (Phase 2.1)
+
+    #[test]
+    fn normalized_wraps_into_one_turn() {
+        let cases = [
+            (0.0_f64, 0.0),
+            (90.0, 90.0),
+            (359.0, 359.0),
+            (360.0, 0.0),
+            (450.0, 90.0),
+            (-90.0, 270.0),
+            (-360.0, 0.0),
+            (-725.0, 355.0),
+            (1080.5, 0.5),
+        ];
+        for (input, expected) in cases {
+            let got = Degrees(input).normalized().0;
+            assert!(approx_eq_eps(got, expected, 1e-9), "{input} -> {got}");
+            assert!((0.0..360.0).contains(&got), "{input} -> {got}");
+        }
+    }
+
+    #[test]
+    fn normalized_radians_wraps_into_tau() {
+        let r = Radians(3.0 * core::f64::consts::PI).normalized();
+        assert!(approx_eq_eps(r.0, core::f64::consts::PI, 1e-12));
+        let r = Radians(-core::f32::consts::FRAC_PI_2).normalized();
+        assert!(approx_eq_eps(r.0, 3.0 * core::f32::consts::FRAC_PI_2, 1e-5));
+        assert_eq!(Radians(0.5_f32).normalized(), Radians(0.5));
+    }
+
+    #[test]
+    fn normalized_never_returns_a_full_turn() {
+        for tiny in [-1.0e-10_f32, -1.0e-30] {
+            let d = Degrees(tiny).normalized().0;
+            assert!((0.0..360.0).contains(&d), "{tiny} -> {d}");
+            let r = Radians(tiny).normalized().0;
+            assert!((0.0..core::f32::consts::TAU).contains(&r), "{tiny} -> {r}");
+        }
+    }
+
+    #[test]
+    fn normalized_signed_range_is_open_closed() {
+        let cases = [
+            (0.0_f64, 0.0),
+            (90.0, 90.0),
+            (180.0, 180.0),
+            (-180.0, 180.0),
+            (181.0, -179.0),
+            (-181.0, 179.0),
+            (270.0, -90.0),
+            (540.0, 180.0),
+            (-725.0, -5.0),
+        ];
+        for (input, expected) in cases {
+            let got = Degrees(input).normalized_signed().0;
+            assert!(approx_eq_eps(got, expected, 1e-9), "{input} -> {got}");
+            assert!(got > -180.0 && got <= 180.0, "{input} -> {got}");
+        }
+        let r = Radians(core::f64::consts::PI * 1.5).normalized_signed();
+        assert!(approx_eq_eps(r.0, -core::f64::consts::FRAC_PI_2, 1e-12));
+    }
+
+    #[test]
+    fn normalizing_non_finite_angles_gives_nan() {
+        assert!(Degrees(f32::NAN).normalized().0.is_nan());
+        assert!(Degrees(f32::INFINITY).normalized().0.is_nan());
+        assert!(Radians(f64::NEG_INFINITY).normalized_signed().0.is_nan());
+    }
+
+    #[test]
+    fn delta_angle_takes_the_short_way_round() {
+        let d = |from: f64, to: f64| Degrees(from).delta_angle(Degrees(to)).0;
+        assert!(approx_eq_eps(d(350.0, 10.0), 20.0, 1e-9));
+        assert!(approx_eq_eps(d(10.0, 350.0), -20.0, 1e-9));
+        assert!(approx_eq_eps(d(0.0, 90.0), 90.0, 1e-9));
+        assert!(approx_eq_eps(d(90.0, 0.0), -90.0, 1e-9));
+        // Unwrapped inputs.
+        assert!(approx_eq_eps(d(720.0 + 10.0, -360.0 + 30.0), 20.0, 1e-9));
+        // Opposite directions: the tie goes to +half turn.
+        assert!(approx_eq_eps(d(0.0, 180.0), 180.0, 1e-9));
+        assert!(approx_eq_eps(d(180.0, 0.0), 180.0, 1e-9));
+        assert_eq!(d(42.0, 42.0), 0.0);
+    }
+
+    #[test]
+    fn delta_angle_in_radians() {
+        let from = Radians(0.1_f64);
+        let to = Radians(core::f64::consts::TAU - 0.1);
+        assert!(approx_eq_eps(from.delta_angle(to).0, -0.2, 1e-12));
+    }
+
+    #[test]
+    fn lerp_angle_follows_the_shortest_arc() {
+        let a = Degrees(350.0_f64);
+        let b = Degrees(10.0);
+        assert!(approx_eq_eps(a.lerp_angle(b, 0.0).0, 350.0, 1e-9));
+        // Halfway across the 0 degree seam, not through 180.
+        assert!(approx_eq_eps(
+            a.lerp_angle(b, 0.5).0.rem_euclid(360.0),
+            0.0,
+            1e-9
+        ));
+        assert!(approx_eq_eps(
+            a.lerp_angle(b, 1.0).normalized().0,
+            10.0,
+            1e-9
+        ));
+        // Extrapolates, unclamped.
+        assert!(approx_eq_eps(
+            a.lerp_angle(b, 2.0).normalized().0,
+            30.0,
+            1e-9
+        ));
+        // Radians twin.
+        let r = Radians(0.0_f32).lerp_angle(Radians(core::f32::consts::FRAC_PI_2), 0.5);
+        assert!(approx_eq_eps(r.0, core::f32::consts::FRAC_PI_4, 1e-6));
     }
 }
