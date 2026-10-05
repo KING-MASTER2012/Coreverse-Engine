@@ -306,14 +306,14 @@ mod sys {
 /// floating-point angles and tolerances, unlike the separate integer
 /// trait [`crate::Integer`].
 pub trait Scalar:
-Copy
-+ PartialEq
-+ PartialOrd
-+ Debug
-+ Add<Output = Self>
-+ Sub<Output = Self>
-+ Mul<Output = Self>
-+ Div<Output = Self>
+    Copy
+    + PartialEq
+    + PartialOrd
+    + Debug
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
 {
     /// Additive identity, `0`.
     const ZERO: Self;

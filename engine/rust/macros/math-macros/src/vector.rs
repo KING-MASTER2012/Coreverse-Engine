@@ -88,10 +88,10 @@ impl Kind {
 }
 
 /// One `Prefix => scalar` entry of the macro input.
-struct Family {
-    prefix: Ident,
-    scalar: Ident,
-    kind: Kind,
+pub(crate) struct Family {
+    pub(crate) prefix: Ident,
+    pub(crate) scalar: Ident,
+    pub(crate) kind: Kind,
 }
 
 impl syn::parse::Parse for Family {
@@ -148,14 +148,17 @@ fn expand(input: TokenStream) -> Result<TokenStream> {
         seen.push(prefix);
     }
 
+    // Some generated functions name the other families (`as_dvec3`, ...).
+    let families: Vec<Family> = families.into_iter().collect();
     let vectors = families
         .iter()
-        .flat_map(|family| DIMENSIONS.map(|dim| vector(family, dim)));
+        .flat_map(|family| DIMENSIONS.map(|dim| vector(family, dim, &families)));
     Ok(quote! { #(#vectors)* })
 }
 
 /// Everything for one type: `Prefix<dim>` of `family.scalar` components.
-fn vector(family: &Family, dim: usize) -> TokenStream {
+/// `families` is every family of the invocation, `family` included.
+fn vector(family: &Family, dim: usize, families: &[Family]) -> TokenStream {
     let Family {
         prefix,
         scalar,
@@ -199,8 +202,10 @@ fn vector(family: &Family, dim: usize) -> TokenStream {
          The components are stored in `{order}` order with no padding \
          (`#[repr(C)]`), so the type is exactly {dim} `{scalar}`s in memory. \
          `+`, `-`, `*` and `/` (and their `*Assign` forms) work component by \
-         component; `*` and `/` take a scalar on the right, and `*` also \
-         accepts it on the left.{arithmetic_note}{neg_note}"
+         component; `*` and `/` take either a scalar or a vector of the same \
+         type on the right (a vector is multiplied or divided component by \
+         component), and `*` also accepts a scalar on the left.\
+         {arithmetic_note}{neg_note}"
     );
 
     let axis_consts = (0..dim).map(|axis| {
@@ -214,6 +219,15 @@ fn vector(family: &Family, dim: usize) -> TokenStream {
     });
 
     let operations = crate::vector_ops::operations(&name, scalar, *kind, dim, &fields);
+    let extensions = crate::vector_ext::extensions(&crate::vector_ext::Spec {
+        name: &name,
+        prefix,
+        scalar,
+        kind: *kind,
+        dim,
+        fields: &fields,
+        families,
+    });
 
     let neg_impl = kind.has_neg().then(|| {
         quote! {
@@ -372,6 +386,8 @@ fn vector(family: &Family, dim: usize) -> TokenStream {
         }
 
         #operations
+
+        #extensions
 
         impl ::core::convert::From<[#scalar; #dim_literal]> for #name {
             #[inline]
@@ -626,6 +642,183 @@ mod tests {
                 !out.methods[name].contains("cross"),
                 "{name} must not have cross"
             );
+        }
+    }
+
+    const ALL_FAMILIES: fn() -> TokenStream =
+        || quote! { Vec => f32, DVec => f64, IVec => i32, UVec => u32 };
+
+    /// Asserts that exactly the types in `expected` have `function`.
+    fn assert_has(out: &Expansion, function: &str, expected: &[&str]) {
+        for prefix in ["Vec", "DVec", "IVec", "UVec"] {
+            for dim in 2..=4 {
+                let name = format!("{prefix}{dim}");
+                assert_eq!(
+                    out.methods[&name].contains(function),
+                    expected.contains(&name.as_str()),
+                    "{name}::{function}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_type_gets_the_element_reductions() {
+        let out = expansion(ALL_FAMILIES());
+        let everything: Vec<String> = ["Vec", "DVec", "IVec", "UVec"]
+            .iter()
+            .flat_map(|prefix| (2..=4).map(move |dim| format!("{prefix}{dim}")))
+            .collect();
+        let everything: Vec<&str> = everything.iter().map(String::as_str).collect();
+        for function in [
+            "min_element",
+            "max_element",
+            "element_sum",
+            "element_product",
+        ] {
+            assert_has(&out, function, &everything);
+        }
+    }
+
+    #[test]
+    fn resizing_functions_exist_where_the_size_fits() {
+        let out = expansion(ALL_FAMILIES());
+        let sized = |dims: &[usize]| -> Vec<String> {
+            ["Vec", "DVec", "IVec", "UVec"]
+                .iter()
+                .flat_map(|prefix| dims.iter().map(move |dim| format!("{prefix}{dim}")))
+                .collect()
+        };
+        for (function, dims) in [
+            ("extend", &[2, 3][..]),
+            ("truncate", &[3, 4][..]),
+            ("xy", &[3, 4][..]),
+            ("xyz", &[4][..]),
+        ] {
+            let names = sized(dims);
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            assert_has(&out, function, &names);
+        }
+    }
+
+    #[test]
+    fn rounding_lerp_and_approx_functions_are_float_only() {
+        let out = expansion(ALL_FAMILIES());
+        let floats = ["Vec2", "Vec3", "Vec4", "DVec2", "DVec3", "DVec4"];
+        for function in [
+            "floor",
+            "ceil",
+            "round",
+            "trunc",
+            "fract",
+            "lerp",
+            "is_finite",
+            "is_nan",
+            "approx_eq",
+            "approx_eq_eps",
+            "approx_eq_rel",
+        ] {
+            assert_has(&out, function, &floats);
+        }
+    }
+
+    #[test]
+    fn abs_and_signum_exist_for_floats_and_signed_integers_only() {
+        let out = expansion(ALL_FAMILIES());
+        let signed = [
+            "Vec2", "Vec3", "Vec4", "DVec2", "DVec3", "DVec4", "IVec2", "IVec3", "IVec4",
+        ];
+        assert_has(&out, "abs", &signed);
+        assert_has(&out, "signum", &signed);
+    }
+
+    #[test]
+    fn euclidean_functions_exist_for_integers_only() {
+        let out = expansion(ALL_FAMILIES());
+        let integers = ["IVec2", "IVec3", "IVec4", "UVec2", "UVec3", "UVec4"];
+        assert_has(&out, "rem_euclid", &integers);
+        assert_has(&out, "div_euclid", &integers);
+        assert_has(&out, "abs_diff", &integers);
+    }
+
+    #[test]
+    fn abs_diff_of_a_signed_family_needs_the_unsigned_family_of_the_same_width() {
+        // The unsigned partner is part of the invocation: generated.
+        let out = expansion(quote! { IVec => i32, UVec => u32 });
+        assert!(out.methods["IVec3"].contains("abs_diff"));
+        assert!(
+            vectors_impl(quote! { IVec => i32, UVec => u32 })
+                .to_string()
+                .contains("-> UVec3")
+        );
+        // No partner, or one of another width: not generated.
+        let alone = expansion(quote! { IVec => i32 });
+        assert!(!alone.methods["IVec3"].contains("abs_diff"));
+        let wrong_width = expansion(quote! { IVec => i32, WVec => u64 });
+        assert!(!wrong_width.methods["IVec3"].contains("abs_diff"));
+        // Unsigned families always have it (it returns the same type).
+        let unsigned_only = expansion(quote! { UVec => u32 });
+        assert!(unsigned_only.methods["UVec2"].contains("abs_diff"));
+    }
+
+    #[test]
+    fn conversions_target_every_other_family_of_the_invocation() {
+        let out = expansion(quote! { Vec => f32, DVec => f64, IVec => i32 });
+        for dim in 2..=4 {
+            let vec = &out.methods[&format!("Vec{dim}")];
+            assert!(vec.contains(&format!("as_dvec{dim}")));
+            assert!(vec.contains(&format!("as_ivec{dim}")));
+            assert!(!vec.contains(&format!("as_vec{dim}")), "no self-conversion");
+            let int = &out.methods[&format!("IVec{dim}")];
+            assert!(int.contains(&format!("as_vec{dim}")));
+            assert!(int.contains(&format!("as_dvec{dim}")));
+            assert!(
+                !int.contains(&format!("as_uvec{dim}")),
+                "UVec is not in the invocation"
+            );
+        }
+        // A lone family converts to nothing.
+        let alone = expansion(quote! { Vec => f32 });
+        assert!(
+            !alone.methods["Vec3"]
+                .iter()
+                .any(|name| name.starts_with("as_"))
+        );
+    }
+
+    #[test]
+    fn conversions_between_families_with_the_same_scalar_use_no_cast() {
+        // `x as f32` on an `f32` is a clippy warning in the generated code.
+        let tokens = vectors_impl(quote! { A => f32, B => f32 }).to_string();
+        assert!(!tokens.contains("as f32"), "{tokens}");
+        let tokens = vectors_impl(quote! { A => f32, B => f64 }).to_string();
+        assert!(tokens.contains("as f64"), "{tokens}");
+    }
+
+    #[test]
+    fn two_and_three_dimensional_helpers_exist_for_the_matching_float_sizes_only() {
+        let out = expansion(ALL_FAMILIES());
+        for function in ["perp", "perp_dot", "rotate", "from_angle"] {
+            assert_has(&out, function, &["Vec2", "DVec2"]);
+        }
+        for function in ["any_orthogonal", "orthonormal_basis"] {
+            assert_has(&out, function, &["Vec3", "DVec3"]);
+        }
+    }
+
+    #[test]
+    fn every_type_gets_display_and_the_component_wise_vector_operators() {
+        let out = expansion(ALL_FAMILIES());
+        for prefix in ["Vec", "DVec", "IVec", "UVec"] {
+            for dim in 2..=4 {
+                let name = format!("{prefix}{dim}");
+                for expected in ["fmt::Display", "Mul", "Div", "MulAssign", "DivAssign"] {
+                    assert!(
+                        out.traits[&name].contains(expected),
+                        "{name} lacks {expected}"
+                    );
+                }
+            }
         }
     }
 

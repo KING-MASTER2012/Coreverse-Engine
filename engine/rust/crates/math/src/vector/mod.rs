@@ -21,8 +21,9 @@
 //! # Operators
 //!
 //! `+` and `-` work between two vectors of the same type. `*` and `/` take a
-//! scalar on the right (`v * 2.0`, `v / 2.0`), and `*` also takes it on the
-//! left (`2.0 * v`). All four have `*Assign` forms, and `-v` is available
+//! scalar on the right (`v * 2.0`, `v / 2.0`) or a vector of the same type
+//! (`a * b`, the component-wise product, as in GLSL), and `*` also takes a
+//! scalar on the left (`2.0 * v`). All four have `*Assign` forms, and `-v` is available
 //! for every type except the unsigned `UVec`s. Everything is component-wise,
 //! and `v[i]` reads or writes a component by position.
 //!
@@ -86,6 +87,55 @@
 //! assert_eq!(IVec3::new(1, 2, 3).dot(IVec3::new(4, 5, 6)), 32);
 //! ```
 
+//! # Additions (Phase 2.2)
+//!
+//! | method                                                   | `Vec`/`DVec` | `IVec` | `UVec` |
+//! |----------------------------------------------------------|:------------:|:------:|:------:|
+//! | `min_element`, `max_element`, `element_sum`, `element_product` | yes    | yes    | yes    |
+//! | `extend`, `truncate`, `xy`, `xyz` (where the size fits)  | yes          | yes    | yes    |
+//! | `as_vec3`, `as_dvec3`, `as_ivec3`, `as_uvec3` (and 2, 4) | yes          | yes    | yes    |
+//! | `abs`, `signum`                                          | yes          | yes    | no     |
+//! | `rem_euclid`, `div_euclid`, `abs_diff`                   | no           | yes    | yes    |
+//! | `floor`, `ceil`, `round`, `trunc`, `fract`, `lerp`       | yes          | no     | no     |
+//! | `is_finite`, `is_nan`, `approx_eq`, `approx_eq_eps`, `approx_eq_rel` | yes | no | no   |
+//! | `perp`, `perp_dot`, `rotate`, `from_angle` (2 components) | yes         | no     | no     |
+//! | `any_orthogonal`, `orthonormal_basis` (3 components)     | yes          | no     | no     |
+//!
+//! Every type also implements `Display` (`[1, 2, 3]`, honouring `{:.2}` and
+//! the other formatter options per component). Everything that needs no
+//! `floor` or `sin` is a `const fn`.
+//!
+//! - The `as_*` conversions are Rust `as` casts: float to integer truncates
+//!   and saturates (`NaN` becomes `0`), integer to integer wraps.
+//! - `abs_diff` of an `IVec` returns a `UVec`, so it cannot overflow.
+//! - `fract` keeps the sign (`-3.75` gives `-0.75`); it is not the GLSL
+//!   `fract`, use `v - v.floor()` for that.
+//! - `orthonormal_basis` takes a normalized vector and returns `(t, b)` with
+//!   `t.cross(b) == self`.
+//!
+//! ```
+//! use math::{Degrees, IVec2, UVec2, Vec2, Vec3, Vec4};
+//!
+//! let position = Vec3::new(1.0, 2.0, 3.0).extend(1.0);
+//! assert_eq!(position, Vec4::new(1.0, 2.0, 3.0, 1.0));
+//! assert_eq!(position.xyz(), Vec3::new(1.0, 2.0, 3.0));
+//!
+//! assert_eq!(Vec3::new(1.9, -1.9, 0.5).as_ivec3().to_array(), [1, -1, 0]);
+//! assert_eq!(Vec3::new(0.0, 10.0, -4.0).lerp(Vec3::splat(10.0), 0.5), Vec3::new(5.0, 10.0, 3.0));
+//! assert_eq!(Vec3::new(-2.5, 2.5, 0.2).round(), Vec3::new(-3.0, 3.0, 0.0));
+//!
+//! let turned = Vec2::X.rotate(Degrees::new(90.0));
+//! assert!(turned.approx_eq(Vec2::Y));
+//! assert_eq!(Vec2::X.perp_dot(Vec2::Y), 1.0);
+//!
+//! let (tangent, bitangent) = Vec3::Z.orthonormal_basis();
+//! assert_eq!(tangent.cross(bitangent), Vec3::Z);
+//!
+//! assert_eq!(IVec2::new(-7, 7).rem_euclid(IVec2::splat(3)), IVec2::new(2, 1));
+//! assert_eq!(IVec2::new(-5, 3).abs_diff(IVec2::new(4, -2)), UVec2::new(9, 5));
+//! assert_eq!(Vec3::new(2.0, 4.0, 6.0) * Vec3::new(1.0, 0.5, 2.0), Vec3::new(2.0, 2.0, 12.0));
+//! ```
+
 math_macros::vectors! {
     Vec => f32,
     DVec => f64,
@@ -93,6 +143,8 @@ math_macros::vectors! {
     UVec => u32,
 }
 
+#[cfg(test)]
+mod ext_tests;
 #[cfg(test)]
 mod ops_tests;
 

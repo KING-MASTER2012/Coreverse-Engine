@@ -9,13 +9,14 @@
 //! the regular crate tree.
 //!
 //! The vector-generating macro is [`vectors!`] (Phase 1.7, with the vector
-//! operations of Phase 1.8); the matrix-generating macro is [`matrices!`]
+//! operations of Phase 1.8 and the additions of Phase 2.2); the matrix-generating macro is [`matrices!`]
 //! (Phase 1.9).
 
 use proc_macro::TokenStream;
 
 mod matrix;
 mod vector;
+mod vector_ext;
 mod vector_ops;
 
 /// Generates a family of vector types per `Prefix => scalar` entry.
@@ -40,6 +41,8 @@ mod vector_ops;
 /// - `From` conversions to and from `[scalar; N]`;
 /// - component-wise `Add` and `Sub`, `Mul<scalar>` and `Div<scalar>`, their
 ///   `*Assign` forms, and `scalar * vector`;
+/// - component-wise `Mul` and `Div` between two vectors of the same type,
+///   with their `*Assign` forms, and `Display` (`[x, y, z]`);
 /// - `Index<usize>` and `IndexMut<usize>`;
 /// - `Neg`, for float and signed-integer scalars only;
 /// - the operations of Phase 1.8, on every type: `dot`, `length_sq`,
@@ -50,6 +53,19 @@ mod vector_ops;
 ///   `reflect`, `refract` and `angle_between`. Unsigned types get no `cross`
 ///   (its subtraction would underflow), and integer types get nothing that
 ///   would return a non-integer.
+///
+/// - the additions of Phase 2.2, on every type: `min_element`,
+///   `max_element`, `element_sum`, `element_product`, `extend` and
+///   `truncate` / `xy` / `xyz` where the size fits, and one `as_<prefix><dim>`
+///   conversion (`as_dvec3`, ...) to every *other* family of the same
+///   invocation; on float and signed-integer types `abs` and `signum`; on
+///   integer types `rem_euclid`, `div_euclid` and `abs_diff` (a signed
+///   family returns the unsigned family of the same width, so it only gets
+///   `abs_diff` when that family is in the invocation); on float types
+///   `floor`, `ceil`, `round`, `trunc`, `fract`, `lerp`, `is_finite`,
+///   `is_nan` and `approx_eq` / `approx_eq_eps` / `approx_eq_rel`; on the
+///   2-component floats `perp`, `perp_dot`, `rotate` and `from_angle`; on the
+///   3-component floats `any_orthogonal` and `orthonormal_basis`.
 ///
 /// Float and integer entries also differ in their derives: integer vectors
 /// are additionally `Eq` and `Hash`.
@@ -62,7 +78,7 @@ mod vector_ops;
 /// `#![deny(missing_docs)]`).
 ///
 /// The float operations call `crate::scalar::Scalar` (for `sqrt`/`atan2`,
-/// which `core` lacks, so that they follow `math`'s `std`/`libm` backend) and
+/// `floor`, `sin`, ... which `core` lacks, so that they follow `math`'s `std`/`libm` backend) and
 /// return `crate::angle::Radians`. These `crate::` paths mean the macro can
 /// only be invoked inside the `math` crate itself.
 #[proc_macro]
