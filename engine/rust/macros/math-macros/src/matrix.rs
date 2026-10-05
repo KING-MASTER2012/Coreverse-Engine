@@ -227,6 +227,126 @@ fn matrix(family: &Family, dim: usize) -> TokenStream {
 
     let (determinant_body, inverse_body) = determinant_and_inverse(dim, &column);
 
+    // The diagonal matrix: column `c` is zero except for component `c`.
+    let diagonal_cols: Vec<TokenStream> = comps
+        .iter()
+        .enumerate()
+        .map(|(c, _)| {
+            let elements: Vec<TokenStream> = comps
+                .iter()
+                .enumerate()
+                .map(|(r, comp)| {
+                    if r == c {
+                        quote!(diagonal.#comp)
+                    } else {
+                        quote!(0.0)
+                    }
+                })
+                .collect();
+            quote!(#column::new(#(#elements),*))
+        })
+        .collect();
+
+    // `+`, `-` between matrices and `*`, `/` by a scalar, all element-wise.
+    let additive = [
+        (
+            "Add",
+            "add",
+            quote!(+),
+            "AddAssign",
+            "add_assign",
+            "Adds",
+            "sum",
+        ),
+        (
+            "Sub",
+            "sub",
+            quote!(-),
+            "SubAssign",
+            "sub_assign",
+            "Subtracts",
+            "difference",
+        ),
+    ]
+        .map(
+            |(trait_name, method, op, assign_trait, assign_method, verb, noun)| {
+                let (trait_name, method) =
+                    (format_ident!("{}", trait_name), format_ident!("{}", method));
+                let (assign_trait, assign_method) = (
+                    format_ident!("{}", assign_trait),
+                    format_ident!("{}", assign_method),
+                );
+                let doc = format!("{verb} element by element: the {noun} of two matrices.");
+                quote! {
+                #[doc = #doc]
+                impl ::core::ops::#trait_name for #name {
+                    type Output = Self;
+
+                    #[inline]
+                    fn #method(self, rhs: Self) -> Self {
+                        Self::from_cols(#(self.#axes #op rhs.#axes),*)
+                    }
+                }
+
+                #[doc = #doc]
+                impl ::core::ops::#assign_trait for #name {
+                    #[inline]
+                    fn #assign_method(&mut self, rhs: Self) {
+                        *self = ::core::ops::#trait_name::#method(*self, rhs);
+                    }
+                }
+            }
+            },
+        );
+    let by_scalar = [
+        (
+            "Mul",
+            "mul",
+            quote!(*),
+            "MulAssign",
+            "mul_assign",
+            "Multiplies",
+        ),
+        (
+            "Div",
+            "div",
+            quote!(/),
+            "DivAssign",
+            "div_assign",
+            "Divides",
+        ),
+    ]
+        .map(
+            |(trait_name, method, op, assign_trait, assign_method, verb)| {
+                let (trait_name, method) =
+                    (format_ident!("{}", trait_name), format_ident!("{}", method));
+                let (assign_trait, assign_method) = (
+                    format_ident!("{}", assign_trait),
+                    format_ident!("{}", assign_method),
+                );
+                let doc = format!("{verb} every element by a scalar.");
+                quote! {
+                #[doc = #doc]
+                impl ::core::ops::#trait_name<#scalar> for #name {
+                    type Output = Self;
+
+                    #[inline]
+                    fn #method(self, rhs: #scalar) -> Self {
+                        Self::from_cols(#(self.#axes #op rhs),*)
+                    }
+                }
+
+                #[doc = #doc]
+                impl ::core::ops::#assign_trait<#scalar> for #name {
+                    #[inline]
+                    fn #assign_method(&mut self, rhs: #scalar) {
+                        *self = ::core::ops::#trait_name::#method(*self, rhs);
+                    }
+                }
+            }
+            },
+        );
+
     quote! {
         #[doc = #struct_doc]
         #[repr(C)]
@@ -245,6 +365,14 @@ fn matrix(family: &Family, dim: usize) -> TokenStream {
 
             /// The matrix with every element zero.
             pub const ZERO: Self = Self::from_cols(#(#zero_cols),*);
+
+            /// The diagonal matrix with `diagonal` on its main diagonal and
+            /// zeros elsewhere. For a vector of ones that is the identity,
+            /// and for scale factors it is the matrix that scales by them.
+            #[inline]
+            pub const fn from_diagonal(diagonal: #column) -> Self {
+                Self::from_cols(#(#diagonal_cols),*)
+            }
 
             /// Builds a matrix from its columns.
             #[inline]
@@ -381,6 +509,30 @@ fn matrix(family: &Family, dim: usize) -> TokenStream {
             #[inline]
             fn mul_assign(&mut self, rhs: #name) {
                 *self = self.mul_mat(rhs);
+            }
+        }
+
+        #(#additive)*
+
+        #(#by_scalar)*
+
+        /// Multiplies every element by a scalar.
+        impl ::core::ops::Mul<#name> for #scalar {
+            type Output = #name;
+
+            #[inline]
+            fn mul(self, rhs: #name) -> #name {
+                #name::from_cols(#(rhs.#axes * self),*)
+            }
+        }
+
+        /// Negates every element.
+        impl ::core::ops::Neg for #name {
+            type Output = Self;
+
+            #[inline]
+            fn neg(self) -> Self {
+                Self::from_cols(#(-self.#axes),*)
             }
         }
 
@@ -654,6 +806,7 @@ mod tests {
             "mul_mat",
             "determinant",
             "inverse",
+            "from_diagonal",
         ];
         for prefix in ["Mat", "DMat"] {
             for dim in 2..=4 {
@@ -664,6 +817,37 @@ mod tests {
                         "{name} lacks {function}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn every_type_gets_the_element_wise_operators() {
+        let out = expansion(quote! { Mat(Vec) => f32, DMat(DVec) => f64 });
+        for (prefix, scalar) in [("Mat", "f32"), ("DMat", "f64")] {
+            for dim in 2..=4 {
+                let name = format!("{prefix}{dim}");
+                for expected in [
+                    "::core::ops::Add".to_owned(),
+                    "::core::ops::Sub".to_owned(),
+                    "::core::ops::AddAssign".to_owned(),
+                    "::core::ops::SubAssign".to_owned(),
+                    "::core::ops::Neg".to_owned(),
+                    format!("::core::ops::Mul<{scalar}>"),
+                    format!("::core::ops::Div<{scalar}>"),
+                    format!("::core::ops::MulAssign<{scalar}>"),
+                    format!("::core::ops::DivAssign<{scalar}>"),
+                ] {
+                    assert!(
+                        out.traits[&name].contains(&expected),
+                        "{name} lacks {expected}"
+                    );
+                }
+                // `scalar * matrix`
+                assert!(
+                    out.traits[scalar].contains(&format!("::core::ops::Mul<{name}>")),
+                    "{scalar} lacks Mul<{name}>"
+                );
             }
         }
     }

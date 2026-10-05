@@ -9,8 +9,9 @@
 //! the regular crate tree.
 //!
 //! The vector-generating macro is [`vectors!`] (Phase 1.7, with the vector
-//! operations of Phase 1.8 and the additions of Phase 2.2); the matrix-generating macro is [`matrices!`]
-//! (Phase 1.9).
+//! operations of Phase 1.8 and the additions of Phase 2.2); the
+//! matrix-generating macro is [`matrices!`] (Phase 1.9, with the element-wise
+//! operators of Phase 2.3).
 
 use proc_macro::TokenStream;
 
@@ -107,13 +108,18 @@ pub fn vectors(input: TokenStream) -> TokenStream {
 ///
 /// - the `IDENTITY` and `ZERO` associated constants, and `const fn`
 ///   `from_cols`, `from_cols_array`, `to_cols_array`, `from_cols_array_2d`,
-///   `to_cols_array_2d`, `col` and `row`;
+///   `to_cols_array_2d`, `col`, `row` and `from_diagonal`;
 /// - `transpose`, `determinant` and `inverse` (`None` for a singular
 ///   matrix), `mul_mat` and `mul_vec`, all `const fn`;
 /// - `Mul<matrix>` and `Mul<column vector>` (`m * v` transforms a column
 ///   vector, `a * b` applies `b` first), `MulAssign<matrix>`, `Index<usize>`
 ///   and `IndexMut<usize>` (by column), `From` conversions to and from
-///   `[[scalar; N]; N]`, and `Default` (the identity).
+///   `[[scalar; N]; N]`, and `Default` (the identity);
+/// - the element-wise operators of Phase 2.3: `Add`, `Sub` and `Neg`, `Mul`
+///   and `Div` by a scalar, their `*Assign` forms, and `scalar * matrix`.
+///
+/// The size-specific functions (rotations, translations, projections, ...)
+/// are not generated here but written once in `math`'s `matrix::transform`.
 ///
 /// The scalar must be `f32` or `f64`. Anything else, an empty list, a
 /// repeated prefix or a malformed entry is a compile error pointing at the

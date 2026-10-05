@@ -29,13 +29,83 @@
 //! | `determinant`                  | `det(a * b) == det(a) * det(b)`                |
 //! | `inverse`                      | `None` for a singular matrix                   |
 //! | `mul_mat`, `mul_vec`, `*`      | `Mat3 * Vec3 -> Vec3`, `Mat3 * Mat3 -> Mat3`   |
+//! | `from_diagonal`                | `const`; scale factors on the diagonal         |
+//! | `+`, `-`, unary `-`, `* scalar`, `/ scalar`, `scalar * m` | element by element, plus `*Assign` |
 //!
 //! Everything but the `Index` impls and the operators is a `const fn`,
-//! `inverse` included (it only divides).
+//! `inverse` included (it only divides). Of the Phase 2.3 additions, what
+//! needs `sin`, `cos` or `sqrt` (the rotations from an angle, the view and
+//! perspective matrices, the decomposition) is not; the rest (`from_*`
+//! conversions, `transform_point*`, `orthographic_*`, `inverse_affine`, ...)
+//! is.
 //!
 //! `inverse` rejects only an exactly singular matrix (determinant zero, `NaN`
 //! or infinite). A nearly singular one gives an inverse with huge elements
 //! and little precision.
+//!
+//! # Building transforms (Phase 2.3)
+//!
+//! | method                                                     | on                  |
+//! |------------------------------------------------------------|---------------------|
+//! | `from_angle`, `from_scale_angle`                           | `Mat2`              |
+//! | `from_rotation_x/y/z`, `from_axis_angle`, `from_quat`, `from_scale` | `Mat3`, `Mat4` (`from_scale` takes a `Vec3`) |
+//! | `from_translation_2d`, `from_scale_2d`, `from_angle_2d`, `from_scale_angle_translation_2d` | `Mat3` (2D homogeneous) |
+//! | `transform_point2`, `transform_vector2`                    | `Mat3`              |
+//! | `from_translation`                                         | `Mat4`              |
+//! | `from_scale_rotation_translation`, `to_scale_rotation_translation` | `Mat4` (`T * R * S`) |
+//! | `transform_point3`, `transform_vector3`                    | `Mat4` (affine)     |
+//! | `project_point3`, `unproject_point3`                       | `Mat4` (divides by `w`) |
+//! | `inverse_affine`, `normal_matrix`, `Mat3::inverse_transpose` | `Mat4`, `Mat3`    |
+//! | `from_mat2`, `from_mat3`, `from_mat4`                      | between the sizes   |
+//! | `look_to_rh/lh`, `look_at_rh/lh`                           | `Mat4` (view)       |
+//! | `perspective_rh/lh`, `_gl`, `_reverse_z`                   | `Mat4` (projection) |
+//! | `orthographic_rh/lh`, `_gl`, `_reverse_z`                  | `Mat4` (projection) |
+//!
+//! - **Rotations are right-handed** and agree with `Quat` and `Vec2::rotate`:
+//!   a quarter turn about `Z` takes `X` to `Y`. Angles are `Radians` or
+//!   `Degrees`.
+//! - **`from_scale_rotation_translation` is `T * R * S`**: scale first, then
+//!   rotate, then translate. `to_scale_rotation_translation` takes such a
+//!   matrix apart again (`None` for a flattened axis; a mirror shows up as a
+//!   negative `x` scale).
+//! - **Projection names follow glam.** `_rh`/`_lh` is the handedness of the
+//!   view space (the camera looks down `-Z` or `+Z`). Without a suffix the
+//!   clip-space depth is `0..1` (Vulkan, Direct3D, Metal), `_gl` gives the
+//!   OpenGL range `-1..1`, and `_reverse_z` maps near to `1` and far to `0`
+//!   for much better float depth precision. Clip space has `+Y` up; the
+//!   renderer, not the matrix, deals with Vulkan's flipped `Y`.
+//! - **Degenerate input is not checked** (zero field of view, equal planes, a
+//!   zero view direction, ...): the result has non-finite elements instead of
+//!   a panic, like `normalize` of a zero vector.
+//! - `normal_matrix` is the inverse transpose of the upper left 3x3 block, the
+//!   matrix that keeps surface normals perpendicular under a non-uniform
+//!   scale; `inverse_affine` is a cheaper `inverse` for matrices whose bottom
+//!   row is `(0, 0, 0, 1)`.
+//!
+//! ```
+//! use math::{Degrees, Mat4, Quat, Vec3};
+//!
+//! // A model matrix: scale, then rotate, then translate.
+//! let model = Mat4::from_scale_rotation_translation(
+//!     Vec3::new(2.0, 2.0, 2.0),
+//!     Quat::from_rotation_z(Degrees::new(90.0)),
+//!     Vec3::new(10.0, 0.0, 0.0),
+//! );
+//! let p = model.transform_point3(Vec3::X);
+//! assert!(p.approx_eq_eps(Vec3::new(10.0, 2.0, 0.0), 1e-5));
+//!
+//! // A camera looking at the origin from +Z, and its projection (Vulkan depth).
+//! let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 5.0), Vec3::ZERO, Vec3::Y);
+//! let projection = Mat4::perspective_rh(Degrees::new(60.0), 16.0 / 9.0, 0.1, 100.0);
+//! let ndc = (projection * view).project_point3(Vec3::ZERO);
+//! assert!(ndc.x.abs() < 1e-6 && ndc.y.abs() < 1e-6 && ndc.z > 0.0 && ndc.z < 1.0);
+//!
+//! // Undoing the model matrix.
+//! let undo = model.inverse_affine().unwrap();
+//! assert!(undo.transform_point3(p).approx_eq_eps(Vec3::X, 1e-5));
+//! ```
+//!
+//! # A first example
 //!
 //! ```
 //! use math::{Mat4, Vec4};
@@ -60,5 +130,9 @@ math_macros::matrices! {
     DMat(DVec) => f64,
 }
 
+mod transform;
+
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod transform_tests;
