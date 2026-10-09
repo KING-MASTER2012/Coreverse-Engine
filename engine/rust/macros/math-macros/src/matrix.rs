@@ -268,16 +268,16 @@ fn matrix(family: &Family, dim: usize) -> TokenStream {
             "difference",
         ),
     ]
-        .map(
-            |(trait_name, method, op, assign_trait, assign_method, verb, noun)| {
-                let (trait_name, method) =
-                    (format_ident!("{}", trait_name), format_ident!("{}", method));
-                let (assign_trait, assign_method) = (
-                    format_ident!("{}", assign_trait),
-                    format_ident!("{}", assign_method),
-                );
-                let doc = format!("{verb} element by element: the {noun} of two matrices.");
-                quote! {
+    .map(
+        |(trait_name, method, op, assign_trait, assign_method, verb, noun)| {
+            let (trait_name, method) =
+                (format_ident!("{}", trait_name), format_ident!("{}", method));
+            let (assign_trait, assign_method) = (
+                format_ident!("{}", assign_trait),
+                format_ident!("{}", assign_method),
+            );
+            let doc = format!("{verb} element by element: the {noun} of two matrices.");
+            quote! {
                 #[doc = #doc]
                 impl ::core::ops::#trait_name for #name {
                     type Output = Self;
@@ -296,8 +296,8 @@ fn matrix(family: &Family, dim: usize) -> TokenStream {
                     }
                 }
             }
-            },
-        );
+        },
+    );
     let by_scalar = [
         (
             "Mul",
@@ -316,16 +316,16 @@ fn matrix(family: &Family, dim: usize) -> TokenStream {
             "Divides",
         ),
     ]
-        .map(
-            |(trait_name, method, op, assign_trait, assign_method, verb)| {
-                let (trait_name, method) =
-                    (format_ident!("{}", trait_name), format_ident!("{}", method));
-                let (assign_trait, assign_method) = (
-                    format_ident!("{}", assign_trait),
-                    format_ident!("{}", assign_method),
-                );
-                let doc = format!("{verb} every element by a scalar.");
-                quote! {
+    .map(
+        |(trait_name, method, op, assign_trait, assign_method, verb)| {
+            let (trait_name, method) =
+                (format_ident!("{}", trait_name), format_ident!("{}", method));
+            let (assign_trait, assign_method) = (
+                format_ident!("{}", assign_trait),
+                format_ident!("{}", assign_method),
+            );
+            let doc = format!("{verb} every element by a scalar.");
+            quote! {
                 #[doc = #doc]
                 impl ::core::ops::#trait_name<#scalar> for #name {
                     type Output = Self;
@@ -344,8 +344,8 @@ fn matrix(family: &Family, dim: usize) -> TokenStream {
                     }
                 }
             }
-            },
-        );
+        },
+    );
 
     quote! {
         #[doc = #struct_doc]

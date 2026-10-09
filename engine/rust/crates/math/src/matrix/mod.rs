@@ -130,8 +130,11 @@ math_macros::matrices! {
     DMat(DVec) => f64,
 }
 
+mod ext;
 mod transform;
 
+#[cfg(test)]
+mod ext_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

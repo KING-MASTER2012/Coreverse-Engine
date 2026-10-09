@@ -76,12 +76,14 @@ pub mod radix;
 /// The internal [`Scalar`] trait every generic function in this crate is
 /// written against.
 pub mod scalar;
+#[cfg(test)]
+mod test_support;
 pub mod trig;
 pub mod vector;
 
 pub use angle::{Degrees, Radians};
 pub use integer::{Integer, Unsigned};
 pub use matrix::{DMat2, DMat3, DMat4, Mat2, Mat3, Mat4};
-pub use quat::{DQuat, Quat};
+pub use quat::{DQuat, EulerRot, Quat};
 pub use scalar::Scalar;
 pub use vector::{DVec2, DVec3, DVec4, IVec2, IVec3, IVec4, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};

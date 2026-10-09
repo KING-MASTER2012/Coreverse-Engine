@@ -43,6 +43,14 @@
 //! | `nlerp`, `slerp`                         | shortest path; `slerp` has constant angular speed     |
 //! | `to_mat3`, `to_mat4`, `from_mat3`, `from_mat4` | rotation matrices                               |
 //! | `+`, `-`, unary `-`, `* scalar`, `/ scalar` | component-wise, for building interpolations        |
+//! | `from_euler`, `to_euler` (`EulerRot`)    | 24 axis orders, intrinsic and extrinsic (Phase 2.4)   |
+//! | `from_scaled_axis`, `to_scaled_axis`     | rotation vector: axis times angle                     |
+//! | `from_rotation_arc`                      | shortest rotation between two directions              |
+//! | `look_rotation_rh/lh`                    | orientation from a forward and an up direction        |
+//! | `angle_between`, `rotate_towards`        | shortest angle between rotations; stepping towards one |
+//! | `is_normalized`, `exp`, `ln`, `pow`      | fractional rotations: `q.pow(0.5)`                    |
+//! | `to_swing_twist`                         | `swing * twist == q`, twist about a given axis        |
+//! | `is_finite`, `is_nan`, `approx_eq*`, `Display`, `as_dquat`/`as_quat` | general helpers      |
 //!
 //! ```
 //! use math::{Degrees, Quat, Vec3};
@@ -55,6 +63,8 @@
 //! let halfway = Quat::IDENTITY.slerp(quarter_turn, 0.5);
 //! assert!((halfway - Quat::from_rotation_z(Degrees::new(45.0))).length() < 1e-6);
 //! ```
+
+pub use self::euler::EulerRot;
 
 use crate::angle::Radians;
 use crate::matrix::{DMat3, DMat4, Mat3, Mat4};
@@ -549,5 +559,12 @@ quaternions! {
     }
 }
 
+mod euler;
+mod ext;
+
+#[cfg(test)]
+mod euler_tests;
+#[cfg(test)]
+mod ext_tests;
 #[cfg(test)]
 mod tests;
