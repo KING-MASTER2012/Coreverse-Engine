@@ -2,9 +2,10 @@
 //!
 //! Everything here is `f32`/`f64` scalar math, angles, interpolation and
 //! easing curves, parametric curves (Bézier, Hermite, Catmull-Rom,
-//! B-splines, arc length), integer/bit math, vectors, matrices, quaternions and the
-//! geometric primitives built on them (boxes, rays, planes, spheres, the
-//! view frustum, TRS transforms) - all `#![no_std]`-compatible with no heap
+//! B-splines, arc length), deterministic random numbers and noise (PCG32,
+//! SplitMix64, Perlin, simplex), integer/bit math, vectors, matrices,
+//! quaternions and the geometric primitives built on them (boxes, rays,
+//! planes, spheres, the view frustum, TRS transforms) - all `#![no_std]`-compatible with no heap
 //! allocation, so this crate never needs `alloc` either. The optional
 //! `serde` feature adds `Serialize`/`Deserialize` for all of them.
 //!
@@ -76,8 +77,10 @@ pub mod integer;
 /// for `f32`/`f64`. See [`interp::lerp`] and friends.
 pub mod interp;
 pub mod matrix;
+pub mod noise;
 pub mod quat;
 pub mod radix;
+pub mod random;
 /// The internal [`Scalar`] trait every generic function in this crate is
 /// written against.
 pub mod scalar;
@@ -97,5 +100,6 @@ pub use geometry::{
 pub use integer::{Integer, Unsigned};
 pub use matrix::{DMat2, DMat3, DMat4, Mat2, Mat3, Mat4};
 pub use quat::{DQuat, EulerRot, Quat};
+pub use random::{Pcg32, Rng, SplitMix64};
 pub use scalar::Scalar;
 pub use vector::{DVec2, DVec3, DVec4, IVec2, IVec3, IVec4, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4};
