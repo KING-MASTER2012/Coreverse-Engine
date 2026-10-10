@@ -1,7 +1,8 @@
 //! Coreverse's core math library.
 //!
 //! Everything here is `f32`/`f64` scalar math, angles, interpolation and
-//! easing curves, integer/bit math, vectors, matrices, quaternions and the
+//! easing curves, parametric curves (Bézier, Hermite, Catmull-Rom,
+//! B-splines, arc length), integer/bit math, vectors, matrices, quaternions and the
 //! geometric primitives built on them (boxes, rays, planes, spheres, the
 //! view frustum, TRS transforms) - all `#![no_std]`-compatible with no heap
 //! allocation, so this crate never needs `alloc` either. The optional
@@ -65,6 +66,7 @@ pub mod bits;
 /// Ergonomic, non-generic `f32`/`f64` constants. See [`consts::f32`]/
 /// [`consts::f64`].
 pub mod consts;
+pub mod curve;
 pub mod ease;
 pub mod geometry;
 pub mod int_math;
@@ -87,6 +89,7 @@ pub mod trig;
 pub mod vector;
 
 pub use angle::{Degrees, Radians};
+pub use curve::{ArcLengthTable, BSpline, CubicBezier, CurvePoint, QuadraticBezier};
 pub use geometry::{
     Aabb2, Aabb3, Containment, DAabb2, DAabb3, DFrustum, DPlane, DRay, DSphere, DTransform,
     Frustum, Plane, Ray, Sphere, Transform,
