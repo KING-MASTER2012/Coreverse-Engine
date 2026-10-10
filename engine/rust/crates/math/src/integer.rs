@@ -17,6 +17,10 @@
 //!   from small values, which stand in for the integer literals generic
 //!   code cannot write.
 //!
+//! The trait also forwards the primitives' `abs_diff`, Euclidean
+//! division, `isqrt`/`ilog` and bit-rotation methods, which the generic
+//! functions of [`crate::int_math`] and [`crate::bits`] are built on.
+//!
 //! Nothing here allocates or needs `std`.
 //!
 //! Not meant to be implemented outside this crate.
@@ -134,6 +138,47 @@ pub trait Integer:
 
     /// `self` as a `u8`, or `None` if it is negative or above `255`.
     fn to_u8(self) -> Option<u8>;
+
+    /// `|self - other|` as [`Integer::Unsigned`]. Exact even when the
+    /// distance does not fit in `Self` (`i8::MAX.abs_diff(i8::MIN) == 255u8`).
+    fn abs_diff(self, other: Self) -> Self::Unsigned;
+
+    /// Euclidean division `self.div_euclid(rhs)`, or `None` if `rhs` is zero
+    /// or the division overflows (`MIN / -1` for signed types).
+    fn checked_div_euclid(self, rhs: Self) -> Option<Self>;
+
+    /// Euclidean remainder `self.rem_euclid(rhs)` (never negative), or
+    /// `None` if `rhs` is zero or the division overflows (`MIN % -1` for
+    /// signed types).
+    fn checked_rem_euclid(self, rhs: Self) -> Option<Self>;
+
+    /// The integer square root (the floor of the real one), or `None` if
+    /// `self` is negative. Always `Some` for unsigned types.
+    fn checked_isqrt(self) -> Option<Self>;
+
+    /// The logarithm of `self` in `base`, rounded down, or `None` if `self`
+    /// is not positive or `base` is below `2`.
+    fn checked_ilog(self, base: Self) -> Option<u32>;
+
+    /// The base-2 logarithm of `self`, rounded down, or `None` if `self` is
+    /// not positive.
+    fn checked_ilog2(self) -> Option<u32>;
+
+    /// The base-10 logarithm of `self`, rounded down, or `None` if `self`
+    /// is not positive.
+    fn checked_ilog10(self) -> Option<u32>;
+
+    /// `self` with the order of its bits reversed (bit `0` becomes bit
+    /// `BITS - 1`, ...).
+    fn reverse_bits(self) -> Self;
+
+    /// `self` with its bits rotated left by `n` places (bits shifted out on
+    /// the left re-enter on the right). `n` is taken modulo `BITS`.
+    fn rotate_left(self, n: u32) -> Self;
+
+    /// `self` with its bits rotated right by `n` places. `n` is taken modulo
+    /// `BITS`.
+    fn rotate_right(self, n: u32) -> Self;
 }
 
 /// An unsigned [`Integer`] (`u8`..`u128`, `usize`). Its
@@ -248,6 +293,51 @@ macro_rules! integer_items {
         fn to_u8(self) -> Option<u8> {
             u8::try_from(self).ok()
         }
+
+        #[inline]
+        fn abs_diff(self, other: Self) -> Self::Unsigned {
+            <$t>::abs_diff(self, other)
+        }
+
+        #[inline]
+        fn checked_div_euclid(self, rhs: Self) -> Option<Self> {
+            <$t>::checked_div_euclid(self, rhs)
+        }
+
+        #[inline]
+        fn checked_rem_euclid(self, rhs: Self) -> Option<Self> {
+            <$t>::checked_rem_euclid(self, rhs)
+        }
+
+        #[inline]
+        fn checked_ilog(self, base: Self) -> Option<u32> {
+            <$t>::checked_ilog(self, base)
+        }
+
+        #[inline]
+        fn checked_ilog2(self) -> Option<u32> {
+            <$t>::checked_ilog2(self)
+        }
+
+        #[inline]
+        fn checked_ilog10(self) -> Option<u32> {
+            <$t>::checked_ilog10(self)
+        }
+
+        #[inline]
+        fn reverse_bits(self) -> Self {
+            <$t>::reverse_bits(self)
+        }
+
+        #[inline]
+        fn rotate_left(self, n: u32) -> Self {
+            <$t>::rotate_left(self, n)
+        }
+
+        #[inline]
+        fn rotate_right(self, n: u32) -> Self {
+            <$t>::rotate_right(self, n)
+        }
     };
 }
 
@@ -265,6 +355,11 @@ macro_rules! impl_signed {
             #[inline]
             fn unsigned_abs(self) -> $u {
                 <$t>::unsigned_abs(self)
+            }
+
+            #[inline]
+            fn checked_isqrt(self) -> Option<Self> {
+                <$t>::checked_isqrt(self)
             }
 
             integer_items!($t);
@@ -286,6 +381,11 @@ macro_rules! impl_unsigned {
             #[inline]
             fn unsigned_abs(self) -> $t {
                 self
+            }
+
+            #[inline]
+            fn checked_isqrt(self) -> Option<Self> {
+                Some(<$t>::isqrt(self))
             }
 
             integer_items!($t);
@@ -432,5 +532,40 @@ mod tests {
     #[test]
     fn unsigned_counterpart_round_trips() {
         each_int!(check_unsigned_is_self);
+    }
+
+    fn check_new_forwarders<T: Integer>() {
+        let (two, three, seven) = (n::<T>(2), n::<T>(3), n::<T>(7));
+        assert_eq!(three.abs_diff(seven).to_u8(), Some(4));
+        assert_eq!(seven.abs_diff(three).to_u8(), Some(4));
+        assert_eq!(T::MAX.abs_diff(T::MIN), <T::Unsigned as Integer>::MAX);
+        assert_eq!(seven.checked_div_euclid(two), Some(three));
+        assert_eq!(seven.checked_rem_euclid(two), Some(T::ONE));
+        assert_eq!(seven.checked_div_euclid(T::ZERO), None);
+        assert_eq!(seven.checked_rem_euclid(T::ZERO), None);
+        assert_eq!(n::<T>(99).checked_isqrt(), Some(n::<T>(9)));
+        assert_eq!(n::<T>(100).checked_isqrt(), Some(n::<T>(10)));
+        assert_eq!(n::<T>(81).checked_ilog(three), Some(4));
+        assert_eq!(n::<T>(8).checked_ilog2(), Some(3));
+        assert_eq!(n::<T>(100).checked_ilog10(), Some(2));
+        assert_eq!(T::ZERO.checked_ilog2(), None);
+        assert_eq!(T::ONE.reverse_bits(), T::ONE << (T::BITS - 1));
+        assert_eq!(T::ONE.rotate_left(T::BITS - 1), T::ONE << (T::BITS - 1));
+        assert_eq!(T::ONE.rotate_right(1), T::ONE << (T::BITS - 1));
+    }
+
+    #[test]
+    fn new_forwarders_behave_like_the_primitives() {
+        each_int!(check_new_forwarders);
+    }
+
+    #[test]
+    fn signed_only_edge_cases_of_the_new_forwarders() {
+        assert_eq!(Integer::checked_isqrt(-1_i32), None);
+        assert_eq!(Integer::checked_isqrt(i32::MIN), None);
+        assert_eq!(Integer::checked_ilog2(-8_i32), None);
+        assert_eq!(Integer::checked_div_euclid(i8::MIN, -1), None);
+        assert_eq!(Integer::checked_rem_euclid(-7_i32, 3), Some(2));
+        assert_eq!(Integer::abs_diff(i8::MAX, i8::MIN), 255_u8);
     }
 }
