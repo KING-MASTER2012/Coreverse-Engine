@@ -48,3 +48,28 @@ pub(crate) fn text_with_precision(value: &impl Display, precision: usize) -> Tex
     write!(out, "{value:.precision$}").unwrap();
     out
 }
+
+/// A small deterministic pseudo random number generator (an LCG), so the
+/// randomized tests are reproducible.
+pub(crate) struct Rng(u64);
+
+impl Rng {
+    /// A generator that always produces the same sequence for `seed`.
+    pub(crate) fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    /// The next number, uniformly in `[0, 1)`.
+    pub(crate) fn unit(&mut self) -> f64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((self.0 >> 40) as f64) / ((1u64 << 24) as f64)
+    }
+
+    /// The next number, uniformly in `[low, high)`.
+    pub(crate) fn range(&mut self, low: f64, high: f64) -> f64 {
+        low + (high - low) * self.unit()
+    }
+}

@@ -9,6 +9,7 @@ description = "Coreverse's core math library: scalars, angles, interpolation, in
 [dependencies]
 math-macros = { path = "../../macros/math-macros" }
 libm = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
 
 [features]
 # Native (std) transcendental functions - fast, uses the platform's libm.
@@ -22,6 +23,13 @@ std = []
 # Only takes effect when `std` is NOT also enabled - see the crate-level
 # doc comment on feature unification.
 no_std = ["dep:libm"]
+# `serde::Serialize`/`Deserialize` for every vector, matrix, quaternion and
+# geometry type. Vectors, matrices and quaternions are written as flat arrays
+# (`[x, y, z]`, matrices column by column), geometry types as structs.
+serde = ["dep:serde"]
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

@@ -1,9 +1,11 @@
 //! Coreverse's core math library.
 //!
 //! Everything here is `f32`/`f64` scalar math, angles, interpolation and
-//! easing curves, integer/bit math, vectors, matrices and quaternions - all
-//! `#![no_std]`-compatible with no heap allocation, so this crate never
-//! needs `alloc` either.
+//! easing curves, integer/bit math, vectors, matrices, quaternions and the
+//! geometric primitives built on them (boxes, rays, planes, spheres, the
+//! view frustum, TRS transforms) - all `#![no_std]`-compatible with no heap
+//! allocation, so this crate never needs `alloc` either. The optional
+//! `serde` feature adds `Serialize`/`Deserialize` for all of them.
 //!
 //! # `std` vs `no_std`
 //!
@@ -64,6 +66,7 @@ pub mod bits;
 /// [`consts::f64`].
 pub mod consts;
 pub mod ease;
+pub mod geometry;
 pub mod int_math;
 pub mod integer;
 /// Interpolation helpers: `lerp`, `inverse_lerp`, `remap`, `smoothstep`,
@@ -76,12 +79,18 @@ pub mod radix;
 /// The internal [`Scalar`] trait every generic function in this crate is
 /// written against.
 pub mod scalar;
+#[cfg(feature = "serde")]
+mod serde_impls;
 #[cfg(test)]
 mod test_support;
 pub mod trig;
 pub mod vector;
 
 pub use angle::{Degrees, Radians};
+pub use geometry::{
+    Aabb2, Aabb3, Containment, DAabb2, DAabb3, DFrustum, DPlane, DRay, DSphere, DTransform,
+    Frustum, Plane, Ray, Sphere, Transform,
+};
 pub use integer::{Integer, Unsigned};
 pub use matrix::{DMat2, DMat3, DMat4, Mat2, Mat3, Mat4};
 pub use quat::{DQuat, EulerRot, Quat};
