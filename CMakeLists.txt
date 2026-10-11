@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 3.25...4.4)
-# The <min>...<max> form does NOT raise the real minimum: any CMake
-# >= 3.25 can still configure this project. It tells CMake "if you're
-# newer than 3.25, adopt every policy's NEW behavior up through 4.4"
-# instead of silently keeping every post-3.25 policy on its old,
-# deprecated default. Bump the <max> component when a new CMake
-# minor/major ships and CI has confirmed it still configures cleanly.
+cmake_minimum_required(VERSION 4.4)
+# Single source of truth for the CMake minimum is
+# devkit/scripts/setup/config/tool-versions.json (cmake.minVersion): the
+# bootstrap scripts install/verify exactly that version, CMakePresets.json
+# ("cmakeMinimumRequired") and this line must match it. When raising the
+# minimum, change all three together. Declaring 4.4 as the minimum also
+# switches every policy introduced up to 4.4 to its NEW behavior.
 project(CoreverseEngine VERSION 0.1.0 LANGUAGES CXX C)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")

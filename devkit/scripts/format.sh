@@ -3,8 +3,10 @@
 #
 #   Rust : cargo fmt --all                       (whole Cargo workspace)
 #   C++  : clang-format -i  on engine/cpp and tests/cpp
-#          (*.cpp *.cc *.cxx *.h *.hpp *.hxx - exactly the set the CI
-#          "Formatting" workflow checks, see .github/workflows/formatting.yml)
+#          (*.cpp *.cc *.cxx *.h *.hpp *.hxx plus the Objective-C++ files
+#          *.mm / *.m - exactly the set the CI "Formatting" workflow checks,
+#          see .github/workflows/formatting.yml and .clang-format, which has
+#          one section per language: Cpp and ObjC)
 #
 # Usage:
 #   devkit/scripts/format.sh                 format everything in place
@@ -227,7 +229,8 @@ format_cpp() {
     done < <(
         find $dirs -type f \
             \( -name '*.cpp' -o -name '*.cc' -o -name '*.cxx' \
-            -o -name '*.h' -o -name '*.hpp' -o -name '*.hxx' \) \
+            -o -name '*.h' -o -name '*.hpp' -o -name '*.hxx' \
+            -o -name '*.mm' -o -name '*.m' \) \
             -print0
     )
 

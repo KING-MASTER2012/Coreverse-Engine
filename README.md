@@ -70,6 +70,22 @@ The result is a native engine architecture that combines Rust's safety and concu
 
 ---
 
+## 🟢 Current Status
+
+An honest snapshot of what exists today (details and the prioritized to-do list live in [`PROGRESS.md`](PROGRESS.md)):
+
+| Area | State |
+| :--- | :---- |
+| **Rust core** (`ccore`, `fs`, `vfs`, `log-core`, `log-sinks`) | 🟢 Implemented and tested |
+| **Math** (`math`: vectors, matrices, quaternions, geometry, curves, noise, ... ; `std` and `no_std`/`libm` backends, optional `serde`) | 🟢 Implemented and tested; not wired into the engine or C++ yet |
+| **FFI** (`ffi` crate + C++ RAII wrappers `cv-ffi`: logger, diagnostics, VFS, build info) | 🟢 Implemented and tested |
+| **Renderer** (Vulkan backend: device, buffers, surface, swapchain, frame sync, validation as a test signal) | 🟡 Clears the viewport; no pipeline/draw calls yet |
+| **Editor** (Qt 6 window with a native Vulkan viewport and render loop) | 🟡 Early; no project/scene/asset workflows yet |
+| **Other Rust crates** (`ecs`, `asset`, `audio`, `physics`, `runtime`, `scripting`, ...) | 🔵 Placeholders (crate skeletons only) |
+| **CI** (Linux/Windows/macOS builds, Rust tests, Clippy, formatting, CodeQL) | 🟢 Green |
+
+---
+
 ## 🟢 Architecture
 
 Coreverse is split into two primary native layers.
@@ -108,7 +124,6 @@ This includes:
 * Qt-based Engine Editor
 * Rendering infrastructure
 * Vulkan renderer
-* OpenGL renderer where applicable
 * Graphics resource management
 * GPU synchronization
 * Render scheduling
@@ -189,12 +204,12 @@ Coreverse's rendering layer is implemented in native C++ and integrated into the
 
 | Graphics API |            Status            | Intended Platforms                     |
 | :----------- | :--------------------------: | :------------------------------------- |
-| **Vulkan**   |          🟢 Primary          | Linux, Windows, future Android targets |
-| **OpenGL**   | 🟢 Supported / Compatibility | Cross-platform fallback                |
-| **Metal**    |          🔵 Planned          | macOS / Apple platforms                |
+| **Vulkan**   |   🟢 Implemented (primary)   | Linux, Windows, macOS via MoltenVK     |
+| **OpenGL**   |          🔵 Planned          | Cross-platform fallback                |
+| **Metal**    |   🔵 Planned (native backend) | macOS / Apple platforms               |
 | **Direct3D** |          🔵 Planned          | Windows                                |
 
-The renderer is designed around explicit graphics APIs, multithreaded workloads, predictable resource lifetime, and minimal abstraction overhead.
+The renderer sits behind a backend-neutral `RenderDevice` interface; today only the Vulkan backend exists (on macOS it presents through MoltenVK into a `CAMetalLayer`). It is designed around explicit graphics APIs, multithreaded workloads, predictable resource lifetime, and minimal abstraction overhead.
 
 ---
 
@@ -248,6 +263,8 @@ CMake is responsible for:
 * Compiler configuration
 * Dependency integration
 * Installation and packaging infrastructure
+
+The minimum CMake version is **4.4** — the single source of truth is `cmake.minVersion` in [`devkit/scripts/setup/config/tool-versions.json`](devkit/scripts/setup/config/tool-versions.json), which the bootstrap scripts install and verify; `CMakeLists.txt` and `CMakePresets.json` declare the same minimum. Platform configuration goes through the presets in [`CMakePresets.json`](CMakePresets.json) (`linux-x64-gcc`, `linux-x64-clang`, `windows-x64`, `windows-x64-clang`, `windows-x64-clang-gnu`, `windows-x64-static`, `macos-arm64-clang`).
 
 ### Ninja
 
@@ -329,16 +346,26 @@ Developers can use:
 
 ### CI/CD
 
+The pipeline in [`.github/workflows/`](.github/workflows/) (entry point `ci.yml`) consists of:
+
+| Workflow | What it does |
+| :------- | :----------- |
+| `rust.yml` | Cargo check/test for the whole workspace on Linux (bootstrap toolchain, including the `no_std` math backend) and `cargo test` on Windows and macOS |
+| `cpp.yml` | C++/Qt builds and tests: Linux (GCC, Vulkan validation layers, Xvfb editor smoke test, Wayland test), Windows (MSVC), macOS (Apple Clang) |
+| `lint.yml` | Clippy with `-D warnings` and Rustdoc for `math` |
+| `formatting.yml` | `cargo fmt --check` and `clang-format` over C++ **and** Objective-C++ (`*.mm`) sources |
+| `codeql.yml`, `dependency-review.yml` | Security analysis and dependency review |
+| `nightly.yml`, `release.yml`, `deploy.yml`, `deploy-docs.yml`, `benchmarks.yml`, `stale.yml` | Scheduled/manual/release automation (documentation deploy is skipped until `book.toml` exists; benchmarks are a manual placeholder) |
+
 CI pipelines are used to verify:
 
 * Supported platform builds
 * Compiler compatibility
-* Static analysis
 * Linting
+* Formatting
 * Warnings and diagnostics
 * Cross-platform regressions
 * Dependency integration
-* Release configuration
 
 The goal is not merely to produce a successful build, but to continuously validate the codebase against multiple diagnostic ecosystems.
 
@@ -367,37 +394,30 @@ macOS follows the native Apple toolchain through Apple Clang.
 
 This repository contains the **Coreverse Engine and its native Editor infrastructure**.
 
-A simplified structure is:
+The main directories are:
 
 ```text
 coreverse-engine/
-├── .github/
-│   ├── workflows/          # CI/CD
-│   ├── ISSUE_TEMPLATE/
-│   └── ...
-│
-├── assets/
-│   └── emblems/
-│
-├── docs/                   # Technical documentation
-│
+├── .github/workflows/      # CI/CD
+├── assets/                 # Branding (emblems)
+├── cmake/                  # CMake modules (toolchains, Rust integration, clang tools, ...)
+├── devkit/scripts/         # Bootstrap, configure and format scripts (setup/config/*.json)
+├── docs/                   # Documentation (index only for now)
 ├── engine/
-│   ├── cpp/                # C++23 native engine & renderer
-│   └── rust/               # Rust 2024 engine systems
-│
-├── editor/                 # Qt 6 / C++ Engine Editor
-│
-├── scripts/                # Development and build utilities
-│
-├── third_party/            # External repositories / integrations
-│
+│   ├── cpp/                # C++23: editor (Qt 6), renderer (Vulkan), ffi-cpp (cv-ffi)
+│   └── rust/               # Rust 2024 workspace: common/ (ccore, fs, ...), crates/ (vfs, ffi, math, ...), macros/
+├── tests/                  # C++ tests (ctest) and shared Rust test helpers
+├── tools/                  # Developer tools (project-generator)
 ├── CMakeLists.txt
 ├── CMakePresets.json
-├── Cargo.toml
-├── vcpkg.json
+├── Cargo.toml              # Rust workspace
+├── PROGRESS.md             # Change log and prioritized to-do list
+├── vcpkg.json              # Native dependency manifest
 ├── LICENSE
 └── README.md
 ```
+
+Placeholder directories (`benchmarks/`, `examples/`, `formats/`, `fuzz/`, `omniscript/`, `plugins/`, `templates/`, `test_assets/`) exist for planned work and are empty for now. The vcpkg checkout lives in `third_party/vcpkg` (cloned by bootstrap, not committed).
 
 > The exact directory structure may evolve as the Engine architecture matures.
 
@@ -461,27 +481,19 @@ CI/CD
 
 ### Prerequisites
 
-Install the following:
+The exact minimum versions are pinned in [`devkit/scripts/setup/config/tool-versions.json`](devkit/scripts/setup/config/tool-versions.json) and enforced by the bootstrap scripts. At the time of writing:
 
-* **Rust** — Rust 2024 Edition / current stable toolchain
-* **CMake**
-* **Ninja**
-* **vcpkg**
-* **Qt 6**
+* **Rust** — Rust 2024 Edition, cargo ≥ 1.97.1 (via rustup)
+* **CMake** ≥ 4.4.0 and **Ninja**
+* **vcpkg** (cloned by bootstrap into `third_party/vcpkg`)
+* **Qt 6** (installed through vcpkg)
+* **LLVM/Clang 22.1.8** (`clang-format`, `clang-tidy`, LLDB — formatting output differs between LLVM major versions, so CI and the format scripts use this one)
 * A supported platform compiler:
 
-  * Linux → GCC
-  * Windows → MSVC
-  * macOS → Apple Clang
+    * Linux → GCC
+    * Windows → MSVC (Visual Studio)
+    * macOS → Apple Clang
 * Git
-
-Additional tooling is recommended for development and diagnostics:
-
-* Clang / LLVM
-* `clang-tidy`
-* LLDB
-* GDB
-* Visual Studio Debugger on Windows
 
 ### Clone
 
@@ -490,43 +502,57 @@ git clone https://github.com/KING-MASTER2012/Coreverse-Engine.git
 cd Coreverse-Engine
 ```
 
-### Configure
+### Bootstrap
 
-The repository uses CMake with Ninja and vcpkg.
-
-A typical configuration looks like:
+The easiest path is the bootstrap script. It detects/installs the toolchain, clones vcpkg and configures CMake:
 
 ```bash
-cmake -S . -B build \
-  -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release
+# Linux
+./devkit/scripts/setup/shell/bootstrap.sh
+
+# Windows (PowerShell 7+)
+./devkit/scripts/setup/powershell/bootstrap.ps1
 ```
 
-### Build
+Add `--dry-run` (`-DryRun` on Windows) to only see what would happen. On macOS, install the tools with Homebrew instead (see the `macos` job in [`cpp.yml`](.github/workflows/cpp.yml) for the exact list); the macOS path of `bootstrap.sh` is not verified yet.
+
+### Configure & Build
+
+Use the CMake presets — they are the canonical configuration for each platform and toolchain:
 
 ```bash
-cmake --build build
+cmake --preset linux-x64-gcc               # or windows-x64, macos-arm64-clang, ...
+cmake --build --preset linux-gcc-release   # see `cmake --build --list-presets`
 ```
 
-For development builds:
+The wrapper scripts `devkit/scripts/configure-linux.sh`, `configure-macos.sh` and `configure-windows.ps1` add architecture sanity checks around the same presets.
+
+### Test
 
 ```bash
-cmake -S . -B build \
-  -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug
-
-cmake --build build
+cargo test --workspace --all-features                              # Rust
+cargo test -p math --no-default-features --features no_std         # math, libm backend
+ctest --preset linux-gcc-release-nogpu                             # C++ tests that need no GPU
 ```
 
-> Prefer the repository's CMake presets when available, as they provide the canonical project configuration for each platform and toolchain.
+The GPU/editor tests (`ctest --preset linux-gcc-release`) need a Vulkan driver; CI runs them with software Vulkan under Xvfb.
+
+### Format
+
+```bash
+devkit/scripts/format.sh            # Rust (cargo fmt) + C++/Objective-C++ (clang-format), in place
+devkit/scripts/format.sh --check    # what CI runs
+```
+
+On Windows use `devkit/scripts/format.ps1` (`-Check`). The CMake targets `format`, `format-check` and `tidy` cover the same file sets.
 
 ---
 
 ## 🟢 Documentation
 
-Technical documentation is maintained under [`docs/`](docs/).
+Technical documentation is maintained under [`docs/`](docs/). It currently only contains an index; the mdBook site (`book.toml`) and the pages below are still to be written (see [`PROGRESS.md`](PROGRESS.md)).
 
-Recommended documentation areas include:
+Planned documentation areas include:
 
 * **Engine Architecture**
 * **Rust/C++ FFI Architecture**

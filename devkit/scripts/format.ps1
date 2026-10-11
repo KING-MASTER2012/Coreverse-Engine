@@ -6,8 +6,10 @@
 .DESCRIPTION
     Rust : cargo fmt --all                       (whole Cargo workspace)
     C++  : clang-format -i  on engine/cpp and tests/cpp
-           (*.cpp *.cc *.cxx *.h *.hpp *.hxx - exactly the set the CI
-           "Formatting" workflow checks, see .github/workflows/formatting.yml)
+           (*.cpp *.cc *.cxx *.h *.hpp *.hxx plus the Objective-C++ files
+           *.mm / *.m - exactly the set the CI "Formatting" workflow checks,
+           see .github/workflows/formatting.yml and .clang-format, which has
+           one section per language: Cpp and ObjC)
 
     clang-format's output differs between LLVM major versions, so the version
     matters: the project pins it in
@@ -211,7 +213,7 @@ function Invoke-CppFormat {
         Write-WarningLog "Its output can differ from CI's and CI may still report violations. Install LLVM $expectedMajor.x or pass -ClangFormat."
     }
 
-    $extensions = @('.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx')
+    $extensions = @('.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx', '.mm', '.m')
     $files = @(
         foreach ($dir in @('engine/cpp', 'tests/cpp')) {
             $path = Join-Path $RepoRoot $dir

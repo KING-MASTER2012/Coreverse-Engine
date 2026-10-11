@@ -122,14 +122,11 @@ jobs:
                   xvfb-run -a --server-args="-screen 0 1280x720x24" \
                       ctest --preset linux-gcc-release -LE editor
 
-            # Experimental, like the macOS job: the editor smoke test needs
-            # the vcpkg Qt build to ship the xcb platform plugin, which has
-            # not been verified on a CI runner yet (PROGRESS.md). A failure
-            # is reported on the step but does not fail the workflow. Remove
-            # `continue-on-error` once it has gone green.
+            # The editor smoke test needs the vcpkg Qt build to ship the xcb
+            # platform plugin; it runs under Xvfb with software Vulkan and is
+            # a required check like every other step.
             - name: Test (Release, editor smoke)
               shell: bash
-              continue-on-error: true
               env:
                   CV_REQUIRE_VALIDATION: "1"
                   QT_QPA_PLATFORM: xcb
@@ -171,25 +168,19 @@ jobs:
                   ctest --preset windows-msvc-release-nogpu
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    # Experimental: macOS has never been built in CI before (the renderer's
-    # Metal-surface path and the vcpkg arm64-osx dependencies are still
-    # unverified), so a failure here is reported on the job but does not
-    # fail the workflow. Remove `continue-on-error` once it has gone green.
+    # This job is green and a required check: it builds the renderer's
+    # Metal-surface path and the vcpkg arm64-osx dependencies for real.
     #
-    # This job does NOT run devkit/scripts/setup/shell/bootstrap.sh. In the
-    # first macOS run the step after Bootstrap found no third_party/vcpkg, so
-    # the macOS path of bootstrap can't be relied on yet (a known weak spot:
-    # parallel-runner.sh uses `declare -A`, bash 4+, and macOS ships bash 3.2).
-    # Note that CMake's "unable to find a build program corresponding to Ninja
-    # Multi-Config" printed next to such errors is only a side effect: CMake
-    # reports it whenever the toolchain file fails, even with Ninja installed.
-    # Everything the presets need is installed explicitly here instead; the
-    # preset configure step then installs the vcpkg packages (manifest mode)
-    # into ./vcpkg_installed by itself. Bootstrap on macOS can be debugged
-    # separately, from its own log.
+    # It deliberately does NOT run devkit/scripts/setup/shell/bootstrap.sh:
+    # macOS ships bash 3.2 and parts of bootstrap (parallel-runner.sh uses
+    # `declare -A`, bash 4+) are not written for it. Everything the presets
+    # need is installed explicitly here instead; the preset configure step
+    # then installs the vcpkg packages (manifest mode) into ./vcpkg_installed
+    # by itself. Note that CMake's "unable to find a build program
+    # corresponding to Ninja Multi-Config" is only a side effect when the
+    # toolchain file fails, even with Ninja installed.
     macos:
         runs-on: macos-latest
-        continue-on-error: true
 
         steps:
             - uses: actions/checkout@v7
@@ -215,6 +206,29 @@ jobs:
                   aclocal --version | sed -n 1p
                   glibtoolize --version | sed -n 1p
                   echo "autoconf-archive macros: $(ls "$(brew --prefix)"/share/aclocal | grep -c '^ax_')"
+
+            # The project's CMake minimum lives in
+            # devkit/scripts/setup/config/tool-versions.json (cmake.minVersion,
+            # the same value bootstrap enforces and CMakeLists.txt /
+            # CMakePresets.json declare). The runner image's CMake can lag
+            # behind it, so upgrade through Homebrew when it does.
+            - name: Ensure CMake meets the project minimum
+              shell: bash
+              run: |
+                  required="$(python3 -c "import json; print(json.load(open('devkit/scripts/setup/config/tool-versions.json'))['cmake']['minVersion'])")"
+                  current="$(cmake --version | sed -n 's/^cmake version //p' | sed -n 1p)"
+                  echo "CMake required >= $required, found $current"
+                  lowest="$(printf '%s\n%s\n' "$required" "$current" | sort -V | sed -n 1p)"
+                  if [ "$lowest" != "$required" ]; then
+                      brew upgrade cmake || brew install cmake
+                      current="$(cmake --version | sed -n 's/^cmake version //p' | sed -n 1p)"
+                      echo "CMake after upgrade: $current"
+                      lowest="$(printf '%s\n%s\n' "$required" "$current" | sort -V | sed -n 1p)"
+                      if [ "$lowest" != "$required" ]; then
+                          echo "::error::CMake $current is older than the required $required"
+                          exit 1
+                      fi
+                  fi
 
             # The whole history is needed (vcpkg.json pins a builtin-baseline),
             # so this is deliberately not a shallow clone.

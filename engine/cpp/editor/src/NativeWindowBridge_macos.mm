@@ -4,12 +4,11 @@
 // Objective-C++ (compiled with ARC, see CMakeLists.txt) because there is
 // no way to talk to AppKit/QuartzCore from plain C++.
 
-#include "NativeWindowBridge.hpp"
-
-#include <QWidget>
-
 #import <AppKit/AppKit.h>
+#include <QWidget>
 #import <QuartzCore/CAMetalLayer.h>
+
+#include "NativeWindowBridge.hpp"
 
 namespace editor {
 

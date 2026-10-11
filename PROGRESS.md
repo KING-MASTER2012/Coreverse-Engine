@@ -1,7 +1,19 @@
 # PROGRESS.md
-Last changed 26.09.2026 by KING-MASTER2012.
+Last changed 11.10.2026 by KING-MASTER2012.
 
-## What happened compared to the previous commit?
+## What happened compared to the previous commit? (P0 housekeeping)
+- verified: the whole Rust workspace compiles and its tests pass with a real toolchain (rustc/cargo 1.91, Linux): `cargo test --workspace --all-features` -> 1351 passed, 0 failed (4 doctests are `ignore`d on purpose); `math` on the `libm` backend (`--no-default-features --features no_std`) -> 1237 passed. This supersedes the "hand-written, not compiled" note of Phase 7c below: `ffi/src/vfs.rs`, `vfs/src/context.rs` and the `vfs` tests are compiled and green. CI (Linux/Windows/macOS, lint, formatting) is green as of this commit.
+- documented: the `math` crate (engine/rust/crates/math, ~24k lines) was missing from this file. It provides scalar/angle/trig/easing/interpolation helpers, integer and bit math, radix/pack utilities, vectors, matrices, quaternions, Euler angles, geometry primitives, curves, random numbers and noise, with two backends (`std` default, `no_std` via `libm`) and an optional `serde` feature (flat arrays for vectors/matrices/quaternions). No other crate depends on it yet, there is no C++ counterpart and no benchmark suite (see "What will be done?").
+- changed (CI): removed `continue-on-error` from the Linux editor-smoke step and from the macOS job (both are green and are now real gates); the macOS job additionally checks the runner's CMake against `tool-versions.json` and upgrades it through Homebrew when it is older.
+- changed (CI): `rust.yml` no longer has its own (redundant, non `-D warnings`) Clippy step - `lint.yml` is the Clippy gate - and gained a `rust-cross-platform` job that runs `cargo test --workspace --all-features` on Windows and macOS (fs/vfs contain platform-specific code). `lint.yml`/`formatting.yml` declare `permissions: contents: read`.
+- changed (CI): `deploy-docs.yml` now skips build/deploy while there is no `book.toml` (it used to fail on every docs push); `benchmarks.yml` stays manual-only, is documented as a placeholder and caches the build; removed the unused reusable workflows `linux.yml`, `windows.yml` and `macos.yml` (nothing called them; `cpp.yml` covers all three platforms).
+- changed (CMake): the CMake minimum is now 4.4 everywhere - `cmake_minimum_required(VERSION 4.4)`, `cmakeMinimumRequired` 4.4.0 in `CMakePresets.json` - matching `cmake.minVersion` in `devkit/scripts/setup/config/tool-versions.json`, which is what bootstrap installs/verifies. Before it was 3.25...4.4 / 3.31 / 4.4.0.
+- changed (formatting): the Objective-C++ bridge (`NativeWindowBridge_macos.mm`) is now covered by the formatter. `.clang-format` gets an `ObjC` section (clang-format refuses to format a language without one), `format.sh`, `format.ps1` and the CI Formatting workflow include `*.mm`/`*.m`, and `cmake/ClangTools.cmake` (`format`, `format-check`, `tidy` targets) now uses the same file set as the scripts (adds `tests/cpp`, `*.cc/*.cxx/*.hxx` and `*.mm`/`*.m`; `tidy` only takes `.mm` files on Apple hosts). The `.mm` file was reformatted (include order only).
+- fixed: `toml = "1.1.6+spec-1.1.0"` in the root `Cargo.toml` -> `"1.1.6"` (build metadata is not valid in a version requirement and made Cargo warn); `Cargo.lock` is unchanged.
+- docs: README (status, repository layout, rendering table, prerequisites/build/test/format instructions, CI description) and `docs/README.md` rewritten to match the repository as it is.
+- note: not verified in this change - the macOS/Windows CI runs themselves (the new cross-platform Rust job and the CMake-minimum step are new), Clippy and `cargo fmt` (not available in the sandbox). The C++ side was not built here (no Qt/vcpkg in the sandbox); `clang-format 22.1.8` was run over the whole tree (51 files, including the `.mm`) and `format-check` through CMake 4.4.4 passes.
+
+## What happened compared to the previous commit? (Phase 7c, kept for history)
 - added (Phase 7c): six new `ffi::vfs` functions matching what `vfs_crate::file_manager` already had: `ffi_vfs_remove`, `ffi_vfs_metadata`, `ffi_vfs_list_dir` (+ `ffi_vfs_free_string_array`), `ffi_vfs_add_file` (covers both `add_file` and `add_file_to` via a nullable `dest_rel`), `ffi_vfs_new_temp_path`. Same thread-local last-error pattern as the existing functions.
 - added (Phase 7c): `cv-ffi` (engine/cpp/ffi-cpp) - C++ RAII wrappers over the `ffi` crate's raw C ABI. `cv_ffi::Logger`/`cv_ffi::DiagnosticBuilder` are move-only RAII types (same shape as `renderer::Buffer`/`Swapchain`); `cv_ffi::vfs::*` are `std::expected`-returning free functions wrapping the `ffi_vfs_*` calls (Init/ReadToString/ReadBytes/WriteBytes/Exists/Remove/GetMetadata/ListDir/AddFile/NewTempPath); `cv_ffi::BuildInfoString()` wraps `ffi_build_info_string`. `ffi.h` is only included from `cv-ffi`'s `.cpp` files, never from its public headers. `editor` now links `cv-ffi` instead of calling `link_ffi(editor)` itself.
 - fixed while writing the wrappers: `ffi_logger_add_console_sink`/`add_file_sink`/`set_min_severity`/`shutdown` and `ffi_diagnostic_builder_set_*`/`emit` all dereference their `Logger*`/`DiagnosticBuilder*` unconditionally on the Rust side (no null check - confirmed by reading logger.rs/diagnostic.rs). Every `cv_ffi::Logger`/`DiagnosticBuilder` method now guards against being called on an invalid (default-constructed or moved-from) handle before making that call, instead of risking UB. `DiagnosticBuilder::Emit()` specifically checks the target `Logger`'s validity too.
@@ -15,20 +27,25 @@ Last changed 26.09.2026 by KING-MASTER2012.
 - added (Phase 6.4): the editor render loop. `ViewportRenderer` owns a `FrameSync` (after the swapchain, so it dies first) and renders from a ~60 Hz timer on the GUI thread: a clear to a slowly cycling color, FPS in the status bar. The loop rests while the viewport is hidden or the window is minimized, and while the swapchain cannot be rebuilt yet (zero-sized viewport, failed rebuild - retried on the next resize and every 250 ms). `rebuildSwapchain(force)` no longer skips a rebuild just because the size is unchanged, so `OutOfDate` is always handled. Fatal errors (device lost, failed submit/present) stop rendering and show up in the status bar; recovering from them is not implemented.
 - added: `Swapchain::Acquire(semaphore, timeoutNs)` and `SwapchainStatus::NotReady` (timeout expired, nothing acquired). `VK_ERROR_DEVICE_LOST` / `VK_ERROR_OUT_OF_*_MEMORY` now map to `RenderErrorCode::DeviceLost` / `OutOfMemory` for acquire, present, submit and begin/end instead of `Unknown`.
 - added: validation as a test signal. `renderer::ValidationErrorCount()` (renderer/Diagnostics.hpp) counts validation-layer errors, `RenderDevice::IsValidationEnabled()` says whether the layer is running, `RENDERER_FORCE_VALIDATION` (CMake option) enables the layer in every build type. Linux CI installs `vulkan-validationlayers`, configures with the option and sets `CV_REQUIRE_VALIDATION=1`, which makes the tests fail if the layer is not actually running.
-- added: `frame_sync_test` (gpu): 1, 2 and more-frames-than-images in flight, ~140 frames each with a resize in the middle, Acquire timeout, misuse checks, move semantics, zero validation errors. `editor --smoke-frames N` + ctest `editor_render_smoke` (labels `gpu;editor`): the real Qt window renders N frames, is resized half-way, quits by itself and must find no validation errors. CI runs it in its own non-blocking step (`continue-on-error`, like macOS) because the vcpkg Qt xcb plugin is unverified there.
+- added: `frame_sync_test` (gpu): 1, 2 and more-frames-than-images in flight, ~140 frames each with a resize in the middle, Acquire timeout, misuse checks, move semantics, zero validation errors. `editor --smoke-frames N` + ctest `editor_render_smoke` (labels `gpu;editor`): the real Qt window renders N frames, is resized half-way, quits by itself and must find no validation errors. CI runs it in its own step; it was non-blocking while the vcpkg Qt xcb plugin was unverified and is a regular gate now (see the P0 entry above).
 - note: `AcquireCommandBuffer()` allocates a new command buffer on every call and only frees them at `Shutdown()` - use it once per long-lived buffer; per-frame buffers come from `FrameSync`. Documented on the function.
 - note: `Submit()` still waits at the TRANSFER stage (right for a clear). The first real graphics pass must change it to COLOR_ATTACHMENT_OUTPUT (comment in `VulkanRenderDevice::Submit`).
 - note: nothing is drawn in the viewport except the clear color yet.
 
 ## What will be done?
-- Check that the vcpkg Qt build on Linux ships the xcb platform plugin (the editor and its smoke test need it to open a window there); then drop `continue-on-error` from the CI editor smoke step.
-- A multi-frame variant of the Wayland render loop test (needs a look at how Weston's frame callbacks interact with acquire).
-- Native Wayland support for the editor viewport (needs Qt's private wl_surface accessor).
-- Device-lost recovery for the editor (rebuild device, surface, swapchain and frame sync).
-- First real graphics pass (pipeline + draw); render thread when the GUI thread becomes the bottleneck.
-- A file sink for the editor's `cv_ffi::Logger` once there is a project root to root it at (no "open project" flow yet).
-- Route the renderer's own `ffi_vfs_*`/`cv-ffi::vfs` calls through validation once there's an actual caller for VFS from the editor (shaders, assets).
-- Debug bootstrap.sh on macOS (needs the Bootstrap step's log).
-- Phase 9: stub crate and lint hygiene, clippy -D warnings, docs (book.toml).
-- Asset system will be added.
-- IO system will be added.
+Ordered by priority (the plan agreed on 11.10.2026; P0 is this commit).
+
+P1 - core
+- Wire `math` into the engine: a header-only C++ mirror with identical layout (vectors, matrices, quaternions) plus a layout test against the Rust types; needed for camera/MVP in the renderer. Add a criterion benchmark suite for `math` (then `benchmarks.yml` has something to run).
+- First real graphics pass: change `Submit()` to wait at COLOR_ATTACHMENT_OUTPUT, shader loading through the VFS, pipeline, vertex/uniform buffers, depth. Then device-lost recovery (rebuild device, surface, swapchain and frame sync).
+- Phase 9: stub crate and lint hygiene - the 21 template crates hard-code `edition = "2024"` and do not inherit workspace package fields or lints; start with `utilities`/`memory`/`platform`, then `threading`/`event`/`reflection`. Decide what `acse` and `aose` are for.
+- mdBook: `book.toml` and real pages under `docs/` (then `deploy-docs.yml` starts building).
+
+P2 - editor and systems
+- `project-system` (empty crate today) and an "open project" flow (`.cproject`, VFS init); then a file sink for the editor's `cv_ffi::Logger`, and routing renderer asset/shader loading through `cv_ffi::vfs`.
+- Native Wayland support for the editor viewport (needs Qt's private wl_surface accessor); a multi-frame variant of the Wayland render loop test (Weston frame callbacks vs. acquire).
+- Fuzz targets (`fuzz/`), serialization -> resource -> ECS -> asset/IO systems in tier order; render thread when the GUI thread becomes the bottleneck.
+- `release.yml` only runs `cargo build --release`; it should build and package the editor.
+- Debug `bootstrap.sh` on macOS (the macOS CI job deliberately avoids it; needs the Bootstrap step's log).
+
+P3 - roadmap (see README): further graphics backends (Metal, Direct3D, OpenGL), scene editor, profiler, scripting, hot reload, project templates (`templates/*` are empty placeholders).

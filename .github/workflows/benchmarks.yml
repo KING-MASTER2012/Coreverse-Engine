@@ -1,15 +1,26 @@
 name: Benchmarks
 
+# Manual only. There are no benchmark targets yet (the `benchmarks/` directory
+# is a placeholder and no crate depends on criterion), so `cargo bench` merely
+# rebuilds the workspace in the bench profile and runs nothing. The first real
+# suite is planned for the `math` crate (PROGRESS.md, "Next steps"); until then
+# this workflow is kept as the dispatch entry point so it does not have to be
+# re-created later.
 on:
-  workflow_dispatch:
+    workflow_dispatch:
+
+permissions:
+    contents: read
 
 jobs:
-  benchmark:
-    runs-on: ubuntu-latest
+    benchmark:
+        runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v7
+        steps:
+            - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
+            - uses: dtolnay/rust-toolchain@stable
 
-      - run: cargo bench
+            - uses: Swatinem/rust-cache@v2
+
+            - run: cargo bench --workspace

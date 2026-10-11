@@ -38,5 +38,24 @@ jobs:
             - name: Cargo Test (math, no_std backend)
               run: cargo test -p math --no-default-features --features no_std
 
-            - name: Clippy
-              run: cargo clippy --workspace --all-features
+    # The Linux job above is the full gate (bootstrap toolchain, no_std
+    # backend). The Rust crates also contain platform-specific code (memory
+    # mapping and path handling in `fs`/`vfs`), so the workspace tests run on
+    # Windows and macOS too, with the runners' own stable toolchain.
+    rust-cross-platform:
+        name: rust (${{ matrix.os }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [windows-latest, macos-latest]
+
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: dtolnay/rust-toolchain@stable
+
+            - uses: Swatinem/rust-cache@v2
+
+            - name: Cargo Test
+              run: cargo test --workspace --all-features

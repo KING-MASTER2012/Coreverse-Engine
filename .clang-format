@@ -73,3 +73,76 @@ Cpp11BracedListStyle: true
 
 FixNamespaceComments: true
 ReflowComments: true
+
+---
+# Objective-C++ (the macOS native-window bridge, *.mm / *.m). clang-format
+# refuses to format a language that has no section in .clang-format, so
+# this document repeats the C++ section above with Language: ObjC.
+# KEEP BOTH DOCUMENTS IN SYNC when changing a rule.
+Language: ObjC
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+
+AccessModifierOffset: -4
+NamespaceIndentation: None
+IndentCaseLabels: true
+IndentPPDirectives: BeforeHash
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+    AfterClass: true
+    AfterStruct: false
+    AfterUnion: true
+    AfterEnum: false
+    AfterFunction: true
+    AfterNamespace: false
+    AfterControlStatement: false
+    AfterExternBlock: false
+    BeforeElse: false
+    BeforeCatch: false
+    SplitEmptyFunction: false
+    SplitEmptyRecord: false
+    SplitEmptyNamespace: false
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+AlignAfterOpenBracket: BlockIndent
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: Align
+AlignTrailingComments: true
+
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+
+BinPackArguments: false
+BinPackParameters: false
+
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+    - Regex: '^"ffi/'          # Rust C-ABI boundary header first
+      Priority: 1
+    - Regex: '^<Qt'                # Qt
+      Priority: 3
+    - Regex: '^<(vulkan|volk|vk_mem_alloc)'  # Vulkan/VMA
+      Priority: 4
+    - Regex: '^<'                  # other system/third-party headers
+      Priority: 2
+    - Regex: '.*'                  # project-local headers last
+      Priority: 5
+
+SpaceBeforeParens: ControlStatements
+SpacesInAngles: false
+Cpp11BracedListStyle: true
+
+FixNamespaceComments: true
+ReflowComments: true
+ObjCBlockIndentWidth: 4
