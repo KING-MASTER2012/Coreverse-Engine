@@ -3,10 +3,11 @@
 //! Everything here is `f32`/`f64` scalar math, angles, interpolation and
 //! easing curves, parametric curves (Bézier, Hermite, Catmull-Rom,
 //! B-splines, arc length), deterministic random numbers and noise (PCG32,
-//! SplitMix64, Perlin, simplex), integer/bit math, vectors, matrices,
-//! quaternions and the geometric primitives built on them (boxes, rays,
-//! planes, spheres, the view frustum, TRS transforms) - all `#![no_std]`-compatible with no heap
-//! allocation, so this crate never needs `alloc` either. The optional
+//! SplitMix64, Perlin, simplex), GPU packing (half floats, unorm/snorm,
+//! octahedral normals), integer/bit math, vectors, matrices, quaternions
+//! and the geometric primitives built on them (boxes, rays, planes,
+//! spheres, the view frustum, TRS transforms) - all `#![no_std]`-compatible
+//! with no heap allocation, so this crate never needs `alloc` either. The optional
 //! `serde` feature adds `Serialize`/`Deserialize` for all of them.
 //!
 //! # `std` vs `no_std`
@@ -78,6 +79,7 @@ pub mod integer;
 pub mod interp;
 pub mod matrix;
 pub mod noise;
+pub mod pack;
 pub mod quat;
 pub mod radix;
 pub mod random;
@@ -99,6 +101,7 @@ pub use geometry::{
 };
 pub use integer::{Integer, Unsigned};
 pub use matrix::{DMat2, DMat3, DMat4, Mat2, Mat3, Mat4};
+pub use pack::F16;
 pub use quat::{DQuat, EulerRot, Quat};
 pub use random::{Pcg32, Rng, SplitMix64};
 pub use scalar::Scalar;
