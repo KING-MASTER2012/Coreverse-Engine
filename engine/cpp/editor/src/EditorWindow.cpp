@@ -92,6 +92,9 @@ EditorWindow::EditorWindow()
         showRendererStatus();
     });
     connect(m_renderer.get(), &ViewportRenderer::frameRendered, this, &EditorWindow::onFrameRendered);
+    connect(m_renderer.get(), &ViewportRenderer::deviceRecovered, this, [this] {
+        statusBar()->showMessage(tr("Renderer: recovered from a lost device"));
+    });
     connect(m_renderer.get(), &ViewportRenderer::renderingFailed, this, [this](const QString& reason) {
         statusBar()->showMessage(tr("Renderer stopped — %1").arg(reason));
         if (m_smokeFrames != 0 && !m_smokeDone) {
@@ -111,6 +114,11 @@ EditorWindow::~EditorWindow()
     // and before the logger it was routing messages into is shut down.
     shutdownRenderer();
     m_logger.Shutdown();
+}
+
+void EditorWindow::enableDeviceLossTest()
+{
+    m_lossTest = true;
 }
 
 void EditorWindow::enableSmokeTest(quint64 frames)
@@ -220,8 +228,20 @@ void EditorWindow::onFrameRendered(quint64 totalFrames)
         resize(size() + QSize(160, 100));
     }
 
+    // A quarter of the way through, lose the device (see enableDeviceLossTest()).
+    if (m_lossTest && !m_lossTriggered && totalFrames >= m_smokeFrames / 4) {
+        m_lossTriggered = true;
+        m_renderer->simulateDeviceLoss();
+    }
+
     if (totalFrames >= m_smokeFrames) {
         m_smokeDone = true;
+        if (m_lossTest && m_renderer->deviceRecoveries() != 1) {
+            qCritical() << "editor smoke test: expected exactly one device-loss recovery, saw"
+                        << m_renderer->deviceRecoveries();
+            QApplication::exit(smoke_exit::kNoDeviceRecovery);
+            return;
+        }
         if (m_smokeRebuilds == 0) {
             qCritical() << "editor smoke test: the window was resized but the swapchain was never rebuilt";
             QApplication::exit(smoke_exit::kNoSwapchainRebuild);

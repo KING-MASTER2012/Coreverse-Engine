@@ -9,6 +9,7 @@
 #include "renderer/CommandBuffer.hpp"
 #include "renderer/FrameSync.hpp"
 #include "renderer/GraphicsAPI.hpp"
+#include "renderer/GraphicsPipeline.hpp"
 #include "renderer/RenderError.hpp"
 #include "renderer/Surface.hpp"
 #include "renderer/Swapchain.hpp"
@@ -133,6 +134,19 @@ public:
     /// other device-owned resource.
     [[nodiscard]] virtual std::expected<Buffer, RenderError> CreateBuffer(const BufferDesc& desc) noexcept = 0;
 
+    /// Compiles a graphics pipeline for rendering.md into `swapchain` (its color format and, if it
+    /// has one, depth format). See GraphicsPipelineDesc. Returns RenderErrorCode::Unsupported
+    /// if the device has no dynamic rendering.md (Vulkan 1.3). The pipeline must be destroyed
+    /// before this device's Shutdown().
+    [[nodiscard]] virtual std::expected<GraphicsPipeline, RenderError>
+    CreateGraphicsPipeline(const Swapchain& swapchain, const GraphicsPipelineDesc& desc) noexcept = 0;
+
+    /// Makes every later frame-level call (acquire, submit, present, Begin/EndFrame) fail with
+    /// RenderErrorCode::DeviceLost, exactly like a real VK_ERROR_DEVICE_LOST would, so the
+    /// recovery path (destroy everything, create a new device, rebuild resources) can be
+    /// tested on a driver that never loses its device. Default: no-op. Never used in production.
+    virtual void SimulateDeviceLossForTesting() noexcept {}
+
     /// Creates a presentation surface bound to a native window. `handle`
     /// is not validated or reinterpreted by this interface — it is
     /// handed straight to the backend, which reads whichever of its
@@ -188,6 +202,7 @@ protected:
     friend class Swapchain;
     friend class CommandBuffer;
     friend class FrameSync;
+    friend class GraphicsPipeline;
 
     /// Lets a derived backend construct a Buffer. Buffer's constructor
     /// is private with only RenderDevice as a friend, and friendship
@@ -224,11 +239,26 @@ protected:
         return FrameSync(device, nativeHandle, framesInFlight);
     }
 
+    /// Same purpose as MakeBuffer(), for GraphicsPipeline - see there.
+    static GraphicsPipeline
+    MakeGraphicsPipeline(RenderDevice* device, void* nativeHandle, std::uint32_t pushConstantSize) noexcept
+    {
+        return GraphicsPipeline(device, nativeHandle, pushConstantSize);
+    }
+
     /// Releases the backend resource behind a Buffer's native handle.
     /// Called only by Buffer's destructor/move-assignment — never call
     /// this directly; release a buffer by letting its Buffer object be
     /// destroyed (or moved-from) instead.
     virtual void ReleaseBuffer(void* nativeHandle) noexcept = 0;
+
+    /// Releases the backend resource behind a GraphicsPipeline's native handle; called only by
+    /// GraphicsPipeline's destructor/move-assignment.
+    virtual void ReleaseGraphicsPipeline(void* nativeHandle) noexcept = 0;
+
+    /// Backs Buffer::Write() (bounds are already checked there).
+    virtual std::expected<void, RenderError>
+    WriteBufferData(void* bufferHandle, const void* data, std::size_t size, std::size_t offset) noexcept = 0;
 
     /// Same contract as ReleaseBuffer(), for Surface — called only by
     /// Surface's destructor/move-assignment.
@@ -280,6 +310,38 @@ protected:
     virtual std::expected<void, RenderError> EndCommandBuffer(void* commandBufferHandle) noexcept = 0;
     virtual std::expected<void, RenderError>
     RecordClearColor(void* commandBufferHandle, void* imageHandle, const ClearColor& color) noexcept = 0;
+
+    /// Back CommandBuffer::BeginRendering() ... DrawIndexed() - called only by CommandBuffer.
+    virtual std::expected<void, RenderError> RecordBeginRendering(
+        void* commandBufferHandle, void* swapchainHandle, std::uint32_t imageIndex, const RenderingDesc& desc
+    ) noexcept = 0;
+    virtual std::expected<void, RenderError>
+    RecordEndRendering(void* commandBufferHandle, void* swapchainHandle, std::uint32_t imageIndex) noexcept = 0;
+    virtual std::expected<void, RenderError>
+    RecordBindPipeline(void* commandBufferHandle, void* pipelineHandle) noexcept = 0;
+    virtual std::expected<void, RenderError>
+    RecordBindVertexBuffer(void* commandBufferHandle, void* bufferHandle, std::size_t offset) noexcept = 0;
+    virtual std::expected<void, RenderError> RecordBindIndexBuffer(
+        void* commandBufferHandle, void* bufferHandle, IndexType type, std::size_t offset
+    ) noexcept = 0;
+    virtual std::expected<void, RenderError> RecordPushConstants(
+        void* commandBufferHandle, void* pipelineHandle, const void* data, std::uint32_t size
+    ) noexcept = 0;
+    virtual std::expected<void, RenderError> RecordDraw(
+        void* commandBufferHandle,
+        std::uint32_t vertexCount,
+        std::uint32_t instanceCount,
+        std::uint32_t firstVertex,
+        std::uint32_t firstInstance
+    ) noexcept = 0;
+    virtual std::expected<void, RenderError> RecordDrawIndexed(
+        void* commandBufferHandle,
+        std::uint32_t indexCount,
+        std::uint32_t instanceCount,
+        std::uint32_t firstIndex,
+        std::int32_t vertexOffset,
+        std::uint32_t firstInstance
+    ) noexcept = 0;
 };
 
 } // namespace renderer

@@ -7,7 +7,7 @@
 //! and value types.
 //!
 //! `ccore` deliberately does *not* contain: logging, a virtual filesystem,
-//! an event system, ECS, rendering, asset management, reflection, a thread
+//! an event system, ECS, rendering.md, asset management, reflection, a thread
 //! pool, configuration, or a plugin manager. Those are each substantial
 //! enough to be their own crate, depending on `ccore` rather than living
 //! inside it.

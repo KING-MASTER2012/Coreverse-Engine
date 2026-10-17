@@ -1,0 +1,16 @@
+[book]
+title = "Coreverse Engine"
+authors = ["KING-MASTER2012"]
+description = "Documentation of the Coreverse game engine (Rust + C++)."
+language = "en"
+src = "docs/src"
+
+[build]
+# Written to ./book, which deploy-docs.yml uploads as the Pages artifact.
+build-dir = "book"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/KING-MASTER2012/Coreverse-Engine"
+default-theme = "navy"
+preferred-dark-theme = "navy"

@@ -1,6 +1,12 @@
 [package]
 name = "audio"
-version = "0.1.0"
-edition = "2024"
+description = "Placeholder for the engine's audio playback and mixing; not yet implemented"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
+
+[lints]
+workspace = true

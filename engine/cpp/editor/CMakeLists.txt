@@ -77,6 +77,7 @@ target_link_libraries(editor
         compiler_warnings
         renderer::renderer
         cv-ffi::cv-ffi
+        cv-math::cv-math
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets

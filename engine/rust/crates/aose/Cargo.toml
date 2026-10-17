@@ -1,6 +1,12 @@
 [package]
 name = "aose"
-version = "0.1.0"
-edition = "2024"
+description = "Placeholder for Auto converting from OOP System for ECS(AOSE)"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
+
+[lints]
+workspace = true

@@ -25,6 +25,7 @@ inline constexpr int kTimedOut = 2;
 inline constexpr int kNoSwapchainRebuild = 3;
 inline constexpr int kValidationErrors = 4;
 inline constexpr int kValidationMissing = 5;
+inline constexpr int kNoDeviceRecovery = 6;
 } // namespace smoke_exit
 
 /// Coreverse Editor's main window.
@@ -67,6 +68,12 @@ public:
     /// `editor`), not just the renderer library.
     void enableSmokeTest(quint64 frames);
 
+    /// Only together with enableSmokeTest() (`editor --smoke-frames N --simulate-device-loss`): a
+    /// quarter of the way through, the renderer's device is made to report DeviceLost, as after a
+    /// driver reset. The test passes only if the renderer then rebuilt itself exactly once and
+    /// kept rendering.md until the end (exit code kNoDeviceRecovery otherwise).
+    void enableDeviceLossTest();
+
 protected:
     void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
@@ -74,7 +81,7 @@ protected:
 
 private:
     /// Creates the device/surface/swapchain/frame sync for the viewport and
-    /// starts rendering. A failure is reported in the status bar and the
+    /// starts rendering.md. A failure is reported in the status bar and the
     /// log, never fatal (except in smoke-test mode, where it fails the test).
     void initializeRenderer();
 
@@ -101,6 +108,8 @@ private:
     bool m_smokeResized = false;
     bool m_smokeDone = false;
     unsigned m_smokeRebuilds = 0;
+    bool m_lossTest = false;      ///< enableDeviceLossTest() was called.
+    bool m_lossTriggered = false; ///< The loss has been simulated.
 };
 
 } // namespace editor

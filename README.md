@@ -77,11 +77,12 @@ An honest snapshot of what exists today (details and the prioritized to-do list 
 | Area | State |
 | :--- | :---- |
 | **Rust core** (`ccore`, `fs`, `vfs`, `log-core`, `log-sinks`) | 🟢 Implemented and tested |
-| **Math** (`math`: vectors, matrices, quaternions, geometry, curves, noise, ... ; `std` and `no_std`/`libm` backends, optional `serde`) | 🟢 Implemented and tested; not wired into the engine or C++ yet |
+| **Math** (`math`: vectors, matrices, quaternions, geometry, curves, noise, ... ; `std` and `no_std`/`libm` backends, optional `serde`) | 🟢 Implemented, tested and benchmarked (criterion); the C++ mirror `cv-math` (Vec/Quat/Mat4) is verified against it by a shared golden file |
 | **FFI** (`ffi` crate + C++ RAII wrappers `cv-ffi`: logger, diagnostics, VFS, build info) | 🟢 Implemented and tested |
-| **Renderer** (Vulkan backend: device, buffers, surface, swapchain, frame sync, validation as a test signal) | 🟡 Clears the viewport; no pipeline/draw calls yet |
-| **Editor** (Qt 6 window with a native Vulkan viewport and render loop) | 🟡 Early; no project/scene/asset workflows yet |
-| **Other Rust crates** (`ecs`, `asset`, `audio`, `physics`, `runtime`, `scripting`, ...) | 🔵 Placeholders (crate skeletons only) |
+| **Renderer** (Vulkan backend: device, buffers, surface, swapchain + depth buffer, frame sync, graphics pipelines, push constants, validation as a test signal) | 🟢 First graphics pass (Vulkan 1.3 dynamic rendering), device-loss recovery; no descriptor sets/textures/shader loading from the VFS yet |
+| **Editor** (Qt 6 window with a native Vulkan viewport and render loop) | 🟡 Early: the viewport draws a spinning cube; no project/scene/asset workflows yet |
+| **Other Rust crates** (`ecs`, `asset`, `audio`, `physics`, `runtime`, `scripting`, ...) | 🔵 Placeholders (documented skeletons that inherit the workspace settings and lints) |
+| **Documentation** (mdBook, `docs/` + `book.toml`) | 🟢 Book builds; published by `deploy-docs.yml` |
 | **CI** (Linux/Windows/macOS builds, Rust tests, Clippy, formatting, CodeQL) | 🟢 Green |
 
 ---
@@ -355,7 +356,7 @@ The pipeline in [`.github/workflows/`](.github/workflows/) (entry point `ci.yml`
 | `lint.yml` | Clippy with `-D warnings` and Rustdoc for `math` |
 | `formatting.yml` | `cargo fmt --check` and `clang-format` over C++ **and** Objective-C++ (`*.mm`) sources |
 | `codeql.yml`, `dependency-review.yml` | Security analysis and dependency review |
-| `nightly.yml`, `release.yml`, `deploy.yml`, `deploy-docs.yml`, `benchmarks.yml`, `stale.yml` | Scheduled/manual/release automation (documentation deploy is skipped until `book.toml` exists; benchmarks are a manual placeholder) |
+| `nightly.yml`, `release.yml`, `deploy.yml`, `deploy-docs.yml`, `benchmarks.yml`, `stale.yml` | Scheduled/manual/release automation (benchmarks: manual `cargo bench`; documentation: mdBook to GitHub Pages) |
 
 CI pipelines are used to verify:
 
@@ -532,10 +533,12 @@ The wrapper scripts `devkit/scripts/configure-linux.sh`, `configure-macos.sh` an
 ```bash
 cargo test --workspace --all-features                              # Rust
 cargo test -p math --no-default-features --features no_std         # math, libm backend
-ctest --preset linux-gcc-release-nogpu                             # C++ tests that need no GPU
+ctest --preset linux-gcc-release-nogpu                             # C++ tests that need no GPU (incl. cv-math vs. the Rust math crate)
 ```
 
-The GPU/editor tests (`ctest --preset linux-gcc-release`) need a Vulkan driver; CI runs them with software Vulkan under Xvfb.
+The GPU/editor tests (`ctest --preset linux-gcc-release`) need a Vulkan driver; CI runs them with software Vulkan under Xvfb. They include the graphics pass test and the editor smoke tests (one of them loses the device on purpose and requires recovery). Set `CV_REQUIRE_VALIDATION=1` to fail when the Vulkan validation layer is not running.
+
+Benchmarks: `cargo bench -p math`. Documentation: `mdbook build` (see [`docs/`](docs/)).
 
 ### Format
 
@@ -550,9 +553,9 @@ On Windows use `devkit/scripts/format.ps1` (`-Check`). The CMake targets `format
 
 ## 🟢 Documentation
 
-Technical documentation is maintained under [`docs/`](docs/). It currently only contains an index; the mdBook site (`book.toml`) and the pages below are still to be written (see [`PROGRESS.md`](PROGRESS.md)).
+Technical documentation is an mdBook (`book.toml`, pages in [`docs/src/`](docs/src/SUMMARY.md)): introduction, architecture, building and testing, FFI, rendering, math, editor and CI. Build it with `mdbook build`; `deploy-docs.yml` publishes it to GitHub Pages.
 
-Planned documentation areas include:
+Areas the book should grow into include:
 
 * **Engine Architecture**
 * **Rust/C++ FFI Architecture**

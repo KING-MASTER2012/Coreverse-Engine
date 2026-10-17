@@ -1,11 +1,9 @@
 name: Benchmarks
 
-# Manual only. There are no benchmark targets yet (the `benchmarks/` directory
-# is a placeholder and no crate depends on criterion), so `cargo bench` merely
-# rebuilds the workspace in the bench profile and runs nothing. The first real
-# suite is planned for the `math` crate (PROGRESS.md, "Next steps"); until then
-# this workflow is kept as the dispatch entry point so it does not have to be
-# re-created later.
+# Manual only: benchmark numbers from shared CI runners are too noisy to gate
+# anything on. Runs every criterion suite in the workspace - today that is
+# `math` (engine/rust/crates/math/benches). The `benchmarks/` directory at the
+# repository root is still a placeholder for future cross-crate suites.
 on:
     workflow_dispatch:
 

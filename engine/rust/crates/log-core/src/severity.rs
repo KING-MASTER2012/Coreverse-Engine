@@ -62,7 +62,7 @@ impl Severity {
         })
     }
 
-    /// ANSI foreground/background escape sequence used for console rendering.
+    /// ANSI foreground/background escape sequence used for console rendering.md.
     pub fn ansi_color(&self) -> &'static str {
         match self {
             Severity::Trace => "\x1b[90m",    // gray

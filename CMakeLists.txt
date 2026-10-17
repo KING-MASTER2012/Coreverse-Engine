@@ -113,6 +113,10 @@ option(BUILD_TESTS    "Build C++ tests"               OFF)
 
 enable_testing()
 
+# cv-math (header-only C++ mirror of the Rust `math` crate) has no dependencies,
+# so it is always available to the renderer, the editor and the tests.
+add_subdirectory(engine/cpp/math)
+
 if(BUILD_RENDERER)
     add_subdirectory(engine/cpp/renderer)
 endif()

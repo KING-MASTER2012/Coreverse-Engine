@@ -1,6 +1,12 @@
 [package]
 name = "utilities"
-version = "0.1.0"
-edition = "2024"
+description = "Placeholder for the engine's shared helper types and functions; not yet implemented"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
+
+[lints]
+workspace = true

@@ -10,7 +10,9 @@
 
 #include <QTimer>
 
+#include "renderer/Buffer.hpp"
 #include "renderer/FrameSync.hpp"
+#include "renderer/GraphicsPipeline.hpp"
 #include "renderer/RenderDevice.hpp"
 #include "renderer/Surface.hpp"
 #include "renderer/Swapchain.hpp"
@@ -129,6 +131,23 @@ public:
     /// timer; public so callers (and tests) can force it.
     [[nodiscard]] std::expected<bool, QString> rebuildSwapchain(bool force = false);
 
+    /// True when the viewport draws its scene with the graphics pass; false when the device cannot
+    /// (no Vulkan 1.3 dynamic rendering.md) and it falls back to the animated clear color.
+    [[nodiscard]] bool graphicsPassActive() const noexcept
+    {
+        return m_pipeline.IsValid();
+    }
+
+    /// How many times the renderer survived a lost device (see recoverFromDeviceLoss()).
+    [[nodiscard]] unsigned deviceRecoveries() const noexcept
+    {
+        return m_deviceRecoveries;
+    }
+
+    /// For tests (`editor --simulate-device-loss`): makes the next frame fail with DeviceLost, as a
+    /// driver reset would, so the recovery path runs for real. No-op before initialize().
+    void simulateDeviceLoss() noexcept;
+
 public slots:
     /// Coalesces a burst of resizes (a window drag sends dozens) into a
     /// single rebuild on the next event-loop turn.
@@ -150,7 +169,7 @@ signals:
     /// One frame was rendered and presented; carries the running total.
     void frameRendered(quint64 totalFrames);
 
-    /// Roughly once a second while rendering: frames per second over the
+    /// Roughly once a second while rendering.md: frames per second over the
     /// last interval and the running total.
     void frameStatsUpdated(double framesPerSecond, quint64 totalFrames);
 
@@ -159,6 +178,10 @@ signals:
     /// the whole renderer — is not implemented yet; the editor keeps
     /// running without a viewport image.
     void renderingFailed(const QString& reason);
+
+    /// The device was lost (driver reset, GPU hang, unplugged GPU) and the renderer rebuilt
+    /// everything on a new device; rendering.md continues. Swapchain, buffers and pipeline are new.
+    void deviceRecovered();
 
 private slots:
     void renderFrame();
@@ -174,8 +197,21 @@ private:
     /// the loop to rest until one succeeds.
     void rebuildAndUpdate(bool force);
 
-    /// Stops rendering for good and tells the world why.
+    /// Stops rendering.md for good and tells the world why.
     void failRendering(const QString& reason);
+
+    /// Builds the vertex/index buffers and the pipeline of the scene. A device without dynamic
+    /// rendering.md is not an error: the viewport then just animates the clear color.
+    [[nodiscard]] std::expected<void, QString> createSceneResources();
+
+    /// Records the frame's commands: the spinning cube through the graphics pass, or the
+    /// animated clear color when there is no pipeline.
+    [[nodiscard]] std::expected<void, QString> recordFrame(renderer::Frame& frame);
+
+    /// Handles RenderErrorCode::DeviceLost: destroys everything (including the NativeWindowBridge
+    /// and the device), creates it all again and carries on. Gives up (failRendering) after a few
+    /// consecutive attempts without a single frame in between.
+    void recoverFromDeviceLoss(const QString& reason);
 
     ViewportWidget& m_viewport;
     cv_ffi::Logger* m_logger = nullptr; // not owned; see the constructor's doc comment
@@ -191,6 +227,9 @@ private:
     bool m_windowMinimized = false;
     bool m_awaitingRebuild = false; ///< The swapchain cannot present until a rebuild succeeds.
     bool m_renderingFailed = false;
+    bool m_recovering = false;       ///< initialize() is being called by recoverFromDeviceLoss().
+    unsigned m_deviceRecoveries = 0; ///< Successful recoveries so far.
+    unsigned m_recoveryAttempts = 0; ///< Consecutive attempts; reset by every frame that renders.
 
     // Declaration order is teardown order in reverse: the frame sync goes
     // first, then the swapchain, the surface, the device, and the bridge —
@@ -200,6 +239,9 @@ private:
     renderer::Surface m_surface;
     renderer::Swapchain m_swapchain;
     renderer::FrameSync m_frameSync;
+    renderer::Buffer m_vertexBuffer;
+    renderer::Buffer m_indexBuffer;
+    renderer::GraphicsPipeline m_pipeline;
 };
 
 } // namespace editor

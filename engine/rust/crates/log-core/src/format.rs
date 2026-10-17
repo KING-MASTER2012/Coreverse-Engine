@@ -1,6 +1,6 @@
 use crate::diagnostic::Diagnostic;
 
-/// Plain-text rendering, e.g.:
+/// Plain-text rendering.md, e.g.:
 ///
 /// ```text
 /// [Coreverse Engine] [Warning] [CV-ASSET-0001]
@@ -46,7 +46,7 @@ pub fn format_colored(diag: &Diagnostic) -> String {
     out
 }
 
-/// Compact single-line rendering, useful for log files that get grepped.
+/// Compact single-line rendering.md, useful for log files that get grepped.
 pub fn format_line(diag: &Diagnostic) -> String {
     format!(
         "[{}] [{}] [{}] [{}] {}",

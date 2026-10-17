@@ -35,6 +35,14 @@ int main(int argc, char** argv)
         QStringLiteral("count")
     );
     parser.addOption(smokeOption);
+    const QCommandLineOption lossOption(
+        QStringLiteral("simulate-device-loss"),
+        QStringLiteral(
+            "With --smoke-frames: make the Vulkan device report DeviceLost a quarter of the way through and "
+            "require the renderer to recover and keep rendering.md."
+        )
+    );
+    parser.addOption(lossOption);
     parser.process(app);
 
     quint64 smokeFrames = 0;
@@ -47,11 +55,19 @@ int main(int argc, char** argv)
         }
     }
 
+    if (parser.isSet(lossOption) && smokeFrames == 0) {
+        qCritical() << "--simulate-device-loss only works together with --smoke-frames";
+        return 64; // EX_USAGE
+    }
+
     int exitCode = 0;
     {
         editor::EditorWindow window;
         if (smokeFrames != 0) {
             window.enableSmokeTest(smokeFrames);
+            if (parser.isSet(lossOption)) {
+                window.enableDeviceLossTest();
+            }
         }
         window.show();
         exitCode = QApplication::exec();

@@ -2,6 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
+
+#include "renderer/RenderError.hpp"
 
 namespace renderer {
 
@@ -76,6 +79,14 @@ public:
     {
         return m_nativeHandle != nullptr;
     }
+
+    /// Copies `size` bytes from `data` into the buffer at byte `offset`. Only valid for
+    /// host-visible buffers (BufferMemoryUsage::CpuToGpu / GpuToCpu); a GpuOnly buffer
+    /// returns RenderErrorCode::Unsupported. The range must lie inside the buffer. The caller
+    /// must make sure the GPU is not still reading the range (write before the frame that
+    /// uses it, or double-buffer) - there is no staging or synchronization here.
+    [[nodiscard]] std::expected<void, RenderError>
+    Write(const void* data, std::size_t size, std::size_t offset = 0) noexcept;
 
     /// Backend-owned opaque resource pointer. Not for general use — it
     /// exists so a concrete backend's own APIs (e.g. a Vulkan command

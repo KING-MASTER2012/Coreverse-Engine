@@ -26,8 +26,21 @@
 # The timeout keeps a wedged driver or a missing display from hanging
 # a whole CI run: Acquire/Present can block indefinitely otherwise.
 # ------------------------------------------------------------------
+#   unit Pure C++ tests that need nothing at all (no Rust library, no GPU,
+#        no display), e.g. the header-only cv-math library.
 set(CV_FFI_TEST_PROPERTIES LABELS "ffi")
+set(CV_UNIT_TEST_PROPERTIES LABELS "unit")
 set(CV_GPU_TEST_PROPERTIES LABELS "gpu" TIMEOUT 120)
+
+# cv-math vs. the Rust `math` crate: same layout and same results as
+# tests/math_golden/golden.txt (written by the Rust test cpp_golden).
+add_executable(math_layout_test math_layout_test.cpp)
+target_link_libraries(math_layout_test PRIVATE cv-math::cv-math compiler_warnings)
+target_compile_definitions(math_layout_test PRIVATE
+        CV_MATH_GOLDEN_FILE="${CMAKE_SOURCE_DIR}/tests/math_golden/golden.txt")
+
+add_test(NAME math_layout_test COMMAND math_layout_test)
+set_tests_properties(math_layout_test PROPERTIES ${CV_UNIT_TEST_PROPERTIES})
 
 # Proves the full pipeline end to end: ffi (Rust) -> Corrosion ->
 # cbindgen-generated header -> a linked, running C++ executable.
@@ -129,6 +142,21 @@ endif()
 add_test(NAME frame_sync_test COMMAND frame_sync_test)
 set_tests_properties(frame_sync_test PROPERTIES ${CV_GPU_TEST_PROPERTIES})
 
+# Graphics pass proof (Phase 10): depth-buffered swapchain, graphics pipeline from the built-in
+# colored-mesh shaders, vertex/index buffers, cv-math MVP via push constants, resize and
+# device-loss recovery; the validation layer must stay silent. Skips itself (exit 0) on a
+# device without Vulkan 1.3 dynamic rendering.
+add_executable(graphics_pass_test graphics_pass_test.cpp)
+target_link_libraries(graphics_pass_test PRIVATE compiler_warnings renderer::renderer cv-math::cv-math)
+if(WIN32)
+    target_link_libraries(graphics_pass_test PRIVATE user32)
+elseif(UNIX AND NOT APPLE)
+    find_package(X11 REQUIRED)
+    target_link_libraries(graphics_pass_test PRIVATE X11::X11)
+endif()
+add_test(NAME graphics_pass_test COMMAND graphics_pass_test)
+set_tests_properties(graphics_pass_test PROPERTIES ${CV_GPU_TEST_PROPERTIES})
+
 # Phase 5 (Wayland milestone) proof: the same single-shot render loop as
 # render_loop_test.cpp above, but through a real wl_surface instead of
 # Xlib. Only built when Wayland is actually compiled into `renderer`
@@ -178,5 +206,14 @@ if(TARGET editor)
     set_tests_properties(editor_render_smoke PROPERTIES LABELS "gpu;editor" TIMEOUT 120)
     if(UNIX AND NOT APPLE)
         set_property(TEST editor_render_smoke APPEND PROPERTY ENVIRONMENT "QT_QPA_PLATFORM=xcb")
+    endif()
+
+    # Same, but a quarter of the way through the device is made to report DeviceLost (as after
+    # a driver reset): the renderer must rebuild everything on a new device exactly once and
+    # keep rendering to the end.
+    add_test(NAME editor_device_loss_smoke COMMAND editor --smoke-frames 120 --simulate-device-loss)
+    set_tests_properties(editor_device_loss_smoke PROPERTIES LABELS "gpu;editor" TIMEOUT 120)
+    if(UNIX AND NOT APPLE)
+        set_property(TEST editor_device_loss_smoke APPEND PROPERTY ENVIRONMENT "QT_QPA_PLATFORM=xcb")
     endif()
 endif()

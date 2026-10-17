@@ -1,25 +1,21 @@
 # Coreverse Engine Documentation
 
-This directory is the home of the technical documentation. It is intentionally
-minimal today: the mdBook site (`book.toml` at the repository root) has not been
-set up yet, and the `Deploy Documentation` workflow skips itself until it exists.
+This directory holds the sources of the documentation book (mdBook): the pages
+are in [`src/`](src/SUMMARY.md) and the configuration is `book.toml` at the
+repository root. Build it locally with `mdbook build` (output: `./book`, git-ignored)
+or `mdbook serve`; the `Deploy Documentation` workflow publishes it to GitHub Pages.
 
-Until then, the up-to-date sources of truth are:
+Besides the book, these are the up-to-date sources of truth:
 
-| Document | Contents |
-| :------- | :------- |
-| [`README.md`](../README.md) | Overview, architecture, current status, build/test/format instructions, CI |
-| [`PROGRESS.md`](../PROGRESS.md) | What changed in each step and the prioritized to-do list |
-| [`devkit/scripts/setup/config/README.md`](../devkit/scripts/setup/config/README.md) | Toolchain versions (`tool-versions.json`) and project paths used by bootstrap |
+| Document                                                                            | Contents                                                                       |
+|:------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------|
+| [`README.md`](../README.md)                                                         | Overview, architecture, current status, build/test/format instructions, CI     |
+| [`PROGRESS.md`](../PROGRESS.md)                                                     | What changed in each step and the prioritized to-do list                       |
+| [`devkit/scripts/setup/config/README.md`](../devkit/scripts/setup/config/README.md) | Toolchain versions (`tool-versions.json`) and project paths used by bootstrap  |
 
-## Planned pages
+## Pages
 
-* Engine architecture
-* Rust/C++ FFI architecture (`ffi` crate, `cv-ffi` wrappers)
-* Rendering architecture (`RenderDevice`, frame sync, validation)
-* Math crate guide (backends, features, conventions)
-* Build system and platform support
-* Editor architecture
-* Contribution guidelines (see also [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md))
+Introduction, architecture, building and testing, FFI, rendering, math, editor and CI.
+For contribution guidelines see [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md).
 
 Documentation should describe what is implemented, not what is planned.

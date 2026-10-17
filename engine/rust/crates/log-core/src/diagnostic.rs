@@ -38,7 +38,7 @@ impl std::fmt::Display for DiagnosticCode {
 }
 
 /// A diagnostic is a first-class object, not a line of text. Console/file
-/// text is just one possible rendering of it (see `crate::format`).
+/// text is just one possible rendering.md of it (see `crate::format`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Diagnostic {
     /// The Diagnostic Code

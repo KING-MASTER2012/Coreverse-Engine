@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QDebug>
 #include <cmath>
+#include <iterator>
 #include <string_view>
 #include <utility>
 
@@ -10,6 +11,9 @@
 #include "ViewportWidget.hpp"
 #include "cv-ffi/Diagnostic.hpp"
 #include "cv-ffi/Logger.hpp"
+#include "cv-math/Math.hpp"
+#include "renderer/BuiltinMeshes.hpp"
+#include "renderer/BuiltinShaders.hpp"
 #include "renderer/GraphicsAPI.hpp"
 #include "renderer/RenderDeviceFactory.hpp"
 #include "renderer/RenderError.hpp"
@@ -34,6 +38,13 @@ constexpr float kColorCycleSeconds = 12.0F;
 /// Frames in flight: the CPU may record one frame while the GPU renders the
 /// previous one.
 constexpr std::uint32_t kFramesInFlight = 2;
+
+/// Consecutive device-loss recoveries (without a rendered frame in between) before giving up.
+constexpr unsigned kMaxRecoveryAttempts = 3;
+
+/// The cube's rotation speed, radians per second around Y (X turns at two thirds of it).
+constexpr float kCubeSpinRadiansPerSecond = 0.9F;
+constexpr float kFovYRadians = 1.0471976F; // 60 degrees
 
 QString ToQString(const renderer::RenderError& error)
 {
@@ -124,6 +135,7 @@ renderer::SwapchainDesc ViewportRenderer::makeSwapchainDesc() const
     desc.preferredImageCount = 2;
     desc.width = static_cast<std::uint32_t>(size.width());
     desc.height = static_cast<std::uint32_t>(size.height());
+    desc.depthBuffer = true; // for the graphics pass (BeginRendering() attaches it)
     return desc;
 }
 
@@ -167,6 +179,11 @@ std::expected<void, QString> ViewportRenderer::initialize()
     }
     m_frameSync = std::move(*frameSync);
 
+    if (auto resources = createSceneResources(); !resources) {
+        shutdown();
+        return std::unexpected(resources.error());
+    }
+
     if (m_logger != nullptr) {
         // Captures `this` and the (not-owned) `m_logger` pointer, not a
         // Logger by value: this lambda's lifetime is exactly this device's
@@ -188,8 +205,10 @@ std::expected<void, QString> ViewportRenderer::initialize()
         });
     }
 
-    m_framesRendered = 0;
-    m_framesAtLastStats = 0;
+    if (!m_recovering) {
+        m_framesRendered = 0; // a recovery keeps counting: the frame count is the viewport's, not the device's
+    }
+    m_framesAtLastStats = m_framesRendered;
     m_awaitingRebuild = false;
     m_renderingFailed = false;
     m_viewportVisible = m_viewport.isVisible();
@@ -218,6 +237,11 @@ void ViewportRenderer::shutdown() noexcept
     }
 
     // Reverse creation order — see the member comment in the header.
+    // Everything that references the device goes first, in dependency order. WaitIdle() above
+    // makes sure the GPU is done with the pipeline and buffers.
+    m_pipeline = renderer::GraphicsPipeline{};
+    m_indexBuffer = renderer::Buffer{};
+    m_vertexBuffer = renderer::Buffer{};
     m_frameSync = renderer::FrameSync{};
     m_swapchain = renderer::Swapchain{};
     m_surface = renderer::Surface{};
@@ -330,8 +354,157 @@ void ViewportRenderer::failRendering(const QString& reason)
 {
     m_renderingFailed = true;
     m_frameTimer.stop();
-    qWarning().noquote() << "editor: rendering stopped:" << reason;
+    qWarning().noquote() << "editor: rendering.md stopped:" << reason;
     emit renderingFailed(reason);
+}
+
+void ViewportRenderer::simulateDeviceLoss() noexcept
+{
+    if (m_device != nullptr) {
+        m_device->SimulateDeviceLossForTesting();
+    }
+}
+
+std::expected<void, QString> ViewportRenderer::createSceneResources()
+{
+    renderer::BufferDesc vertexDesc{};
+    vertexDesc.size = sizeof(renderer::kCubeVertices);
+    vertexDesc.usage = renderer::BufferUsage::VertexBuffer;
+    vertexDesc.memoryUsage = renderer::BufferMemoryUsage::CpuToGpu;
+    auto vertexBuffer = m_device->CreateBuffer(vertexDesc);
+    if (!vertexBuffer) {
+        return std::unexpected(QStringLiteral("vertex buffer: %1").arg(ToQString(vertexBuffer.error())));
+    }
+    m_vertexBuffer = std::move(*vertexBuffer);
+    if (auto written = m_vertexBuffer.Write(renderer::kCubeVertices, sizeof(renderer::kCubeVertices)); !written) {
+        return std::unexpected(QStringLiteral("vertex buffer upload: %1").arg(ToQString(written.error())));
+    }
+
+    renderer::BufferDesc indexDesc{};
+    indexDesc.size = sizeof(renderer::kCubeIndices);
+    indexDesc.usage = renderer::BufferUsage::IndexBuffer;
+    indexDesc.memoryUsage = renderer::BufferMemoryUsage::CpuToGpu;
+    auto indexBuffer = m_device->CreateBuffer(indexDesc);
+    if (!indexBuffer) {
+        return std::unexpected(QStringLiteral("index buffer: %1").arg(ToQString(indexBuffer.error())));
+    }
+    m_indexBuffer = std::move(*indexBuffer);
+    if (auto written = m_indexBuffer.Write(renderer::kCubeIndices, sizeof(renderer::kCubeIndices)); !written) {
+        return std::unexpected(QStringLiteral("index buffer upload: %1").arg(ToQString(written.error())));
+    }
+
+    renderer::GraphicsPipelineDesc pipelineDesc{};
+    pipelineDesc.vertexShader = renderer::ColoredMeshVertexShader();
+    pipelineDesc.fragmentShader = renderer::ColoredMeshFragmentShader();
+    pipelineDesc.vertexStride = sizeof(renderer::ColoredVertex);
+    pipelineDesc.vertexAttributes = renderer::kColoredVertexAttributes;
+    pipelineDesc.pushConstantSize = renderer::kColoredMeshPushConstantSize;
+    pipelineDesc.cullMode = renderer::CullMode::Back;
+    pipelineDesc.depthTest = true;
+    pipelineDesc.depthWrite = true;
+    auto pipeline = m_device->CreateGraphicsPipeline(m_swapchain, pipelineDesc);
+    if (!pipeline) {
+        if (pipeline.error().code == renderer::RenderErrorCode::Unsupported) {
+            qWarning().noquote() << "editor: graphics pass unavailable, drawing the clear color only:"
+                                 << ToQString(pipeline.error());
+            return {};
+        }
+        return std::unexpected(QStringLiteral("graphics pipeline: %1").arg(ToQString(pipeline.error())));
+    }
+    m_pipeline = std::move(*pipeline);
+    return {};
+}
+
+std::expected<void, QString> ViewportRenderer::recordFrame(renderer::Frame& frame)
+{
+    renderer::CommandBuffer& cb = frame.commandBuffer;
+    const auto fail = [](const char* what, const renderer::RenderError& error) {
+        return std::unexpected(QStringLiteral("record %1: %2").arg(QString::fromUtf8(what), ToQString(error)));
+    };
+
+    if (auto r = cb.Begin(); !r) {
+        return fail("begin", r.error());
+    }
+
+    if (!m_pipeline.IsValid()) {
+        if (auto r = cb.ClearColor(frame.imageHandle, ClearColorAt(m_clock.elapsed())); !r) {
+            return fail("clear", r.error());
+        }
+        if (auto r = cb.End(); !r) {
+            return fail("end", r.error());
+        }
+        return {};
+    }
+
+    namespace m = cv_math;
+    const float seconds = static_cast<float>(m_clock.elapsed()) / 1000.0F;
+    const renderer::Extent2D extent = m_swapchain.GetExtent();
+    const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+    const m::Mat4 model = m::Mat4::fromRotationY(seconds * kCubeSpinRadiansPerSecond) *
+                          m::Mat4::fromRotationX(seconds * kCubeSpinRadiansPerSecond * 0.66F);
+    const m::Mat4 view = m::Mat4::lookAtRh({0.0F, 0.0F, 5.0F}, {0.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F});
+    const m::Mat4 proj = m::Mat4::perspectiveRh(kFovYRadians, aspect, 0.1F, 100.0F);
+    const m::Mat4 mvp = proj * view * model;
+
+    // Keep the animated background, darker than before so the cube stands out.
+    renderer::RenderingDesc rendering{};
+    rendering.color = ClearColorAt(m_clock.elapsed());
+    rendering.color.r *= 0.5F;
+    rendering.color.g *= 0.5F;
+    rendering.color.b *= 0.5F;
+    rendering.clearDepth = 1.0F;
+
+    if (auto r = cb.BeginRendering(m_swapchain, frame.imageIndex, rendering); !r) {
+        return fail("begin rendering.md", r.error());
+    }
+    if (auto r = cb.BindPipeline(m_pipeline); !r) {
+        return fail("bind pipeline", r.error());
+    }
+    if (auto r = cb.BindVertexBuffer(m_vertexBuffer); !r) {
+        return fail("bind vertex buffer", r.error());
+    }
+    if (auto r = cb.BindIndexBuffer(m_indexBuffer, renderer::IndexType::U16); !r) {
+        return fail("bind index buffer", r.error());
+    }
+    if (auto r = cb.PushConstants(m_pipeline, mvp.data(), renderer::kColoredMeshPushConstantSize); !r) {
+        return fail("push constants", r.error());
+    }
+    if (auto r = cb.DrawIndexed(static_cast<std::uint32_t>(std::size(renderer::kCubeIndices))); !r) {
+        return fail("draw", r.error());
+    }
+    if (auto r = cb.EndRendering(m_swapchain, frame.imageIndex); !r) {
+        return fail("end rendering.md", r.error());
+    }
+    if (auto r = cb.End(); !r) {
+        return fail("end", r.error());
+    }
+    return {};
+}
+
+void ViewportRenderer::recoverFromDeviceLoss(const QString& reason)
+{
+    if (++m_recoveryAttempts > kMaxRecoveryAttempts) {
+        failRendering(QStringLiteral("device lost again right after recovering %1 times: %2")
+                          .arg(kMaxRecoveryAttempts)
+                          .arg(reason));
+        return;
+    }
+    qWarning().noquote() << "editor: device lost (" << reason << ") - rebuilding the renderer, attempt"
+                         << m_recoveryAttempts;
+
+    m_recovering = true;
+    shutdown(); // WaitIdle() on a lost device just fails; everything is destroyed regardless
+    const auto result = initialize();
+    m_recovering = false;
+
+    if (!result) {
+        failRendering(QStringLiteral("could not recover from device loss: %1").arg(result.error()));
+        return;
+    }
+    ++m_deviceRecoveries;
+    qInfo().noquote() << "editor: recovered from device loss on" << deviceName();
+    emit swapchainRebuilt(swapchainExtent(), m_swapchain.GetImageCount());
+    emit deviceRecovered();
 }
 
 void ViewportRenderer::renderFrame()
@@ -342,6 +515,10 @@ void ViewportRenderer::renderFrame()
 
     auto begin = m_frameSync.BeginFrame(m_swapchain);
     if (!begin) {
+        if (begin.error().code == renderer::RenderErrorCode::DeviceLost) {
+            recoverFromDeviceLoss(ToQString(begin.error()));
+            return;
+        }
         failRendering(QStringLiteral("begin frame: %1").arg(ToQString(begin.error())));
         return;
     }
@@ -357,28 +534,25 @@ void ViewportRenderer::renderFrame()
     }
 
     // From here the frame is committed: an acquired image cannot be handed
-    // back, so a recording failure ends rendering instead of skipping ahead.
+    // back, so a recording failure ends rendering.md instead of skipping ahead.
     renderer::Frame& frame = begin->frame;
 
-    if (auto result = frame.commandBuffer.Begin(); !result) {
-        failRendering(QStringLiteral("record: %1").arg(ToQString(result.error())));
-        return;
-    }
-    if (auto result = frame.commandBuffer.ClearColor(frame.imageHandle, ClearColorAt(m_clock.elapsed())); !result) {
-        failRendering(QStringLiteral("record: %1").arg(ToQString(result.error())));
-        return;
-    }
-    if (auto result = frame.commandBuffer.End(); !result) {
-        failRendering(QStringLiteral("record: %1").arg(ToQString(result.error())));
+    if (auto recorded = recordFrame(frame); !recorded) {
+        failRendering(recorded.error());
         return;
     }
 
     auto end = m_frameSync.EndFrame(m_swapchain, frame);
     if (!end) {
+        if (end.error().code == renderer::RenderErrorCode::DeviceLost) {
+            recoverFromDeviceLoss(ToQString(end.error()));
+            return;
+        }
         failRendering(QStringLiteral("end frame: %1").arg(ToQString(end.error())));
         return;
     }
 
+    m_recoveryAttempts = 0; // a frame made it all the way: the device is healthy again
     ++m_framesRendered;
     emit frameRendered(m_framesRendered);
 

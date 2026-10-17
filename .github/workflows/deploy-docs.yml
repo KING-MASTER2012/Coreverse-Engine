@@ -21,9 +21,8 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    # The mdBook site is not set up yet (no book.toml at the repository root;
-    # `docs/` only holds an index README). Until it exists this workflow skips
-    # build and deploy instead of failing on `mdbook build`.
+    # Safety net: without a book.toml at the repository root there is nothing to
+    # build, so skip build and deploy instead of failing on `mdbook build`.
     check:
         runs-on: ubuntu-latest
         outputs:
@@ -55,7 +54,7 @@ jobs:
             - name: Install mdBook
               uses: peaceiris/actions-mdbook@v2
               with:
-                  mdbook-version: latest
+                  mdbook-version: '0.4.52'
 
             - name: Build Documentation
               run: mdbook build

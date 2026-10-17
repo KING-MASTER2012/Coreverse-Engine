@@ -17,6 +17,8 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 add_library(renderer STATIC
         src/RenderDeviceFactory.cpp
         src/Buffer.cpp
+        src/GraphicsPipeline.cpp
+        src/BuiltinShaders.cpp
         src/Surface.cpp
         src/Swapchain.cpp
         src/CommandBuffer.cpp

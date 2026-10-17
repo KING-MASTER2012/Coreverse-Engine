@@ -1,6 +1,12 @@
 [package]
 name = "acse"
-version = "0.1.0"
-edition = "2024"
+description = "Placeholder for Advanced Connecting System for ECS(ACSE)"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
+
+[lints]
+workspace = true

@@ -1,14 +1,4 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+//! `threading` — placeholder crate, not yet implemented.
+//!
+//! Intended scope: job/task system and thread pools. The scope is derived from the crate name and will be
+//! refined when the system is designed; nothing here is stable API yet.

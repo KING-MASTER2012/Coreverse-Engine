@@ -1,7 +1,7 @@
 //! Diagnostic-first logging core for the Coreverse Engine.
 //!
 //! A [`Diagnostic`] is the first-class object; text (plain or colored) is
-//! just one rendering of it (see [`format`]). Every diagnostic carries a
+//! just one rendering.md of it (see [`format`]). Every diagnostic carries a
 //! structured [`DiagnosticCode`] of the shape `<Producer>-<Category>-<Number>`,
 //! where the producer is always the tool that generated the diagnostic
 //! (never a programming language - see [`producer`]).

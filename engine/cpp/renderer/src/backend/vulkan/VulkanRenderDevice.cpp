@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <new>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -52,6 +54,10 @@ RenderError MakeVkError(RenderErrorCode fallback, const char* call, VkResult res
 struct VulkanBufferHandle {
     VkBuffer buffer;
     VmaAllocation allocation;
+    /// Created with host access (CpuToGpu / GpuToCpu). A GpuOnly buffer may still be mappable on
+    /// an integrated GPU, so Buffer::Write() goes by what was asked for, not by what the driver
+    /// happened to hand out - the same code behaves the same on every device.
+    bool hostAccess;
 };
 
 /// Everything Phase 5.4's swapchain owns beyond the VkSwapchainKHR handle
@@ -68,7 +74,48 @@ struct VulkanSwapchainHandle {
     VkExtent2D extent{};
     std::vector<VkImage> images;
     std::vector<VkImageView> imageViews;
+
+    // Optional depth buffer (SwapchainDesc::depthBuffer), one image shared by all frames in
+    // flight: BeginRendering()'s barrier chains consecutive frames' depth use in queue order.
+    VkFormat depthFormat = VK_FORMAT_UNDEFINED; ///< VK_FORMAT_UNDEFINED = no depth buffer.
+    VkImage depthImage = VK_NULL_HANDLE;
+    VmaAllocation depthAllocation = VK_NULL_HANDLE;
+    VkImageView depthView = VK_NULL_HANDLE;
 };
+
+struct VulkanPipelineHandle {
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    uint32_t pushConstantSize = 0;
+};
+
+bool HasStencil(VkFormat format) noexcept
+{
+    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
+VkImageAspectFlags DepthAspectOf(VkFormat format) noexcept
+{
+    VkImageAspectFlags aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (HasStencil(format)) {
+        aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+    return aspect;
+}
+
+/// First depth format the device can use as an attachment (the spec guarantees one of the three).
+VkFormat ChooseDepthFormat(VkPhysicalDevice physicalDevice) noexcept
+{
+    constexpr VkFormat candidates[] = {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
+    for (const VkFormat format : candidates) {
+        VkFormatProperties props{};
+        vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
+        if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0) {
+            return format;
+        }
+    }
+    return VK_FORMAT_UNDEFINED;
+}
 
 /// Everything CreateSwapchain()/RebuildSwapchain() decide about a
 /// swapchain before a single Vulkan object is created. Kept separate from
@@ -82,6 +129,7 @@ struct SwapchainConfig {
     VkSurfaceTransformFlagBitsKHR preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     VkExtent2D extent{};
     uint32_t imageCount = 0;
+    VkFormat depthFormat = VK_FORMAT_UNDEFINED; ///< Chosen when SwapchainDesc::depthBuffer is set.
 };
 
 std::expected<SwapchainConfig, RenderError> QuerySwapchainConfig(
@@ -178,11 +226,89 @@ std::expected<SwapchainConfig, RenderError> QuerySwapchainConfig(
     config.preTransform = capabilities.currentTransform;
     config.extent = extent;
     config.imageCount = imageCount;
+    if (desc.depthBuffer) {
+        config.depthFormat = ChooseDepthFormat(physicalDevice);
+        if (config.depthFormat == VK_FORMAT_UNDEFINED) {
+            return std::unexpected(
+                RenderError{RenderErrorCode::NoSuitableDevice, "the device supports no depth attachment format"}
+            );
+        }
+    }
     return config;
 }
 
-void DestroySwapchainResources(VkDevice device, VulkanSwapchainHandle& handle) noexcept
+void DestroyDepthBuffer(VkDevice device, VmaAllocator allocator, VulkanSwapchainHandle& handle) noexcept
 {
+    if (handle.depthView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, handle.depthView, nullptr);
+    }
+    if (handle.depthImage != VK_NULL_HANDLE) {
+        vmaDestroyImage(allocator, handle.depthImage, handle.depthAllocation);
+    }
+    handle.depthView = VK_NULL_HANDLE;
+    handle.depthImage = VK_NULL_HANDLE;
+    handle.depthAllocation = VK_NULL_HANDLE;
+    handle.depthFormat = VK_FORMAT_UNDEFINED;
+}
+
+std::expected<void, RenderError> CreateDepthBuffer(
+    VkDevice device, VmaAllocator allocator, VkFormat format, VkExtent2D extent, VulkanSwapchainHandle& handle
+) noexcept
+{
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = format;
+    imageInfo.extent = {extent.width, extent.height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+
+    if (const VkResult result =
+            vmaCreateImage(allocator, &imageInfo, &allocInfo, &handle.depthImage, &handle.depthAllocation, nullptr);
+        result != VK_SUCCESS) {
+        handle.depthImage = VK_NULL_HANDLE;
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::InitializationFailed,
+                "vmaCreateImage failed for the depth buffer (VkResult=" + std::to_string(result) + ")"
+            }
+        );
+    }
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = handle.depthImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = format;
+    viewInfo.subresourceRange.aspectMask = DepthAspectOf(format);
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.layerCount = 1;
+    if (const VkResult result = vkCreateImageView(device, &viewInfo, nullptr, &handle.depthView);
+        result != VK_SUCCESS) {
+        vmaDestroyImage(allocator, handle.depthImage, handle.depthAllocation);
+        handle.depthImage = VK_NULL_HANDLE;
+        handle.depthAllocation = VK_NULL_HANDLE;
+        handle.depthView = VK_NULL_HANDLE;
+        return std::unexpected(
+            RenderError{RenderErrorCode::InitializationFailed, "vkCreateImageView failed for the depth buffer"}
+        );
+    }
+    handle.depthFormat = format;
+    return {};
+}
+
+void DestroySwapchainResources(VkDevice device, VmaAllocator allocator, VulkanSwapchainHandle& handle) noexcept
+{
+    DestroyDepthBuffer(device, allocator, handle);
     for (VkImageView view : handle.imageViews) {
         vkDestroyImageView(device, view, nullptr);
     }
@@ -201,8 +327,9 @@ void DestroySwapchainResources(VkDevice device, VulkanSwapchainHandle& handle) n
 /// handed to Vulkan as-is: if it is not VK_NULL_HANDLE it is RETIRED by
 /// this call — even when creation fails — so the caller must treat it as
 /// gone (destroy it) whether this succeeds or not.
-std::expected<VulkanSwapchainHandle, RenderError>
-CreateSwapchainResources(VkDevice device, const SwapchainConfig& config, VkSwapchainKHR oldSwapchain) noexcept
+std::expected<VulkanSwapchainHandle, RenderError> CreateSwapchainResources(
+    VkDevice device, VmaAllocator allocator, const SwapchainConfig& config, VkSwapchainKHR oldSwapchain
+) noexcept
 {
     VkSwapchainCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -279,6 +406,13 @@ CreateSwapchainResources(VkDevice device, const SwapchainConfig& config, VkSwapc
     handle.extent = config.extent;
     handle.images = std::move(images);
     handle.imageViews = std::move(imageViews);
+
+    if (config.depthFormat != VK_FORMAT_UNDEFINED) {
+        if (auto depth = CreateDepthBuffer(device, allocator, config.depthFormat, config.extent, handle); !depth) {
+            DestroySwapchainResources(device, allocator, handle); // also retires the swapchain just made
+            return std::unexpected(depth.error());
+        }
+    }
     return handle;
 }
 
@@ -682,6 +816,27 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateLogicalDeviceAndQueue
     deviceCreateInfo.enabledExtensionCount = 1;
     deviceCreateInfo.ppEnabledExtensionNames = kDeviceExtensions;
 
+    // Vulkan 1.3 dynamic rendering.md (vkCmdBeginRendering) backs the graphics pass. Enable it when
+    // the device offers it; without it the device still works for ClearColor() and the graphics
+    // pass calls report RenderErrorCode::Unsupported (e.g. older MoltenVK).
+    VkPhysicalDeviceProperties deviceProps{};
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProps);
+    VkPhysicalDeviceVulkan13Features supported13{};
+    supported13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    if (deviceProps.apiVersion >= VK_API_VERSION_1_3) {
+        VkPhysicalDeviceFeatures2 supported{};
+        supported.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        supported.pNext = &supported13;
+        vkGetPhysicalDeviceFeatures2(m_physicalDevice, &supported);
+    }
+    m_dynamicRendering = deviceProps.apiVersion >= VK_API_VERSION_1_3 && supported13.dynamicRendering == VK_TRUE;
+    VkPhysicalDeviceVulkan13Features enabled13{};
+    enabled13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    enabled13.dynamicRendering = VK_TRUE;
+    if (m_dynamicRendering) {
+        deviceCreateInfo.pNext = &enabled13;
+    }
+
     // Device-layer validation is deprecated (instance-layer validation
     // has covered everything since Vulkan 1.1) but harmless to set for
     // older loaders that might still be present — cheap to keep.
@@ -816,7 +971,7 @@ std::expected<Buffer, RenderError> VulkanRenderDevice::CreateBuffer(const Buffer
     // Buffer only stores a backend-agnostic void*; this heap-allocated
     // pair is what the Vulkan backend puts behind it so ReleaseBuffer()
     // can hand both handles back to VMA later.
-    auto* handle = new VulkanBufferHandle{buffer, allocation};
+    auto* handle = new VulkanBufferHandle{buffer, allocation, desc.memoryUsage != BufferMemoryUsage::GpuOnly};
     return RenderDevice::MakeBuffer(this, handle, desc.size);
 }
 
@@ -919,7 +1074,7 @@ VulkanRenderDevice::CreateSwapchain(const Surface& surface, const SwapchainDesc&
         return std::unexpected(std::move(config.error()));
     }
 
-    auto resources = CreateSwapchainResources(m_device, *config, VK_NULL_HANDLE);
+    auto resources = CreateSwapchainResources(m_device, m_allocator, *config, VK_NULL_HANDLE);
     if (!resources) {
         return std::unexpected(std::move(resources.error()));
     }
@@ -964,8 +1119,8 @@ std::expected<void, RenderError> VulkanRenderDevice::RebuildSwapchain(
 
     // Handing the old swapchain over lets the driver recycle its
     // resources for the new one. Either way it is retired by this call.
-    auto resources = CreateSwapchainResources(m_device, *config, handle->swapchain);
-    DestroySwapchainResources(m_device, *handle);
+    auto resources = CreateSwapchainResources(m_device, m_allocator, *config, handle->swapchain);
+    DestroySwapchainResources(m_device, m_allocator, *handle);
 
     if (!resources) {
         // The old swapchain is gone and there is no replacement: leave
@@ -987,13 +1142,16 @@ void VulkanRenderDevice::ReleaseSwapchain(void* nativeHandle) noexcept
         return;
     }
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
-    DestroySwapchainResources(m_device, *handle);
+    DestroySwapchainResources(m_device, m_allocator, *handle);
     delete handle;
 }
 
 std::expected<AcquireResult, RenderError>
 VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaphore, std::uint64_t timeoutNs) noexcept
 {
+    if (m_deviceLostSimulated.load(std::memory_order_relaxed)) {
+        return std::unexpected(RenderError{RenderErrorCode::DeviceLost, "simulated device loss (testing)"});
+    }
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
     const auto semaphore = static_cast<VkSemaphore>(signalSemaphore);
 
@@ -1046,6 +1204,9 @@ VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaph
 std::expected<SwapchainStatus, RenderError>
 VulkanRenderDevice::PresentSwapchainImage(void* nativeHandle, std::uint32_t imageIndex, void* waitSemaphore) noexcept
 {
+    if (m_deviceLostSimulated.load(std::memory_order_relaxed)) {
+        return std::unexpected(RenderError{RenderErrorCode::DeviceLost, "simulated device loss (testing)"});
+    }
     auto* handle = static_cast<VulkanSwapchainHandle*>(nativeHandle);
     const auto semaphore = static_cast<VkSemaphore>(waitSemaphore);
 
@@ -1219,6 +1380,9 @@ std::expected<void, RenderError> VulkanRenderDevice::Submit(
     const CommandBuffer& commandBuffer, void* waitSemaphore, void* signalSemaphore, void* fence
 ) noexcept
 {
+    if (m_deviceLostSimulated.load(std::memory_order_relaxed)) {
+        return std::unexpected(RenderError{RenderErrorCode::DeviceLost, "simulated device loss (testing)"});
+    }
     const auto vkCommandBuffer = static_cast<VkCommandBuffer>(commandBuffer.GetNativeHandle());
     const auto wait = static_cast<VkSemaphore>(waitSemaphore);
     const auto signal = static_cast<VkSemaphore>(signalSemaphore);
@@ -1230,7 +1394,10 @@ std::expected<void, RenderError> VulkanRenderDevice::Submit(
     // real graphics pass must change this to
     // VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT (the stage where the
     // swapchain image is first written).
-    constexpr VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    // The image is first touched at the transfer stage by ClearColor() and at the color
+    // attachment output stage by the graphics pass (BeginRendering()); wait for both.
+    constexpr VkPipelineStageFlags waitStage =
+        VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1328,6 +1495,9 @@ void VulkanRenderDevice::ReleaseFrameSync(void* nativeHandle) noexcept
 std::expected<BeginFrameResult, RenderError>
 VulkanRenderDevice::BeginFrameSync(void* frameSyncHandle, Swapchain& swapchain) noexcept
 {
+    if (m_deviceLostSimulated.load(std::memory_order_relaxed)) {
+        return std::unexpected(RenderError{RenderErrorCode::DeviceLost, "simulated device loss (testing)"});
+    }
     auto* fs = static_cast<VulkanFrameSyncHandle*>(frameSyncHandle);
     auto* sc = static_cast<VulkanSwapchainHandle*>(swapchain.GetNativeHandle());
 
@@ -1435,6 +1605,9 @@ VulkanRenderDevice::BeginFrameSync(void* frameSyncHandle, Swapchain& swapchain) 
 std::expected<SwapchainStatus, RenderError>
 VulkanRenderDevice::EndFrameSync(void* frameSyncHandle, Swapchain& swapchain, const Frame& frame) noexcept
 {
+    if (m_deviceLostSimulated.load(std::memory_order_relaxed)) {
+        return std::unexpected(RenderError{RenderErrorCode::DeviceLost, "simulated device loss (testing)"});
+    }
     auto* fs = static_cast<VulkanFrameSyncHandle*>(frameSyncHandle);
 
     if (fs->failed) {
@@ -1545,6 +1718,494 @@ void VulkanRenderDevice::Shutdown() noexcept
         vkDestroyInstance(m_instance, nullptr);
         m_instance = VK_NULL_HANDLE;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Graphics pass: buffers writes, pipelines and rendering.md commands (Phase 10)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+RenderError UnsupportedDynamicRendering()
+{
+    return RenderError{
+        RenderErrorCode::Unsupported, "the device lacks Vulkan 1.3 dynamic rendering.md, which the graphics pass needs"
+    };
+}
+
+VkFormat ToVkFormat(VertexFormat format) noexcept
+{
+    switch (format) {
+        case VertexFormat::Float2:
+            return VK_FORMAT_R32G32_SFLOAT;
+        case VertexFormat::Float3:
+            return VK_FORMAT_R32G32B32_SFLOAT;
+        case VertexFormat::Float4:
+            return VK_FORMAT_R32G32B32A32_SFLOAT;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+
+VkCullModeFlags ToVkCullMode(CullMode mode) noexcept
+{
+    switch (mode) {
+        case CullMode::Off:
+            return VK_CULL_MODE_NONE;
+        case CullMode::Back:
+            return VK_CULL_MODE_BACK_BIT;
+        case CullMode::Front:
+            return VK_CULL_MODE_FRONT_BIT;
+    }
+    return VK_CULL_MODE_NONE;
+}
+
+constexpr uint32_t kMaxPushConstantSize = 128; // the minimum maxPushConstantsSize every device must support
+constexpr VkShaderStageFlags kPushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+VkShaderModule CreateShaderModule(VkDevice device, std::span<const std::uint32_t> words) noexcept
+{
+    VkShaderModuleCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    info.codeSize = words.size_bytes();
+    info.pCode = words.data();
+    VkShaderModule module = VK_NULL_HANDLE;
+    if (vkCreateShaderModule(device, &info, nullptr, &module) != VK_SUCCESS) {
+        return VK_NULL_HANDLE;
+    }
+    return module;
+}
+
+} // namespace
+
+void VulkanRenderDevice::SimulateDeviceLossForTesting() noexcept
+{
+    m_deviceLostSimulated.store(true, std::memory_order_relaxed);
+}
+
+std::expected<void, RenderError>
+VulkanRenderDevice::WriteBufferData(void* bufferHandle, const void* data, std::size_t size, std::size_t offset) noexcept
+{
+    const auto* handle = static_cast<const VulkanBufferHandle*>(bufferHandle);
+    if (!handle->hostAccess) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::Unsupported, "Buffer::Write needs a host-visible buffer (not GpuOnly)"}
+        );
+    }
+    void* mapped = nullptr;
+    if (const VkResult result = vmaMapMemory(m_allocator, handle->allocation, &mapped); result != VK_SUCCESS) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::Unsupported, "Buffer::Write needs a host-visible buffer (not GpuOnly)"}
+        );
+    }
+    std::memcpy(static_cast<char*>(mapped) + offset, data, size);
+    vmaFlushAllocation(m_allocator, handle->allocation, offset, size); // no-op on coherent memory
+    vmaUnmapMemory(m_allocator, handle->allocation);
+    return {};
+}
+
+std::expected<GraphicsPipeline, RenderError>
+VulkanRenderDevice::CreateGraphicsPipeline(const Swapchain& swapchain, const GraphicsPipelineDesc& desc) noexcept
+{
+    if (!m_dynamicRendering) {
+        return std::unexpected(UnsupportedDynamicRendering());
+    }
+    const auto invalid = [](const char* message) {
+        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed, message});
+    };
+    if (desc.vertexShader.empty() || desc.fragmentShader.empty()) {
+        return invalid("GraphicsPipelineDesc needs both a vertex and a fragment shader");
+    }
+    if (desc.pushConstantSize > kMaxPushConstantSize || desc.pushConstantSize % 4 != 0) {
+        return invalid("GraphicsPipelineDesc::pushConstantSize must be a multiple of 4 and at most 128");
+    }
+    if (!desc.vertexAttributes.empty() && desc.vertexStride == 0) {
+        return invalid("GraphicsPipelineDesc has vertex attributes but a zero vertexStride");
+    }
+    const auto* target = static_cast<const VulkanSwapchainHandle*>(swapchain.GetNativeHandle());
+    if (target == nullptr || target->swapchain == VK_NULL_HANDLE) {
+        return invalid("CreateGraphicsPipeline needs a valid (non-empty) swapchain");
+    }
+    if (desc.depthTest && target->depthFormat == VK_FORMAT_UNDEFINED) {
+        return invalid("depthTest needs a swapchain created with SwapchainDesc::depthBuffer");
+    }
+
+    const VkShaderModule vertexModule = CreateShaderModule(m_device, desc.vertexShader);
+    const VkShaderModule fragmentModule = CreateShaderModule(m_device, desc.fragmentShader);
+    const auto destroyModules = [&] {
+        vkDestroyShaderModule(m_device, vertexModule, nullptr); // VK_NULL_HANDLE is a valid no-op
+        vkDestroyShaderModule(m_device, fragmentModule, nullptr);
+    };
+    if (vertexModule == VK_NULL_HANDLE || fragmentModule == VK_NULL_HANDLE) {
+        destroyModules();
+        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed, "vkCreateShaderModule failed"});
+    }
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vertexModule;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = fragmentModule;
+    stages[1].pName = "main";
+
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = desc.vertexStride;
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    std::vector<VkVertexInputAttributeDescription> attributes;
+    attributes.reserve(desc.vertexAttributes.size());
+    for (const VertexAttribute& attribute : desc.vertexAttributes) {
+        VkVertexInputAttributeDescription out{};
+        out.location = attribute.location;
+        out.binding = 0;
+        out.format = ToVkFormat(attribute.format);
+        out.offset = attribute.offset;
+        attributes.push_back(out);
+    }
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = desc.vertexStride != 0 ? 1U : 0U;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size());
+    vertexInput.pVertexAttributeDescriptions = attributes.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo viewport{};
+    viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport.viewportCount = 1;
+    viewport.scissorCount = 1;
+
+    // Front faces are counter-clockwise in a Y-up clip space; BeginRendering() flips Y with a
+    // negative-height viewport, which keeps that convention (the same one the math crate uses).
+    VkPipelineRasterizationStateCreateInfo rasterization{};
+    rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterization.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterization.cullMode = ToVkCullMode(desc.cullMode);
+    rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterization.lineWidth = 1.0f;
+
+    VkPipelineMultisampleStateCreateInfo multisample{};
+    multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = desc.depthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable = (desc.depthTest && desc.depthWrite) ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
+    VkPipelineColorBlendAttachmentState blendAttachment{};
+    blendAttachment.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    VkPipelineColorBlendStateCreateInfo colorBlend{};
+    colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlend.attachmentCount = 1;
+    colorBlend.pAttachments = &blendAttachment;
+
+    const VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamic{};
+    dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic.dynamicStateCount = 2;
+    dynamic.pDynamicStates = dynamicStates;
+
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = kPushConstantStages;
+    pushRange.offset = 0;
+    pushRange.size = desc.pushConstantSize;
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = desc.pushConstantSize != 0 ? 1U : 0U;
+    layoutInfo.pPushConstantRanges = &pushRange;
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    if (const VkResult result = vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &layout); result != VK_SUCCESS) {
+        destroyModules();
+        return std::unexpected(MakeVkError(RenderErrorCode::InitializationFailed, "vkCreatePipelineLayout", result));
+    }
+
+    // Dynamic rendering.md: the attachment formats are part of the pipeline instead of a render pass.
+    // The depth format is declared whenever the swapchain has a depth buffer (BeginRendering()
+    // always attaches it), even for a pipeline that does not test depth.
+    VkPipelineRenderingCreateInfo rendering{};
+    rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering.colorAttachmentCount = 1;
+    rendering.pColorAttachmentFormats = &target->format;
+    rendering.depthAttachmentFormat = target->depthFormat;
+    rendering.stencilAttachmentFormat = HasStencil(target->depthFormat) ? target->depthFormat : VK_FORMAT_UNDEFINED;
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.pNext = &rendering;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = stages;
+    pipelineInfo.pVertexInputState = &vertexInput;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewport;
+    pipelineInfo.pRasterizationState = &rasterization;
+    pipelineInfo.pMultisampleState = &multisample;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlend;
+    pipelineInfo.pDynamicState = &dynamic;
+    pipelineInfo.layout = layout;
+    pipelineInfo.renderPass = VK_NULL_HANDLE;
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    const VkResult pipelineResult =
+        vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
+    destroyModules();
+    if (pipelineResult != VK_SUCCESS) {
+        vkDestroyPipelineLayout(m_device, layout, nullptr);
+        return std::unexpected(
+            MakeVkError(RenderErrorCode::InitializationFailed, "vkCreateGraphicsPipelines", pipelineResult)
+        );
+    }
+
+    auto* handle = new (std::nothrow) VulkanPipelineHandle{pipeline, layout, desc.pushConstantSize};
+    if (handle == nullptr) {
+        vkDestroyPipeline(m_device, pipeline, nullptr);
+        vkDestroyPipelineLayout(m_device, layout, nullptr);
+        return std::unexpected(RenderError{RenderErrorCode::InitializationFailed, "out of memory for pipeline handle"});
+    }
+    return MakeGraphicsPipeline(this, handle, desc.pushConstantSize);
+}
+
+void VulkanRenderDevice::ReleaseGraphicsPipeline(void* nativeHandle) noexcept
+{
+    if (nativeHandle == nullptr) {
+        return;
+    }
+    auto* handle = static_cast<VulkanPipelineHandle*>(nativeHandle);
+    vkDestroyPipeline(m_device, handle->pipeline, nullptr);
+    vkDestroyPipelineLayout(m_device, handle->layout, nullptr);
+    delete handle;
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::RecordBeginRendering(
+    void* commandBufferHandle, void* swapchainHandle, std::uint32_t imageIndex, const RenderingDesc& desc
+) noexcept
+{
+    if (!m_dynamicRendering) {
+        return std::unexpected(UnsupportedDynamicRendering());
+    }
+    const auto* target = static_cast<const VulkanSwapchainHandle*>(swapchainHandle);
+    if (target == nullptr || target->swapchain == VK_NULL_HANDLE || imageIndex >= target->images.size()) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::InitializationFailed, "BeginRendering: invalid swapchain or image index"}
+        );
+    }
+    const auto commandBuffer = static_cast<VkCommandBuffer>(commandBufferHandle);
+
+    // Color: the image arrives from vkAcquireNextImageKHR (contents irrelevant, it is cleared);
+    // Submit() waits for the acquire semaphore at the color attachment output stage, which is
+    // the source stage here so the transition happens after the image is really available.
+    VkImageMemoryBarrier toColor{};
+    toColor.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toColor.srcAccessMask = 0;
+    toColor.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    toColor.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    toColor.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    toColor.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toColor.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toColor.image = target->images[imageIndex];
+    toColor.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &toColor
+    );
+
+    const bool hasDepth = target->depthFormat != VK_FORMAT_UNDEFINED;
+    if (hasDepth) {
+        // One depth image serves every frame in flight. This barrier's source scope covers all
+        // earlier-submitted depth work in queue order, so frame N+1 never overlaps frame N's
+        // depth accesses.
+        constexpr VkPipelineStageFlags depthStages =
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        VkImageMemoryBarrier toDepth{};
+        toDepth.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toDepth.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        toDepth.dstAccessMask =
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        toDepth.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // contents are cleared below
+        toDepth.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        toDepth.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toDepth.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toDepth.image = target->depthImage;
+        toDepth.subresourceRange = {DepthAspectOf(target->depthFormat), 0, 1, 0, 1};
+        vkCmdPipelineBarrier(commandBuffer, depthStages, depthStages, 0, 0, nullptr, 0, nullptr, 1, &toDepth);
+    }
+
+    VkRenderingAttachmentInfo colorAttachment{};
+    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView = target->imageViews[imageIndex];
+    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.clearValue.color = {{desc.color.r, desc.color.g, desc.color.b, desc.color.a}};
+
+    VkRenderingAttachmentInfo depthAttachment{};
+    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachment.imageView = target->depthView;
+    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.clearValue.depthStencil = {desc.clearDepth, 0};
+
+    VkRenderingAttachmentInfo stencilAttachment = depthAttachment;
+    stencilAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+
+    VkRenderingInfo renderingInfo{};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderingInfo.renderArea = {{0, 0}, target->extent};
+    renderingInfo.layerCount = 1;
+    renderingInfo.colorAttachmentCount = 1;
+    renderingInfo.pColorAttachments = &colorAttachment;
+    renderingInfo.pDepthAttachment = hasDepth ? &depthAttachment : nullptr;
+    renderingInfo.pStencilAttachment = (hasDepth && HasStencil(target->depthFormat)) ? &stencilAttachment : nullptr;
+    vkCmdBeginRendering(commandBuffer, &renderingInfo);
+
+    // Negative height flips Y (core since Vulkan 1.1): clip space stays Y-up like the math crate's.
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = static_cast<float>(target->extent.height);
+    viewport.width = static_cast<float>(target->extent.width);
+    viewport.height = -static_cast<float>(target->extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    const VkRect2D scissor{{0, 0}, target->extent};
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    return {};
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::RecordEndRendering(
+    void* commandBufferHandle, void* swapchainHandle, std::uint32_t imageIndex
+) noexcept
+{
+    if (!m_dynamicRendering) {
+        return std::unexpected(UnsupportedDynamicRendering());
+    }
+    const auto* target = static_cast<const VulkanSwapchainHandle*>(swapchainHandle);
+    if (target == nullptr || imageIndex >= target->images.size()) {
+        return std::unexpected(
+            RenderError{RenderErrorCode::InitializationFailed, "EndRendering: invalid swapchain or image index"}
+        );
+    }
+    const auto commandBuffer = static_cast<VkCommandBuffer>(commandBufferHandle);
+    vkCmdEndRendering(commandBuffer);
+
+    VkImageMemoryBarrier toPresent{};
+    toPresent.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toPresent.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    toPresent.dstAccessMask = 0;
+    toPresent.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    toPresent.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toPresent.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toPresent.image = target->images[imageIndex];
+    toPresent.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &toPresent
+    );
+    return {};
+}
+
+std::expected<void, RenderError>
+VulkanRenderDevice::RecordBindPipeline(void* commandBufferHandle, void* pipelineHandle) noexcept
+{
+    const auto* pipeline = static_cast<const VulkanPipelineHandle*>(pipelineHandle);
+    vkCmdBindPipeline(
+        static_cast<VkCommandBuffer>(commandBufferHandle), VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline
+    );
+    return {};
+}
+
+std::expected<void, RenderError>
+VulkanRenderDevice::RecordBindVertexBuffer(void* commandBufferHandle, void* bufferHandle, std::size_t offset) noexcept
+{
+    const auto* buffer = static_cast<const VulkanBufferHandle*>(bufferHandle);
+    const VkDeviceSize vkOffset = offset;
+    vkCmdBindVertexBuffers(static_cast<VkCommandBuffer>(commandBufferHandle), 0, 1, &buffer->buffer, &vkOffset);
+    return {};
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::RecordBindIndexBuffer(
+    void* commandBufferHandle, void* bufferHandle, IndexType type, std::size_t offset
+) noexcept
+{
+    const auto* buffer = static_cast<const VulkanBufferHandle*>(bufferHandle);
+    vkCmdBindIndexBuffer(
+        static_cast<VkCommandBuffer>(commandBufferHandle),
+        buffer->buffer,
+        offset,
+        type == IndexType::U16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32
+    );
+    return {};
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::RecordPushConstants(
+    void* commandBufferHandle, void* pipelineHandle, const void* data, std::uint32_t size
+) noexcept
+{
+    const auto* pipeline = static_cast<const VulkanPipelineHandle*>(pipelineHandle);
+    vkCmdPushConstants(
+        static_cast<VkCommandBuffer>(commandBufferHandle), pipeline->layout, kPushConstantStages, 0, size, data
+    );
+    return {};
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::RecordDraw(
+    void* commandBufferHandle,
+    std::uint32_t vertexCount,
+    std::uint32_t instanceCount,
+    std::uint32_t firstVertex,
+    std::uint32_t firstInstance
+) noexcept
+{
+    vkCmdDraw(
+        static_cast<VkCommandBuffer>(commandBufferHandle), vertexCount, instanceCount, firstVertex, firstInstance
+    );
+    return {};
+}
+
+std::expected<void, RenderError> VulkanRenderDevice::RecordDrawIndexed(
+    void* commandBufferHandle,
+    std::uint32_t indexCount,
+    std::uint32_t instanceCount,
+    std::uint32_t firstIndex,
+    std::int32_t vertexOffset,
+    std::uint32_t firstInstance
+) noexcept
+{
+    vkCmdDrawIndexed(
+        static_cast<VkCommandBuffer>(commandBufferHandle),
+        indexCount,
+        instanceCount,
+        firstIndex,
+        vertexOffset,
+        firstInstance
+    );
+    return {};
 }
 
 } // namespace renderer::backend::vulkan

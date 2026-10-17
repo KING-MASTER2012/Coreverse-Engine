@@ -21,7 +21,7 @@ struct FrameSyncDesc {
     std::uint32_t framesInFlight = 2;
 };
 
-/// Everything one frame of rendering needs, handed out by
+/// Everything one frame of rendering.md needs, handed out by
 /// FrameSync::BeginFrame() and handed back to FrameSync::EndFrame().
 struct Frame {
     std::uint32_t frameIndex = 0; ///< 0 .. framesInFlight-1: which in-flight slot this frame occupies.
@@ -61,7 +61,7 @@ struct BeginFrameResult {
 /// One frame:
 ///
 ///   auto begin = sync.BeginFrame(swapchain);        // waits for the slot's previous frame, acquires an image
-///   if (!begin) { /* error: stop rendering */ }
+///   if (!begin) { /* error: stop rendering.md */ }
 ///   if (begin->status == FrameStatus::OutOfDate) { swapchain.Recreate(...); return; }
 ///   if (begin->status == FrameStatus::NotReady)  { return; }
 ///   Frame& frame = begin->frame;
@@ -73,7 +73,7 @@ struct BeginFrameResult {
 ///  * A BeginFrame() that returns Ready must be followed by EndFrame().
 ///    The image is already acquired at that point; abandoning the frame
 ///    would leave the acquire unmatched. A failure while recording is
-///    therefore fatal for the loop (stop rendering and rebuild the device),
+///    therefore fatal for the loop (stop rendering.md and rebuild the device),
 ///    not something to skip past — and an EndFrame() that fails leaves the
 ///    FrameSync unusable: every later BeginFrame() reports an error.
 ///  * The swapchain is passed on each call instead of being bound at

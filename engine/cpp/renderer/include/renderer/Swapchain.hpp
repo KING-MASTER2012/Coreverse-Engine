@@ -42,6 +42,12 @@ struct SwapchainDesc {
     std::uint32_t preferredImageCount = 2; ///< Hint only; the backend clamps to what the surface actually supports.
     std::uint32_t width = 0;
     std::uint32_t height = 0;
+
+    /// Also create (and keep sized with) a depth buffer for CommandBuffer::BeginRendering().
+    /// Owned by the swapchain: it is rebuilt together with the images in Recreate() and
+    /// released with the swapchain. GraphicsPipelines that use depth testing must be created
+    /// against a swapchain that has one. Not needed for ClearColor() only rendering.md.
+    bool depthBuffer = false;
 };
 
 /// What a backend reports about a swapchain after (re)building it. Only
@@ -129,7 +135,7 @@ public:
     /// `signalSemaphore` is a backend-native semaphore handle (e.g. a
     /// VkSemaphore) the GPU signals once the image is actually
     /// available — pass one obtained through the backend's own escape
-    /// hatch so a subsequent Submit() can wait on it before rendering.
+    /// hatch so a subsequent Submit() can wait on it before rendering.md.
     /// nullptr (the default) makes this call synchronous instead: it
     /// blocks the CPU until the image is ready using an internal fence,
     /// which is enough for a single-shot render. A real render loop

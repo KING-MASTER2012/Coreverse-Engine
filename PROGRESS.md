@@ -1,5 +1,19 @@
 # PROGRESS.md
-Last changed 11.10.2026 by KING-MASTER2012.
+Last changed 17.10.2026 by KING-MASTER2012.
+
+## What happened compared to the previous commit? (P1: math mirror, first graphics pass, crate hygiene, mdBook)
+- added (math, C++): `cv-math` (`engine/cpp/math`, header-only, target `cv-math::cv-math`): `Vec2/3/4`, `Quat`, `Mat4` (+ `lookAtRh`, `perspectiveRh`, `inverse`, `slerp`, ...), f32, column-major, right-handed, depth 0..1 - same layout and conventions as the Rust types. Proof: `tests/math_golden/golden.txt` is written by the Rust test `math/tests/cpp_golden.rs` (layout lines: size/align/field offsets; 23 value lines) and re-checked by the C++ test `math_layout_test` (ctest label `unit`, runs in every preset including `*-nogpu`). Mutating the golden file makes both fail. Regenerate with `UPDATE_GOLDEN=1 cargo test -p math --test cpp_golden`.
+- added (math, Rust): criterion benchmark suite `math/benches/math_bench.rs` (vectors, matrices, quaternions, AABB, noise); `cargo bench -p math` (add `--no-default-features --features no_std` for the libm backend). `benchmarks.yml` is manual and now has something to run.
+- added (renderer): the first graphics pass. `SwapchainDesc::depthBuffer` (depth image owned by the swapchain, rebuilt with it); `GraphicsPipeline` (`RenderDevice::CreateGraphicsPipeline`: SPIR-V vertex/fragment, one vertex binding, push constants up to 128 bytes, cull mode, depth test/write); `CommandBuffer::BeginRendering/EndRendering/BindPipeline/BindVertexBuffer/BindIndexBuffer/PushConstants/Draw/DrawIndexed`; `Buffer::Write` (host-visible buffers; GpuOnly is rejected by contract); new `RenderErrorCode::Unsupported`. Built on Vulkan 1.3 dynamic rendering, enabled when the device offers it - without it ClearColor() still works and the graphics calls report `Unsupported`. Clip space is Y-up via a negative-height viewport (CCW front faces), matching the math crate.
+- fixed (renderer): `Submit()` waited for the acquire semaphore at the TRANSFER stage only; it now waits at TRANSFER | COLOR_ATTACHMENT_OUTPUT so a graphics pass starts after the image is really available.
+- added (renderer): built-in colored-mesh shaders (`shaders/colored_mesh.{vert,frag}`), their SPIR-V committed as `src/BuiltinShaders.cpp` (so building needs no shader compiler; regenerate with `shaders/generate_builtin_shaders.sh`), `BuiltinShaders.hpp`, and a shared cube (`BuiltinMeshes.hpp`). `CullMode::Off` is not called `None` because X11 defines `None` as a macro.
+- added (renderer, device loss): `RenderDevice::SimulateDeviceLossForTesting()` makes frame-level calls fail with `DeviceLost` like a real VK_ERROR_DEVICE_LOST. The recovery is implemented in the editor's `ViewportRenderer::recoverFromDeviceLoss()` (destroy everything, new device, rebuild, up to 3 attempts without a rendered frame in between) and proven by `graphics_pass_test` and the new `editor_device_loss_smoke` test (`editor --smoke-frames 120 --simulate-device-loss`). A real GPU reset has not been exercised - only the simulated path.
+- changed (editor): the viewport now draws a spinning cube (MVP from `cv-math` in push constants, depth-tested) over the animated background; falls back to the animated clear color on devices without dynamic rendering.
+- added (tests): `graphics_pass_test` (gpu): depth-buffered swapchain, pipeline, `Buffer::Write` misuse checks, cube rendering through FrameSync with a mid-loop resize, device-loss recovery, validation layer must stay silent.
+- changed (Rust, Phase 9 hygiene): the 21 template crates (`acse`, `animation`, `aose`, `asset`, `audio`, `ecs`, `event`, `memory`, `networking`, `physics`, `platform`, `plugin`, `profiler`, `reflection`, `resource`, `runtime`, `scripting`, `serialization`, `threading`, `ui`, `utilities`) now inherit `edition/version/rust-version/license` and the workspace lints like `project-system` does, carry a description and a crate doc saying they are placeholders, and lost the cargo-new `add()` function and its test. Their intended scope is derived from the crate names only. `acse` and `aose` are documented as reserved names with no defined purpose - that decision is still open.
+- added (docs): the mdBook (`book.toml`, `docs/src/*`: introduction, architecture, building, FFI, rendering, math, editor, CI); `deploy-docs.yml` pins mdBook 0.4.52 and uploads `./book`; `/book/` is git-ignored. README status table, build/test/benchmark/doc instructions updated.
+- verified (sandbox, Linux): the whole tree configured and built with GCC 13 / CMake 4.4.4 / system Qt 6.4.2 and the repository's real CMakeLists (only the three vcpkg packages replaced by header-only stand-ins); `ctest` 13/13 on Mesa lavapipe (software Vulkan 1.4) with the validation layer required and silent, including `editor_render_smoke` and `editor_device_loss_smoke` under Xvfb; a screenshot of the rendered frame was inspected (correct perspective, depth and face culling). Rust: 1331 tests passed, 0 failed (4 ignored doctests); `cargo fmt --check` and `clang-format 22.1.8 --Werror` (incl. `.mm`) are clean; `mdbook build` has no warnings; `cv-math` compiles warning-free under GCC 13 and Clang 18 with `-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wdouble-promotion -Wold-style-cast`.
+- not verified: MSVC, Apple Clang/MoltenVK and Windows/macOS CI runs; clang-tidy and Clippy (not available in the sandbox); a real GPU (only lavapipe); the new Windows/macOS Rust CI job from P0.
 
 ## What happened compared to the previous commit? (P0 housekeeping)
 - verified: the whole Rust workspace compiles and its tests pass with a real toolchain (rustc/cargo 1.91, Linux): `cargo test --workspace --all-features` -> 1351 passed, 0 failed (4 doctests are `ignore`d on purpose); `math` on the `libm` backend (`--no-default-features --features no_std`) -> 1237 passed. This supersedes the "hand-written, not compiled" note of Phase 7c below: `ffi/src/vfs.rs`, `vfs/src/context.rs` and the `vfs` tests are compiled and green. CI (Linux/Windows/macOS, lint, formatting) is green as of this commit.
@@ -33,19 +47,16 @@ Last changed 11.10.2026 by KING-MASTER2012.
 - note: nothing is drawn in the viewport except the clear color yet.
 
 ## What will be done?
-Ordered by priority (the plan agreed on 11.10.2026; P0 is this commit).
-
-P1 - core
-- Wire `math` into the engine: a header-only C++ mirror with identical layout (vectors, matrices, quaternions) plus a layout test against the Rust types; needed for camera/MVP in the renderer. Add a criterion benchmark suite for `math` (then `benchmarks.yml` has something to run).
-- First real graphics pass: change `Submit()` to wait at COLOR_ATTACHMENT_OUTPUT, shader loading through the VFS, pipeline, vertex/uniform buffers, depth. Then device-lost recovery (rebuild device, surface, swapchain and frame sync).
-- Phase 9: stub crate and lint hygiene - the 21 template crates hard-code `edition = "2024"` and do not inherit workspace package fields or lints; start with `utilities`/`memory`/`platform`, then `threading`/`event`/`reflection`. Decide what `acse` and `aose` are for.
-- mdBook: `book.toml` and real pages under `docs/` (then `deploy-docs.yml` starts building).
+Ordered by priority. P0 and P1 are done (see the entries above).
 
 P2 - editor and systems
-- `project-system` (empty crate today) and an "open project" flow (`.cproject`, VFS init); then a file sink for the editor's `cv_ffi::Logger`, and routing renderer asset/shader loading through `cv_ffi::vfs`.
-- Native Wayland support for the editor viewport (needs Qt's private wl_surface accessor); a multi-frame variant of the Wayland render loop test (Weston frame callbacks vs. acquire).
-- Fuzz targets (`fuzz/`), serialization -> resource -> ECS -> asset/IO systems in tier order; render thread when the GUI thread becomes the bottleneck.
+- `project-system` (empty crate today) and an "open project" flow (`.cproject`, VFS init); then a file sink for the editor's `cv_ffi::Logger`, and loading shaders/meshes through `cv_ffi::vfs` instead of the built-in arrays (needs a project root).
+- Renderer: descriptor sets / uniform buffers and textures; a staging path for GpuOnly buffers (`Buffer::Write` only covers host-visible ones); more `cv-math` (Mat3, Aabb, ...) as the renderer needs them; exercise device loss on a real GPU reset.
+- Native Wayland support for the editor viewport (needs Qt's private wl_surface accessor); a multi-frame variant of the Wayland render loop test.
+- Decide what `acse` and `aose` are for (or delete them), then continue Phase 9: Tier 1 `utilities`/`memory`/`platform`, Tier 2 `threading`/`event`/`reflection`.
+- Fuzz targets (`fuzz/`), then serialization -> resource -> ECS -> asset/IO systems in tier order; a render thread when the GUI thread becomes the bottleneck.
 - `release.yml` only runs `cargo build --release`; it should build and package the editor.
 - Debug `bootstrap.sh` on macOS (the macOS CI job deliberately avoids it; needs the Bootstrap step's log).
+- Run clang-tidy over the new renderer/editor code (`cmake --build ... --target tidy`) and fix what it reports; extend the book (ECS/runtime, platform support, contribution guide).
 
 P3 - roadmap (see README): further graphics backends (Metal, Direct3D, OpenGL), scene editor, profiler, scripting, hot reload, project templates (`templates/*` are empty placeholders).

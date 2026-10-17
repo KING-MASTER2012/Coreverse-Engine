@@ -1,6 +1,12 @@
 [package]
 name = "plugin"
-version = "0.1.0"
-edition = "2024"
+description = "Placeholder for the engine's plugin discovery and loading; not yet implemented"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
+
+[lints]
+workspace = true
