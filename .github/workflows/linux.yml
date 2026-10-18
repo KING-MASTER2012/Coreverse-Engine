@@ -1,22 +1,63 @@
 name: Linux
 
 on:
-  workflow_call:
+    workflow_call:
 
 permissions:
-  contents: read
+    contents: read
 
 jobs:
-  setup:
-    name: Linux Setup
-    runs-on: ubuntu-latest
+    setup:
+        name: Linux Setup
+        runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v7
 
-      - name: Setup Linux environment
-        shell: bash
-        run: |
-          chmod +x devkit/scripts/setup/shell/bootstrap.sh
-          devkit/scripts/setup/shell/bootstrap.sh
+            # vcpkg.json enables qtbase's `xcb` feature on Linux, and vcpkg only
+            # builds Qt's xcb platform plugin if the xcb/xkbcommon DEV packages
+            # exist on the system when bootstrap.sh runs `vcpkg install`. So they
+            # must be installed BEFORE Bootstrap (same list as cpp.yml).
+            - name: Install Qt xcb build dependencies
+              shell: bash
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                      libfontconfig1-dev \
+                      libfreetype-dev \
+                      pkg-config \
+                      libx11-dev \
+                      libx11-xcb-dev \
+                      libxext-dev \
+                      libxfixes-dev \
+                      libxi-dev \
+                      libxrender-dev \
+                      libgl1-mesa-dev \
+                      libglu1-mesa-dev \
+                      libegl1-mesa-dev \
+                      libxcb1-dev \
+                      libxcb-cursor-dev \
+                      libxcb-xinput-dev \
+                      libxcb-glx0-dev \
+                      libxcb-icccm4-dev \
+                      libxcb-image0-dev \
+                      libxcb-keysyms1-dev \
+                      libxcb-randr0-dev \
+                      libxcb-render0-dev \
+                      libxcb-render-util0-dev \
+                      libxcb-shape0-dev \
+                      libxcb-shm0-dev \
+                      libxcb-sync-dev \
+                      libxcb-util-dev \
+                      libxcb-xfixes0-dev \
+                      libxcb-xinerama0-dev \
+                      libxcb-xkb-dev \
+                      libxkbcommon-dev \
+                      libxkbcommon-x11-dev
+
+            - name: Setup Linux environment
+              shell: bash
+              run: |
+                  chmod +x devkit/scripts/setup/shell/bootstrap.sh
+                  devkit/scripts/setup/shell/bootstrap.sh

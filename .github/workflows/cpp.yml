@@ -1,49 +1,53 @@
-name: C++
+name: "CodeQL"
 
 on:
-    workflow_call:
+    push:
+        branches:
+            - main
+            - develop
+
+    pull_request:
+        branches:
+            - main
+            - develop
+
+    schedule:
+        - cron: "0 3 * * 0"
 
 permissions:
+    actions: read
     contents: read
-
-# The Linux and Windows jobs follow the same shape (macOS provisions its
-# tools by hand, see the comment on that job):
-#
-#   1. Bootstrap        - installs the toolchain and the vcpkg dependencies
-#                         (into ./vcpkg_installed). Its own trailing plain
-#                         `cmake -B build` configure only smoke-tests the
-#                         bootstrap flow itself; nothing below uses that
-#                         build/ directory.
-#   2. Configure        - `cmake --preset ...` (Ninja Multi-Config, the exact
-#                         presets a developer uses, BUILD_TESTS=ON). The presets
-#                         point VCPKG_INSTALLED_DIR at ./vcpkg_installed, so this
-#                         reuses what Bootstrap installed instead of building
-#                         every vcpkg package (Qt!) a second time.
-#   3. Build            - `cmake --build --preset ...`
-#   4. Test             - `ctest --preset ...`. Tests are labelled `ffi` or
-#                         `gpu` (tests/cpp/CMakeLists.txt). Linux runs both
-#                         (software Vulkan + a virtual X server); Windows and
-#                         macOS runners have no Vulkan ICD, so they run the
-#                         `*-nogpu` presets, i.e. the `ffi` tests only.
+    security-events: write
 
 jobs:
-    linux:
+    analyze:
+        name: Analyze (${{ matrix.language }})
         runs-on: ubuntu-latest
+
+        strategy:
+            fail-fast: false
+            matrix:
+                language:
+                    - cpp
+                    - rust
 
         env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         steps:
-            - uses: actions/checkout@v7
+            - name: Checkout
+              uses: actions/checkout@v7
 
-            # Qt's "xcb" platform plugin is only built when the xcb/xkbcommon
-            # DEVELOPMENT packages are present at the moment vcpkg compiles
-            # qtbase - Qt silently drops the plugin otherwise, and the editor
-            # smoke test then dies with "Could not find the Qt platform plugin
-            # xcb". bootstrap.sh runs `vcpkg install` (which builds qtbase), so
-            # these must be installed BEFORE it. List taken from Qt's own
-            # "Qt for Linux/X11 - building" requirements + vcpkg's qtbase hint.
+            - name: Set up Rust
+              if: matrix.language == 'cpp'
+              uses: dtolnay/rust-toolchain@stable
+
+            # vcpkg.json enables qtbase's `xcb` feature on Linux, and vcpkg only
+            # builds Qt's xcb platform plugin if the xcb/xkbcommon DEV packages
+            # exist on the system when bootstrap.sh runs `vcpkg install`. So they
+            # must be installed BEFORE Bootstrap (same list as cpp.yml).
             - name: Install Qt xcb build dependencies
+              if: matrix.language == 'cpp'
               shell: bash
               run: |
                   sudo apt-get update
@@ -80,40 +84,25 @@ jobs:
                       libxkbcommon-dev \
                       libxkbcommon-x11-dev
 
-            - name: Bootstrap
+            # Installs Rust/cbindgen AND vcpkg's C++ deps (VulkanHeaders, volk,
+            # VulkanMemoryAllocator, ...), then configures CMake with the vcpkg
+            # toolchain file (build/). Without this, "cmake -B build" below can't
+            # find any vcpkg package - this replaces the old cbindgen-only setup,
+            # which never touched vcpkg at all.
+            - name: Bootstrap (Rust/cbindgen + vcpkg deps + CMake configure)
+              if: matrix.language == 'cpp'
               shell: bash
               run: |
                   chmod +x devkit/scripts/setup/shell/bootstrap.sh
                   devkit/scripts/setup/shell/bootstrap.sh
 
-            # X11 and Wayland dev libraries are deliberately NOT part of
-            # bootstrap.sh - an end user building Coreverse on their own
-            # desktop already has whatever windowing system they're
-            # running under, and bootstrap.sh doesn't try to guess which
-            # one to install for them. A CI runner has neither, so this
-            # workflow installs both itself, right after Bootstrap:
-            # libx11-dev for the Xlib WSI backend (renderer + the
-            # existing surface/swapchain/render_loop tests), libwayland-dev
-            # for the Wayland WSI backend (renderer + wayland_render_loop_test),
-            # and weston to give that Wayland test a compositor to run
-            # against headlessly.
-            #
-            # The GPU-labelled tests additionally need somewhere to run:
-            # mesa-vulkan-drivers ships lavapipe (a CPU Vulkan
-            # implementation) as the ICD, libvulkan1 is the loader volk
-            # dlopen()s at runtime, and xvfb + xauth (xvfb-run needs it) give
-            # the Xlib surface/swapchain/render-loop tests an X server.
-            # vulkan-tools is only here for the diagnostics step below.
-            #
-            # vulkan-validationlayers is VK_LAYER_KHRONOS_validation: with it
-            # (and -DRENDERER_FORCE_VALIDATION=ON below) the Release GPU tests
-            # run under validation, and frame_sync_test / editor_render_smoke
-            # fail on any validation error (renderer/Diagnostics.hpp).
-            #
-            # The libxcb-* / libxkbcommon-x11 packages are what Qt's "xcb"
-            # platform plugin loads at runtime; the editor smoke test (below)
-            # opens a real Qt window on Xvfb through it.
-            - name: Install X11, Wayland and software-Vulkan test dependencies
+            # See the identical step in cpp.yml for why these aren't part
+            # of bootstrap.sh itself: libx11-dev/libwayland-dev are the
+            # Xlib and Wayland WSI backends renderer needs to compile on
+            # Linux, weston gives wayland_render_loop_test a headless
+            # compositor to run against.
+            - name: Install X11 & Wayland dev libraries
+              if: matrix.language == 'cpp'
               shell: bash
               run: |
                   sudo apt-get update
@@ -121,230 +110,16 @@ jobs:
                       libx11-dev \
                       libwayland-dev \
                       pkg-config \
-                      weston \
-                      xvfb \
-                      xauth \
-                      mesa-vulkan-drivers \
-                      libvulkan1 \
-                      vulkan-tools \
-                      vulkan-validationlayers \
-                      libxcb-cursor0 \
-                      libxcb-icccm4 \
-                      libxcb-image0 \
-                      libxcb-keysyms1 \
-                      libxcb-randr0 \
-                      libxcb-render-util0 \
-                      libxcb-shape0 \
-                      libxcb-xinerama0 \
-                      libxcb-xkb1 \
-                      libxkbcommon-x11-0
+                      weston
 
-            # Non-fatal: it only exists so a red GPU test in the log below
-            # can be told apart from "the runner has no Vulkan device at all".
-            - name: Vulkan diagnostics
-              shell: bash
-              run: vulkaninfo --summary || true
+            - name: Initialize CodeQL
+              uses: github/codeql-action/init@v4
+              with:
+                  languages: ${{ matrix.language }}
 
-            # RENDERER_FORCE_VALIDATION requests the Vulkan validation layers
-            # in this Release build too (they are Debug-only by default).
-            - name: Configure (linux-x64-gcc)
-              shell: bash
-              run: cmake --preset linux-x64-gcc -DRENDERER_FORCE_VALIDATION=ON
+            - name: Build C++
+              if: matrix.language == 'cpp'
+              run: cmake --build build --config Release
 
-            - name: Build (Release)
-              shell: bash
-              run: cmake --build --preset linux-gcc-release
-
-            # Fail early (and loudly) if vcpkg's Qt came out without the xcb
-            # platform plugin (needs the `xcb` feature of qtbase in vcpkg.json
-            # AND the xcb/xkbcommon dev packages at build time). The plugin is
-            # either a shared object (dynamic triplets) or a static archive
-            # (vcpkg's x64-linux is static; the editor then links it in, see
-            # engine/cpp/editor/CMakeLists.txt). Only the shared case needs
-            # QT_QPA_PLATFORM_PLUGIN_PATH.
-            - name: Locate Qt xcb platform plugin
-              shell: bash
-              run: |
-                  plugin="$(find vcpkg_installed build \( -name 'libqxcb.so' -o -name 'libqxcb.a' \) -print -quit 2>/dev/null || true)"
-                  if [ -z "$plugin" ]; then
-                      echo "::error::qxcb platform plugin not found - qtbase was built without xcb support (missing xcb feature in vcpkg.json, or libxcb/xkbcommon dev packages at build time?)"
-                      find vcpkg_installed -maxdepth 5 -type d -name 'plugins' || true
-                      find vcpkg_installed -name 'libqxcb*' -o -name 'libQt6XcbQpa*' || true
-                      exit 1
-                  fi
-                  echo "Found $plugin"
-                  case "$plugin" in
-                      *.so) echo "QT_QPA_PLATFORM_PLUGIN_PATH=$(dirname "$plugin")" >> "$GITHUB_ENV" ;;
-                      *)    echo "Static Qt: xcb plugin is linked into the editor, no plugin path needed" ;;
-                  esac
-
-            # CV_REQUIRE_VALIDATION=1 makes the validation-checking tests fail
-            # if the layer turned out not to be running, instead of passing
-            # having checked nothing. The editor smoke test is held back
-            # (-LE editor) and runs in the next step.
-            - name: Test (Release, ffi + gpu)
-              shell: bash
-              env:
-                  CV_REQUIRE_VALIDATION: "1"
-              run: |
-                  xvfb-run -a --server-args="-screen 0 1280x720x24" \
-                      ctest --preset linux-gcc-release -LE editor
-
-            # The editor smoke test needs the vcpkg Qt build to ship the xcb
-            # platform plugin; it runs under Xvfb with software Vulkan and is
-            # a required check like every other step.
-            - name: Test (Release, editor smoke)
-              shell: bash
-              env:
-                  CV_REQUIRE_VALIDATION: "1"
-                  QT_QPA_PLATFORM: xcb
-              run: |
-                  xvfb-run -a --server-args="-screen 0 1280x800x24" \
-                      ctest --preset linux-gcc-release -L editor
-
-    windows:
-        runs-on: windows-latest
-
-        steps:
-            - uses: actions/checkout@v7
-
-            - name: Bootstrap
-              shell: pwsh
-              run: |
-                  devkit/scripts/setup/powershell/bootstrap.ps1
-
-            # One step on purpose: the Windows presets use
-            # `architecture.strategy = external`, i.e. they take the
-            # compiler environment from the launching shell.
-            # configure-windows.ps1 activates the x64 MSVC environment
-            # (vcvarsall.bat x64) inside this pwsh process and then runs
-            # `cmake --preset`. Environment changes don't survive into a
-            # later workflow step, so the build and test commands that
-            # need that same environment (cl.exe, INCLUDE, LIB) have to
-            # run in this step too.
-            - name: Configure, build and test (windows-x64, Release, ffi tests only)
-              shell: pwsh
-              run: |
-                  $ErrorActionPreference = 'Stop'
-
-                  ./devkit/scripts/configure-windows.ps1 -Preset windows-x64
-                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-                  cmake --build --preset windows-msvc-release
-                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-                  ctest --preset windows-msvc-release-nogpu
-                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    # This job is green and a required check: it builds the renderer's
-    # Metal-surface path and the vcpkg arm64-osx dependencies for real.
-    #
-    # It deliberately does NOT run devkit/scripts/setup/shell/bootstrap.sh:
-    # macOS ships bash 3.2 and parts of bootstrap (parallel-runner.sh uses
-    # `declare -A`, bash 4+) are not written for it. Everything the presets
-    # need is installed explicitly here instead; the preset configure step
-    # then installs the vcpkg packages (manifest mode) into ./vcpkg_installed
-    # by itself. Note that CMake's "unable to find a build program
-    # corresponding to Ninja Multi-Config" is only a side effect when the
-    # toolchain file fails, even with Ninja installed.
-    macos:
-        runs-on: macos-latest
-
-        steps:
-            - uses: actions/checkout@v7
-
-            # The default developer dir on the runner can pair a newer
-            # Command Line Tools SDK (MacOSX27.0.sdk) with an older linker, so
-            # linking fails with "tapi error: malformed file ... unknown
-            # architecture arm64e.x1-macos" while parsing libSystem.tbd.
-            # Select the newest non-beta full Xcode instead (its SDK and ld
-            # always match), export it for later steps and prove that a plain
-            # C++ program links before anything expensive (vcpkg/Qt) starts.
-            - name: Select a consistent Xcode toolchain
-              shell: bash
-              run: |
-                  xcode="$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -Eiv 'beta|rc|preview|alpha' | sort -V | sed -n '$p')"
-                  if [ -n "$xcode" ]; then
-                      echo "Using $xcode"
-                      sudo xcode-select -s "$xcode/Contents/Developer"
-                      echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
-                      export DEVELOPER_DIR="$xcode/Contents/Developer"
-                  else
-                      echo "No versioned Xcode found, keeping $(xcode-select -p)"
-                  fi
-                  sdk="$(xcrun --sdk macosx --show-sdk-path)"
-                  echo "SDKROOT=$sdk" >> "$GITHUB_ENV"
-                  echo "Developer dir: $(xcode-select -p)"
-                  echo "SDK: $sdk"
-                  xcrun clang++ --version | sed -n 1p
-                  printf '#include <cstdio>\nint main(){std::puts("link ok");}\n' > /tmp/linkcheck.cpp
-                  xcrun clang++ -std=c++23 -isysroot "$sdk" /tmp/linkcheck.cpp -o /tmp/linkcheck
-                  /tmp/linkcheck
-
-            # CMake and Rust (rustup + stable) are already on the runner.
-            # autoconf, autoconf-archive, automake and libtool are what
-            # vcpkg's autotools-based ports (libb2, a dependency of qtbase)
-            # shell out to. autoconf-archive is easy to forget - it only ships
-            # M4 macros, no program - but libb2 fails without it. Keep this
-            # list in sync with `autotools.pkg.brew` in
-            # devkit/scripts/setup/config/tool-versions.json.
-            - name: Install build tools (Homebrew)
-              shell: bash
-              run: |
-                  brew install ninja cbindgen pkg-config \
-                      autoconf autoconf-archive automake libtool
-                  # sed -n 1p rather than head -n1: with `pipefail` (the default
-                  # for `shell: bash`) head closing the pipe early can fail the step.
-                  cmake --version | sed -n 1p
-                  ninja --version
-                  cbindgen --version
-                  cargo --version
-                  aclocal --version | sed -n 1p
-                  glibtoolize --version | sed -n 1p
-                  echo "autoconf-archive macros: $(ls "$(brew --prefix)"/share/aclocal | grep -c '^ax_')"
-
-            # The project's CMake minimum lives in
-            # devkit/scripts/setup/config/tool-versions.json (cmake.minVersion,
-            # the same value bootstrap enforces and CMakeLists.txt /
-            # CMakePresets.json declare). The runner image's CMake can lag
-            # behind it, so upgrade through Homebrew when it does.
-            - name: Ensure CMake meets the project minimum
-              shell: bash
-              run: |
-                  required="$(python3 -c "import json; print(json.load(open('devkit/scripts/setup/config/tool-versions.json'))['cmake']['minVersion'])")"
-                  current="$(cmake --version | sed -n 's/^cmake version //p' | sed -n 1p)"
-                  echo "CMake required >= $required, found $current"
-                  lowest="$(printf '%s\n%s\n' "$required" "$current" | sort -V | sed -n 1p)"
-                  if [ "$lowest" != "$required" ]; then
-                      brew upgrade cmake || brew install cmake
-                      current="$(cmake --version | sed -n 's/^cmake version //p' | sed -n 1p)"
-                      echo "CMake after upgrade: $current"
-                      lowest="$(printf '%s\n%s\n' "$required" "$current" | sort -V | sed -n 1p)"
-                      if [ "$lowest" != "$required" ]; then
-                          echo "::error::CMake $current is older than the required $required"
-                          exit 1
-                      fi
-                  fi
-
-            # The whole history is needed (vcpkg.json pins a builtin-baseline),
-            # so this is deliberately not a shallow clone.
-            - name: Set up vcpkg
-              shell: bash
-              run: |
-                  rm -rf third_party/vcpkg
-                  git clone https://github.com/microsoft/vcpkg.git third_party/vcpkg
-                  ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-                  test -f third_party/vcpkg/scripts/buildsystems/vcpkg.cmake
-
-            - name: Configure (macos-arm64-clang)
-              shell: bash
-              run: cmake --preset macos-arm64-clang
-
-            - name: Build (Release)
-              shell: bash
-              run: cmake --build --preset macos-arm64-release
-
-            # No Vulkan ICD (MoltenVK) on the runner, so ffi tests only.
-            - name: Test (Release, ffi tests only)
-              shell: bash
-              run: ctest --preset macos-arm64-release-nogpu
+            - name: Perform CodeQL Analysis
+              uses: github/codeql-action/analyze@v4
