@@ -36,6 +36,48 @@ jobs:
         steps:
             - uses: actions/checkout@v7
 
+            # Qt's "xcb" platform plugin is only built when the xcb/xkbcommon
+            # DEVELOPMENT packages are present at the moment vcpkg compiles
+            # qtbase - Qt silently drops the plugin otherwise, and the editor
+            # smoke test then dies with "Could not find the Qt platform plugin
+            # xcb". bootstrap.sh runs `vcpkg install` (which builds qtbase), so
+            # these must be installed BEFORE it. List taken from Qt's own
+            # "Qt for Linux/X11 - building" requirements + vcpkg's qtbase hint.
+            - name: Install Qt xcb build dependencies
+              shell: bash
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                      libfontconfig1-dev \
+                      libfreetype-dev \
+                      libx11-dev \
+                      libx11-xcb-dev \
+                      libxext-dev \
+                      libxfixes-dev \
+                      libxi-dev \
+                      libxrender-dev \
+                      libgl1-mesa-dev \
+                      libglu1-mesa-dev \
+                      libegl1-mesa-dev \
+                      libxcb1-dev \
+                      libxcb-cursor-dev \
+                      libxcb-glx0-dev \
+                      libxcb-icccm4-dev \
+                      libxcb-image0-dev \
+                      libxcb-keysyms1-dev \
+                      libxcb-randr0-dev \
+                      libxcb-render0-dev \
+                      libxcb-render-util0-dev \
+                      libxcb-shape0-dev \
+                      libxcb-shm0-dev \
+                      libxcb-sync-dev \
+                      libxcb-util-dev \
+                      libxcb-xfixes0-dev \
+                      libxcb-xinerama0-dev \
+                      libxcb-xkb-dev \
+                      libxkbcommon-dev \
+                      libxkbcommon-x11-dev
+
             - name: Bootstrap
               shell: bash
               run: |
@@ -91,6 +133,7 @@ jobs:
                       libxcb-randr0 \
                       libxcb-render-util0 \
                       libxcb-shape0 \
+                      libxcb-xinerama0 \
                       libxcb-xkb1 \
                       libxkbcommon-x11-0
 
@@ -109,6 +152,21 @@ jobs:
             - name: Build (Release)
               shell: bash
               run: cmake --build --preset linux-gcc-release
+
+            # Fail early (and loudly) if vcpkg's Qt came out without the xcb
+            # platform plugin, and point Qt at the directory that holds it so
+            # it is found regardless of vcpkg's install layout.
+            - name: Locate Qt xcb platform plugin
+              shell: bash
+              run: |
+                  plugin="$(find vcpkg_installed build -name 'libqxcb.so' -print -quit 2>/dev/null || true)"
+                  if [ -z "$plugin" ]; then
+                      echo "::error::libqxcb.so not found - qtbase was built without xcb support (missing libxcb/xkbcommon dev packages at build time?)"
+                      find vcpkg_installed -maxdepth 4 -type d -name 'plugins' || true
+                      exit 1
+                  fi
+                  echo "Found $plugin"
+                  echo "QT_QPA_PLATFORM_PLUGIN_PATH=$(dirname "$plugin")" >> "$GITHUB_ENV"
 
             # CV_REQUIRE_VALIDATION=1 makes the validation-checking tests fail
             # if the layer turned out not to be running, instead of passing
@@ -184,6 +242,34 @@ jobs:
 
         steps:
             - uses: actions/checkout@v7
+
+            # The default developer dir on the runner can pair a newer
+            # Command Line Tools SDK (MacOSX27.0.sdk) with an older linker, so
+            # linking fails with "tapi error: malformed file ... unknown
+            # architecture arm64e.x1-macos" while parsing libSystem.tbd.
+            # Select the newest non-beta full Xcode instead (its SDK and ld
+            # always match), export it for later steps and prove that a plain
+            # C++ program links before anything expensive (vcpkg/Qt) starts.
+            - name: Select a consistent Xcode toolchain
+              shell: bash
+              run: |
+                  xcode="$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -Eiv 'beta|rc|preview|alpha' | sort -V | sed -n '$p')"
+                  if [ -n "$xcode" ]; then
+                      echo "Using $xcode"
+                      sudo xcode-select -s "$xcode/Contents/Developer"
+                      echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+                      export DEVELOPER_DIR="$xcode/Contents/Developer"
+                  else
+                      echo "No versioned Xcode found, keeping $(xcode-select -p)"
+                  fi
+                  sdk="$(xcrun --sdk macosx --show-sdk-path)"
+                  echo "SDKROOT=$sdk" >> "$GITHUB_ENV"
+                  echo "Developer dir: $(xcode-select -p)"
+                  echo "SDK: $sdk"
+                  xcrun clang++ --version | sed -n 1p
+                  printf '#include <cstdio>\nint main(){std::puts("link ok");}\n' > /tmp/linkcheck.cpp
+                  xcrun clang++ -std=c++23 -isysroot "$sdk" /tmp/linkcheck.cpp -o /tmp/linkcheck
+                  /tmp/linkcheck
 
             # CMake and Rust (rustup + stable) are already on the runner.
             # autoconf, autoconf-archive, automake and libtool are what

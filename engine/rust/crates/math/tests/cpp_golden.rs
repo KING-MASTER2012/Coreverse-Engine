@@ -22,8 +22,8 @@ use std::mem::{align_of, offset_of, size_of};
 use math::{Mat4, Quat, Radians, Vec2, Vec3, Vec4};
 
 const GOLDEN_PATH: &str = concat!(
-env!("CARGO_MANIFEST_DIR"),
-"/../../../../tests/math_golden/golden.txt"
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../../tests/math_golden/golden.txt"
 );
 
 fn floats(out: &mut String, name: &str, values: &[f32]) {
