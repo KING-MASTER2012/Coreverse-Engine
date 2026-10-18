@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
 done
 
 get_version_raw() {
-    export PATH="$PATH:$HOME/.local/coreverse-bootstrap/ninja"
+    export PATH="$HOME/.local/coreverse-bootstrap/ninja:$PATH"
     command -v ninja >/dev/null 2>&1 && ninja --version 2>/dev/null | head -n1
 }
 
@@ -60,7 +60,7 @@ upstream_install() {
     unzip -o -q "$archive" -d "$install_dir"
     chmod +x "$install_dir/ninja"
 
-    export PATH="$PATH:$install_dir"
+    export PATH="$install_dir:$PATH"
 }
 
 invoke_tool_check "$TOOL_NAME" "$REQUIRED_VERSION" "$PKG_NAME" get_version_raw upstream_install "$DRY_RUN" "$RESULT_FILE"

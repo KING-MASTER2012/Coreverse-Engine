@@ -231,6 +231,20 @@ if [ -d "$CARGO_BIN" ]; then
     fi
 fi
 
+# --- 6c. Same problem for cmake/ninja installed from upstream into
+#     ~/.local/coreverse-bootstrap: the check scripts ran in subshells, so the
+#     parent (Phase 2/3 and later CI steps such as `cmake --preset`) must put
+#     them on PATH itself. They are PREPENDED - the system cmake on a runner is
+#     usually older than the project minimum and would otherwise win.
+for CV_LOCAL_BIN in "$HOME/.local/coreverse-bootstrap/ninja" "$HOME/.local/coreverse-bootstrap/cmake/bin"; do
+    if [ -d "$CV_LOCAL_BIN" ]; then
+        export PATH="$CV_LOCAL_BIN:$PATH"
+        if [ -n "${GITHUB_PATH:-}" ]; then
+            echo "$CV_LOCAL_BIN" >> "$GITHUB_PATH"
+        fi
+    fi
+done
+
 # --- 7. Phase 2/3: project dependencies (independent package managers, parallel) ---
 log_banner "2/3 - Project Dependencies"
 

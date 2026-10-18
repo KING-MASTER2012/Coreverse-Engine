@@ -34,7 +34,8 @@ write_result() {
     printf 'TOOL=%s\nSTATUS=%s\nVERSION=%s\n' "$TOOL_NAME" "$status" "" > "$RESULT_FILE"
 }
 
-export PATH="$PATH:$HOME/.local/coreverse-bootstrap/cmake/bin:$HOME/.local/coreverse-bootstrap/ninja"
+# PREPEND so the bootstrap-installed cmake/ninja win over older system ones.
+export PATH="$HOME/.local/coreverse-bootstrap/cmake/bin:$HOME/.local/coreverse-bootstrap/ninja:$PATH"
 
 CMAKE_ARGS=(-S "$SOURCE_DIR" -B "$BUILD_DIR")
 
@@ -47,7 +48,12 @@ if [ -f "$TOOLCHAIN_FILE" ]; then
         # vcpkgInstalledDir from project-paths.json - tells vcpkg's CMake
         # integration where the installed package tree lives, matching the
         # --x-install-root used in the manual 'vcpkg install' step.
-        CMAKE_ARGS+=("-DVCPKG_INSTALLED_DIR=$MANIFEST_DIR/$INSTALLED_DIR")
+        # bootstrap.sh passes an ABSOLUTE path; joining it onto the manifest dir
+        # again produced "./<abs path>" (a bogus nested directory).
+        case "$INSTALLED_DIR" in
+            /*) CMAKE_ARGS+=("-DVCPKG_INSTALLED_DIR=$INSTALLED_DIR") ;;
+            *)  CMAKE_ARGS+=("-DVCPKG_INSTALLED_DIR=$MANIFEST_DIR/$INSTALLED_DIR") ;;
+        esac
     fi
 fi
 

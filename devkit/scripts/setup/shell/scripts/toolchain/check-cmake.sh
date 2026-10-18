@@ -24,7 +24,10 @@ while [ $# -gt 0 ]; do
 done
 
 get_version_raw() {
-    export PATH="$PATH:$HOME/.local/coreverse-bootstrap/cmake/bin"
+    # PREPEND: runners/distros ship an older cmake (/usr/local/bin, /usr/bin) that
+    # would otherwise shadow the freshly installed one and leave the version
+    # check stuck on the old release.
+    export PATH="$HOME/.local/coreverse-bootstrap/cmake/bin:$PATH"
     command -v cmake >/dev/null 2>&1 && cmake --version 2>/dev/null | head -n1
 }
 
@@ -67,7 +70,7 @@ upstream_install() {
         tar -xf "$archive" -C "$install_dir" --strip-components=1
     fi
 
-    export PATH="$PATH:$install_dir/bin"
+    export PATH="$install_dir/bin:$PATH"
 }
 
 invoke_tool_check "$TOOL_NAME" "$REQUIRED_VERSION" "$PKG_NAME" get_version_raw upstream_install "$DRY_RUN" "$RESULT_FILE"

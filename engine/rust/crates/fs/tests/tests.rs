@@ -1,16 +1,27 @@
 //! Test file of FS
 use camino::Utf8Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use fs::{FileSystem, OsFileSystem};
 
 fn temp_dir() -> std::path::PathBuf {
+    // Tests run in parallel: a timestamp alone can collide (macOS clock has
+    // microsecond resolution), so the directory also carries the process id
+    // and a process-wide counter. Colliding dirs let one test's cleanup delete
+    // another test's files.
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
 
-    let dir = std::env::temp_dir().join(format!("coreverse_test_{nanos}"));
+    let dir = std::env::temp_dir().join(format!(
+        "coreverse_test_{}_{nanos}_{id}",
+        std::process::id()
+    ));
 
     std::fs::create_dir_all(&dir).unwrap();
     dir

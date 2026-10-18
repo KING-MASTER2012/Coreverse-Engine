@@ -13,6 +13,12 @@
 *.js text eol=lf
 *.cmake text eol=lf
 CMakeLists.txt text eol=lf
+# Test fixtures compared byte-for-byte by tests (assets/text.txt) must stay LF on Windows too.
+*.txt text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
 
 # Special bethics according to OS
 *.sh text eol=lf

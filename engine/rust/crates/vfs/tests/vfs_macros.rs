@@ -14,7 +14,7 @@ fn path_macro_resolves_assets() {
 fn file_macro_reads_text() {
     let text = file!("assets://text.txt");
 
-    assert_eq!(text, "Hello, Coreverse!\n");
+    assert_eq!(text.replace("\r\n", "\n"), "Hello, Coreverse!\n");
 }
 
 const PNG: &[u8] = file_bytes!("assets://image.png");
@@ -40,5 +40,5 @@ fn path_can_be_used_with_std_fs() {
 
     let text = std::fs::read_to_string(path).unwrap();
 
-    assert_eq!(text, "Hello, Coreverse!\n");
+    assert_eq!(text.replace("\r\n", "\n"), "Hello, Coreverse!\n");
 }
