@@ -42,6 +42,48 @@ jobs:
               if: matrix.language == 'cpp'
               uses: dtolnay/rust-toolchain@stable
 
+            # vcpkg.json enables qtbase's `xcb` feature on Linux, and vcpkg only
+            # builds Qt's xcb platform plugin if the xcb/xkbcommon DEV packages
+            # exist on the system when bootstrap.sh runs `vcpkg install`. So they
+            # must be installed BEFORE Bootstrap (same list as cpp.yml).
+            - name: Install Qt xcb build dependencies
+              if: matrix.language == 'cpp'
+              shell: bash
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                      libfontconfig1-dev \
+                      libfreetype-dev \
+                      pkg-config \
+                      libx11-dev \
+                      libx11-xcb-dev \
+                      libxext-dev \
+                      libxfixes-dev \
+                      libxi-dev \
+                      libxrender-dev \
+                      libgl1-mesa-dev \
+                      libglu1-mesa-dev \
+                      libegl1-mesa-dev \
+                      libxcb1-dev \
+                      libxcb-cursor-dev \
+                      libxcb-xinput-dev \
+                      libxcb-glx0-dev \
+                      libxcb-icccm4-dev \
+                      libxcb-image0-dev \
+                      libxcb-keysyms1-dev \
+                      libxcb-randr0-dev \
+                      libxcb-render0-dev \
+                      libxcb-render-util0-dev \
+                      libxcb-shape0-dev \
+                      libxcb-shm0-dev \
+                      libxcb-sync-dev \
+                      libxcb-util-dev \
+                      libxcb-xfixes0-dev \
+                      libxcb-xinerama0-dev \
+                      libxcb-xkb-dev \
+                      libxkbcommon-dev \
+                      libxkbcommon-x11-dev
+
             # Installs Rust/cbindgen AND vcpkg's C++ deps (VulkanHeaders, volk,
             # VulkanMemoryAllocator, ...), then configures CMake with the vcpkg
             # toolchain file (build/). Without this, "cmake -B build" below can't
