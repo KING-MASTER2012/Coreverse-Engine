@@ -60,7 +60,11 @@ else()
     message(FATAL_ERROR "The editor has no NativeWindowBridge implementation for this platform.")
 endif()
 
-add_executable(editor ${EDITOR_SOURCES})
+# qt_add_executable (not plain add_executable): vcpkg's x64-linux and
+# arm64-osx triplets build Qt statically, and only qt_add_executable
+# finalizes the target so Qt's default platform plugin (xcb / cocoa) is
+# imported and linked. For a shared Qt (x64-windows) it behaves the same.
+qt_add_executable(editor ${EDITOR_SOURCES})
 
 # AUTOMOC scoped to this target only — EditorWindow, ViewportWidget and
 # ViewportRenderer use Q_OBJECT, so their moc'd sources need generating;

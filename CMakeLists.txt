@@ -101,6 +101,29 @@ corrosion_import_crate(
         CRATES ffi
 )
 
+# Corrosion 0.6.1 hardcodes
+#   INTERFACE_LINK_DIRECTORIES /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib
+# on every imported crate target on macOS. On CI runners that directory is
+# the Command Line Tools SDK, whose .tbd stubs (newer format, e.g.
+# "arm64e.x1-macos") the linker of the selected full Xcode cannot parse:
+#   ld: tapi error: malformed file ... libSystem.B.tbd: unknown architecture
+# Anything linked against `ffi` then fails. The compiler's own -isysroot
+# already provides libSystem/libc++, so the extra -L (and the -rpath CMake
+# derives from it) is dropped again here.
+if(APPLE)
+    foreach(_cv_rust_target ffi ffi-static ffi-shared)
+        if(TARGET ${_cv_rust_target})
+            get_target_property(_cv_link_dirs ${_cv_rust_target} INTERFACE_LINK_DIRECTORIES)
+            if(_cv_link_dirs)
+                list(FILTER _cv_link_dirs EXCLUDE REGEX "/Library/Developer/CommandLineTools(/|$)")
+                set_property(TARGET ${_cv_rust_target} PROPERTY INTERFACE_LINK_DIRECTORIES "${_cv_link_dirs}")
+            endif()
+            unset(_cv_link_dirs)
+        endif()
+    endforeach()
+    unset(_cv_rust_target)
+endif()
+
 include(FfiHeader)
 generate_ffi_header()
 
