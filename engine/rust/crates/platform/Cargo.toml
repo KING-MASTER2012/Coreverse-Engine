@@ -1,12 +1,29 @@
 [package]
 name = "platform"
-description = "Placeholder for the engine's operating-system abstraction (windowing, input, time, paths); not yet implemented"
+description = "Coreverse's operating-system abstraction: system information today; time, paths, process and thread helpers next"
 edition.workspace = true
 version.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+ccore = { path = "../ccore" }
+thiserror.workspace = true
+
+# Raw OS calls (sysconf/uname/sysctl) that std does not expose. All `unsafe`
+# code of this crate lives in the private `sys` module.
+[target.'cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios"))'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_SystemInformation",
+    "Wdk_System_SystemServices",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true
