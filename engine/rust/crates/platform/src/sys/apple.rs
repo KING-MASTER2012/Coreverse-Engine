@@ -57,7 +57,7 @@ pub(crate) fn os_version() -> Result<OsVersion> {
         } else {
             "macOS"
         }
-            .to_owned(),
+        .to_owned(),
         version: sysctl_string(c"kern.osproductversion")?,
         kernel: sysctl_string(c"kern.osrelease").ok(),
     })

@@ -20,6 +20,11 @@ pub enum Feature {
     TotalMemory,
     /// [`display_server`](crate::info::display_server).
     DisplayServer,
+    /// The monotonic [`Clock`](crate::time::Clock) and the
+    /// [`WallClock`](crate::time::WallClock).
+    Clocks,
+    /// [`precise_sleep`](crate::time::precise_sleep).
+    PreciseSleep,
 }
 
 /// How well a [`Feature`] works on a platform.
@@ -62,6 +67,12 @@ pub const fn support(feature: Feature, platform: Platform) -> Support {
         (Feature::DisplayServer, Linux) => Partial,
         (Feature::DisplayServer, Unknown) => Unsupported,
         (Feature::DisplayServer, _) => Full,
+
+        // Built on std only, so it works on every platform.
+        (Feature::Clocks, _) => Full,
+        // Without an OS backend the sleep part is a plain `thread::sleep`.
+        (Feature::PreciseSleep, Unknown) => Partial,
+        (Feature::PreciseSleep, _) => Full,
     }
 }
 
@@ -69,13 +80,17 @@ pub const fn support(feature: Feature, platform: Platform) -> Support {
 mod tests {
     use super::*;
     use crate::info::{self, DisplayServer};
+    use crate::time::{Clock, TimeSource, WallClock, precise_sleep};
+    use std::time::{Duration, Instant};
 
-    const ALL_FEATURES: [Feature; 5] = [
+    const ALL_FEATURES: [Feature; 7] = [
         Feature::OsVersion,
         Feature::LogicalCores,
         Feature::PhysicalCores,
         Feature::TotalMemory,
         Feature::DisplayServer,
+        Feature::Clocks,
+        Feature::PreciseSleep,
     ];
 
     #[test]
@@ -120,6 +135,14 @@ mod tests {
                 Feature::PhysicalCores => info::cpu_info().physical_cores.is_some(),
                 Feature::TotalMemory => info::total_memory_bytes().is_ok_and(|b| b > 0),
                 Feature::DisplayServer => info::display_server() != DisplayServer::Unknown,
+                Feature::Clocks => {
+                    WallClock.unix_time().is_ok() && Clock::new().now() < Duration::from_secs(60)
+                }
+                Feature::PreciseSleep => {
+                    let start = Instant::now();
+                    precise_sleep(Duration::from_millis(1));
+                    start.elapsed() >= Duration::from_millis(1)
+                }
             };
             match support(feature, platform) {
                 Support::Full => assert!(works, "{feature:?} is Full on {platform} but failed"),

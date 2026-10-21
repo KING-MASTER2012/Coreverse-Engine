@@ -6,11 +6,15 @@
 //! * [`info`] — OS name and version, CPU core counts, installed memory and the
 //!   session's display server, plus [`SystemInfo`](info::SystemInfo) to collect
 //!   all of it.
+//! * [`time`] — monotonic and wall clocks, [`Stopwatch`](time::Stopwatch),
+//!   [`FrameTimer`](time::FrameTimer), a [`FixedStep`](time::FixedStep)
+//!   accumulator and [`precise_sleep`](time::precise_sleep). The timers are
+//!   generic over a [`TimeSource`](time::TimeSource), so tests do not need
+//!   the real clock.
 //! * [`support`] — which of those features works how well on which platform.
 //! * [`error`] — [`PlatformError`], convertible into [`ccore::CoreError`].
 //!
-//! Time, standard directories and process/thread helpers follow in later
-//! phases; window and input handling is planned as a separate group of phases.
+//! Standard directories and process/thread helpers follow in later phases; window and input handling is planned as a separate group of phases.
 //!
 //! [`Platform`], [`Architecture`] and [`Endian`] are re-exported from
 //! [`ccore::platform`] (the compile-time tags stay there), and [`PlatformExt`]
@@ -29,18 +33,23 @@
 //! | Physical cores   | full    | partial | full  | partial | full |
 //! | Total memory     | full    | full    | full  | full    | full |
 //! | Display server   | full    | partial | full  | full    | full |
+//! | Clocks           | full    | full    | full  | full    | full |
+//! | Precise sleep    | full    | full    | full  | full    | full |
 //!
 //! "Partial" means best effort: Android reports the kernel release when the
 //! version property is missing, physical cores come from sysfs (hidden in some
 //! containers and Android builds), and on Linux the display server is derived
-//! from environment variables. Android and iOS are compile-checked in CI only;
+//! from environment variables. Precise sleep is a sleep plus a short spin;
+//! on Windows older than 10 1803 (no high-resolution timer) it may overshoot
+//! by the system timer granularity but never wakes early. Android and iOS are compile-checked in CI only;
 //! no code in this crate has been run on a device.
 //!
 //! # `unsafe`
 //!
 //! The workspace denies `unsafe_code`. The only exception is the private `sys`
 //! module, which wraps the few OS calls std does not expose (`uname`,
-//! `sysconf`, `sysctlbyname`, kernel32/ntdll) in safe functions.
+//! `sysconf`, `sysctlbyname`, kernel32/ntdll, the Windows waitable timer) in
+//! safe functions.
 
 pub mod error;
 mod ext;
@@ -52,6 +61,7 @@ pub mod support;
     reason = "thin wrappers over OS calls std does not expose (uname, sysconf, sysctlbyname, kernel32); every unsafe block documents why it is sound"
 )]
 mod sys;
+pub mod time;
 
 pub use ccore::platform::{Architecture, Endian, Platform};
 pub use error::{PlatformError, Result};

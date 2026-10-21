@@ -1,9 +1,16 @@
 //! Windows: kernel32 / ntdll through `windows-sys`.
 
+use std::time::Duration;
+
 use windows_sys::Wdk::System::SystemServices::RtlGetVersion;
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
 use windows_sys::Win32::System::SystemInformation::{
     GetLogicalProcessorInformationEx, GlobalMemoryStatusEx, MEMORYSTATUSEX, OSVERSIONINFOW,
     RelationProcessorCore,
+};
+use windows_sys::Win32::System::Threading::{
+    CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, CreateWaitableTimerExW, INFINITE, SetWaitableTimer,
+    TIMER_ALL_ACCESS, WaitForSingleObject,
 };
 
 use crate::error::{PlatformError, Result};
@@ -79,4 +86,74 @@ pub(crate) fn total_memory_bytes() -> Result<u64> {
         return Err(PlatformError::last_os_error("GlobalMemoryStatusEx"));
     }
     Ok(status.ullTotalPhys)
+}
+
+/// An owned waitable-timer handle.
+struct WaitableTimer(HANDLE);
+
+impl Drop for WaitableTimer {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from CreateWaitableTimerExW, is owned by
+        // this value alone and is closed exactly once, here.
+        unsafe { CloseHandle(self.0) };
+    }
+}
+
+fn create_high_resolution_timer() -> Option<WaitableTimer> {
+    // SAFETY: a null SECURITY_ATTRIBUTES and a null name are both allowed (an
+    // unnamed timer with default security); the flag and access rights are
+    // the documented constants. The call has no other preconditions.
+    let handle = unsafe {
+        CreateWaitableTimerExW(
+            std::ptr::null(),
+            std::ptr::null(),
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+            TIMER_ALL_ACCESS,
+        )
+    };
+    // The high-resolution flag needs Windows 10 1803; older systems fail the
+    // call, which is reported as a null handle.
+    (!handle.is_null()).then_some(WaitableTimer(handle))
+}
+
+thread_local! {
+    // One timer per thread: creating a kernel object for every sleep would
+    // cost more than the accuracy it buys, and a waitable timer must not be
+    // armed from two threads at once.
+    static HIGH_RESOLUTION_TIMER: Option<WaitableTimer> = create_high_resolution_timer();
+}
+
+/// Sleeps on the high-resolution timer; `false` when it is unavailable or
+/// the wait failed, in which case the caller falls back.
+fn wait_high_resolution(duration: Duration) -> bool {
+    HIGH_RESOLUTION_TIMER.with(|slot| {
+        let Some(timer) = slot else {
+            return false;
+        };
+        // A negative due time is relative, in 100 ns units.
+        let ticks = i64::try_from(duration.as_nanos().div_ceil(100))
+            .unwrap_or(i64::MAX)
+            .max(1);
+        let due = -ticks;
+        // SAFETY: `timer.0` is a valid timer handle owned by this thread's
+        // slot; `due` is a valid i64 for the whole call; a zero period makes
+        // the timer one-shot, and the null completion routine/argument pair
+        // is allowed.
+        let armed = unsafe { SetWaitableTimer(timer.0, &due, 0, None, std::ptr::null(), 0) } != 0;
+        if !armed {
+            return false;
+        }
+        // SAFETY: `timer.0` is a valid handle that stays open for the call.
+        unsafe { WaitForSingleObject(timer.0, INFINITE) == WAIT_OBJECT_0 }
+    })
+}
+
+/// Sleeps for at least `duration`: on the high-resolution waitable timer
+/// when the system has one (about 0.5 ms accuracy), else on
+/// `std::thread::sleep` (about 15 ms).
+pub(crate) fn sleep_coarse(duration: Duration) {
+    if duration.is_zero() || wait_high_resolution(duration) {
+        return;
+    }
+    std::thread::sleep(duration);
 }
