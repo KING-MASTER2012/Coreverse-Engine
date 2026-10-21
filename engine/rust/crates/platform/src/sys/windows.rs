@@ -1,9 +1,13 @@
 //! Windows: kernel32 / ntdll through `windows-sys`.
 
+use std::ffi::OsString;
+use std::os::windows::ffi::OsStringExt;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use windows_sys::Wdk::System::SystemServices::RtlGetVersion;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
+use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::SystemInformation::{
     GetLogicalProcessorInformationEx, GlobalMemoryStatusEx, MEMORYSTATUSEX, OSVERSIONINFOW,
     RelationProcessorCore,
@@ -12,6 +16,11 @@ use windows_sys::Win32::System::Threading::{
     CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, CreateWaitableTimerExW, INFINITE, SetWaitableTimer,
     TIMER_ALL_ACCESS, WaitForSingleObject,
 };
+use windows_sys::Win32::UI::Shell::{
+    FOLDERID_LocalAppData, FOLDERID_RoamingAppData, SHGetKnownFolderPath,
+};
+
+use crate::paths::KnownFolder;
 
 use crate::error::{PlatformError, Result};
 use crate::info::OsVersion;
@@ -156,4 +165,48 @@ pub(crate) fn sleep_coarse(duration: Duration) {
         return;
     }
     std::thread::sleep(duration);
+}
+
+/// The path of a known folder, via `SHGetKnownFolderPath`.
+pub(crate) fn known_folder(folder: KnownFolder) -> Result<PathBuf> {
+    let id = match folder {
+        KnownFolder::RoamingAppData => &FOLDERID_RoamingAppData,
+        KnownFolder::LocalAppData => &FOLDERID_LocalAppData,
+    };
+    let mut raw: *mut u16 = std::ptr::null_mut();
+    // SAFETY: `id` is a valid GUID that outlives the call; a null token means
+    // the current user; `raw` is a valid location for the returned pointer.
+    // Flags `0` is KF_FLAG_DEFAULT.
+    let hr = unsafe { SHGetKnownFolderPath(id, 0, std::ptr::null_mut(), &mut raw) };
+
+    let result = if hr < 0 {
+        Err(PlatformError::Os {
+            call: "SHGetKnownFolderPath",
+            code: hr,
+            message: format!("HRESULT {hr:#010x}"),
+        })
+    } else if raw.is_null() {
+        Err(PlatformError::unusable(
+            "SHGetKnownFolderPath",
+            "returned success without a path",
+        ))
+    } else {
+        let mut len = 0;
+        // SAFETY: on success `raw` points to a NUL-terminated UTF-16 string
+        // that stays valid until `CoTaskMemFree`, so every offset up to and
+        // including the terminator is readable.
+        while unsafe { *raw.add(len) } != 0 {
+            len += 1;
+        }
+        // SAFETY: `raw` points to `len` initialised u16 values (see above) and
+        // nothing writes to them while the slice lives.
+        let wide = unsafe { std::slice::from_raw_parts(raw, len) };
+        Ok(PathBuf::from(OsString::from_wide(wide)))
+    };
+
+    // SAFETY: the caller owns the buffer SHGetKnownFolderPath allocated and
+    // must free it, also after a failure; it is freed once and never used
+    // again. `CoTaskMemFree(NULL)` is a documented no-op.
+    unsafe { CoTaskMemFree(raw.cast()) };
+    result
 }

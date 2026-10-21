@@ -25,6 +25,9 @@ pub enum Feature {
     Clocks,
     /// [`precise_sleep`](crate::time::precise_sleep).
     PreciseSleep,
+    /// [`AppDirs`](crate::paths::AppDirs): config, data, cache, log, temp,
+    /// home and executable directories.
+    StandardDirs,
 }
 
 /// How well a [`Feature`] works on a platform.
@@ -73,6 +76,10 @@ pub const fn support(feature: Feature, platform: Platform) -> Support {
         // Without an OS backend the sleep part is a plain `thread::sleep`.
         (Feature::PreciseSleep, Unknown) => Partial,
         (Feature::PreciseSleep, _) => Full,
+
+        (Feature::StandardDirs, Windows | Linux | MacOS) => Full,
+        // No such convention on mobile (app sandboxes), no backend elsewhere.
+        (Feature::StandardDirs, Android | IOS | Unknown) => Unsupported,
     }
 }
 
@@ -80,10 +87,11 @@ pub const fn support(feature: Feature, platform: Platform) -> Support {
 mod tests {
     use super::*;
     use crate::info::{self, DisplayServer};
+    use crate::paths::AppDirs;
     use crate::time::{Clock, TimeSource, WallClock, precise_sleep};
     use std::time::{Duration, Instant};
 
-    const ALL_FEATURES: [Feature; 7] = [
+    const ALL_FEATURES: [Feature; 8] = [
         Feature::OsVersion,
         Feature::LogicalCores,
         Feature::PhysicalCores,
@@ -91,6 +99,7 @@ mod tests {
         Feature::DisplayServer,
         Feature::Clocks,
         Feature::PreciseSleep,
+        Feature::StandardDirs,
     ];
 
     #[test]
@@ -143,6 +152,9 @@ mod tests {
                     precise_sleep(Duration::from_millis(1));
                     start.elapsed() >= Duration::from_millis(1)
                 }
+                Feature::StandardDirs => AppDirs::new("support-check")
+                    .and_then(|dirs| dirs.config())
+                    .is_ok(),
             };
             match support(feature, platform) {
                 Support::Full => assert!(works, "{feature:?} is Full on {platform} but failed"),

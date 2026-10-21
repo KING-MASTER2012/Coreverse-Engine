@@ -1,8 +1,8 @@
 //! The operating-system backends.
 //!
 //! Exactly one backend is compiled; each exports the same three system-info
-//! functions. `sleep_coarse` is the one extra: only Windows needs more than
-//! `std::thread::sleep` for it. All
+//! functions. `sleep_coarse` is an extra that only Windows needs more than
+//! `std::thread::sleep` for, and `known_folder` exists on Windows alone. All
 //! `unsafe` code of the crate lives in this module tree (see the `allow` on its
 //! declaration in `lib.rs`), keeps its unsafe blocks tiny, and documents why
 //! each is sound.
@@ -20,7 +20,9 @@ pub(crate) use apple::{os_version, physical_cores, total_memory_bytes};
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub(crate) use windows::{os_version, physical_cores, sleep_coarse, total_memory_bytes};
+pub(crate) use windows::{
+    known_folder, os_version, physical_cores, sleep_coarse, total_memory_bytes,
+};
 
 #[cfg(not(any(
     target_os = "linux",
