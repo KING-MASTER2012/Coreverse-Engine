@@ -28,6 +28,17 @@ pub enum Feature {
     /// [`AppDirs`](crate::paths::AppDirs): config, data, cache, log, temp,
     /// home and executable directories.
     StandardDirs,
+    /// The [`env`](crate::env) helpers and [`process::id`](crate::process::id)
+    /// / [`process::current_exe`](crate::process::current_exe).
+    Environment,
+    /// [`process::open_url`](crate::process::open_url).
+    OpenUrl,
+    /// [`process::reveal_in_file_manager`](crate::process::reveal_in_file_manager).
+    RevealInFileManager,
+    /// [`thread::set_name`](crate::thread::set_name).
+    ThreadName,
+    /// [`thread::set_priority`](crate::thread::set_priority).
+    ThreadPriority,
 }
 
 /// How well a [`Feature`] works on a platform.
@@ -80,18 +91,43 @@ pub const fn support(feature: Feature, platform: Platform) -> Support {
         (Feature::StandardDirs, Windows | Linux | MacOS) => Full,
         // No such convention on mobile (app sandboxes), no backend elsewhere.
         (Feature::StandardDirs, Android | IOS | Unknown) => Unsupported,
+
+        // Built on std only.
+        (Feature::Environment, _) => Full,
+
+        (Feature::OpenUrl, Windows | MacOS) => Full,
+        // Needs `xdg-open`, which minimal systems and containers lack.
+        (Feature::OpenUrl, Linux) => Partial,
+        (Feature::OpenUrl, Android | IOS | Unknown) => Unsupported,
+
+        (Feature::RevealInFileManager, Windows | MacOS) => Full,
+        // Opens the folder; there is no portable way to select the file.
+        (Feature::RevealInFileManager, Linux) => Partial,
+        (Feature::RevealInFileManager, Android | IOS | Unknown) => Unsupported,
+
+        (Feature::ThreadName, Windows | Linux | MacOS) => Full,
+        // Implemented, but never run on a device.
+        (Feature::ThreadName, Android | IOS) => Partial,
+        (Feature::ThreadName, Unknown) => Unsupported,
+
+        (Feature::ThreadPriority, Windows | MacOS) => Full,
+        // Raising the priority needs privileges (CAP_SYS_NICE).
+        (Feature::ThreadPriority, Linux) => Partial,
+        (Feature::ThreadPriority, Android | IOS) => Partial,
+        (Feature::ThreadPriority, Unknown) => Unsupported,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::PlatformError;
     use crate::info::{self, DisplayServer};
     use crate::paths::AppDirs;
     use crate::time::{Clock, TimeSource, WallClock, precise_sleep};
     use std::time::{Duration, Instant};
 
-    const ALL_FEATURES: [Feature; 8] = [
+    const ALL_FEATURES: [Feature; 13] = [
         Feature::OsVersion,
         Feature::LogicalCores,
         Feature::PhysicalCores,
@@ -100,6 +136,11 @@ mod tests {
         Feature::Clocks,
         Feature::PreciseSleep,
         Feature::StandardDirs,
+        Feature::Environment,
+        Feature::OpenUrl,
+        Feature::RevealInFileManager,
+        Feature::ThreadName,
+        Feature::ThreadPriority,
     ];
 
     #[test]
@@ -155,6 +196,32 @@ mod tests {
                 Feature::StandardDirs => AppDirs::new("support-check")
                     .and_then(|dirs| dirs.config())
                     .is_ok(),
+                Feature::Environment => {
+                    crate::process::id() > 0 && crate::process::current_exe().is_ok()
+                }
+                // Neither may start a launcher in a test, so this checks that
+                // the call is implemented (it rejects bad input) rather than
+                // that a launcher is installed; that is why Linux is Partial.
+                Feature::OpenUrl => matches!(
+                    crate::process::open_url("javascript:alert(1)"),
+                    Err(PlatformError::Io(ref e)) if e.kind() == std::io::ErrorKind::InvalidInput
+                ),
+                Feature::RevealInFileManager => matches!(
+                    crate::process::reveal_in_file_manager(camino::Utf8Path::new(
+                        "/definitely/not/here/coreverse"
+                    )),
+                    Err(PlatformError::Io(ref e)) if e.kind() == std::io::ErrorKind::NotFound
+                ),
+                Feature::ThreadName => {
+                    std::thread::spawn(|| crate::thread::set_name("support-check").is_ok())
+                        .join()
+                        .unwrap_or(false)
+                }
+                Feature::ThreadPriority => std::thread::spawn(|| {
+                    crate::thread::set_priority(crate::thread::ThreadPriority::Normal).is_ok()
+                })
+                .join()
+                .unwrap_or(false),
             };
             match support(feature, platform) {
                 Support::Full => assert!(works, "{feature:?} is Full on {platform} but failed"),

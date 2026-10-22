@@ -14,10 +14,16 @@
 //! * [`paths`] — [`AppDirs`](paths::AppDirs): the config, data, cache, log and
 //!   temp directories of an application, plus the home and executable
 //!   directories, as `Utf8PathBuf`s. Nothing is created unless asked.
+//! * [`env`](mod@env) — read-only environment access (`var`, `var_path`, `var_bool`,
+//!   `args`, `current_dir`); there is deliberately no way to set variables.
+//! * [`process`] — process id, executable path, `open_url` and
+//!   `reveal_in_file_manager` (desktop only).
+//! * [`thread`] — OS-level thread names and abstract
+//!   [`ThreadPriority`](thread::ThreadPriority) levels.
 //! * [`support`] — which of those features works how well on which platform.
 //! * [`error`] — [`PlatformError`], convertible into [`ccore::CoreError`].
 //!
-//! Process and thread helpers follow in later phases; window and input handling is planned as a separate group of phases.
+//! Window and input handling are planned as a separate group of phases.
 //!
 //! [`Platform`], [`Architecture`] and [`Endian`] are re-exported from
 //! [`ccore::platform`] (the compile-time tags stay there), and [`PlatformExt`]
@@ -40,13 +46,20 @@
 //! | Clocks           | full    | full    | full  | full    | full |
 //! | Precise sleep    | full    | full    | full  | full    | full |
 //! | Standard dirs    | full    | full    | full  | none    | none |
+//! | Environment      | full    | full    | full  | full    | full |
+//! | Open URL         | full    | partial | full  | none    | none |
+//! | Reveal in files  | full    | partial | full  | none    | none |
+//! | Thread name      | full    | full    | full  | partial | partial |
+//! | Thread priority  | full    | partial | full  | partial | partial |
 //!
 //! "Partial" means best effort: Android reports the kernel release when the
 //! version property is missing, physical cores come from sysfs (hidden in some
 //! containers and Android builds), and on Linux the display server is derived
 //! from environment variables. Precise sleep is a sleep plus a short spin;
 //! on Windows older than 10 1803 (no high-resolution timer) it may overshoot
-//! by the system timer granularity but never wakes early. Android and iOS are compile-checked in CI only;
+//! by the system timer granularity but never wakes early. On Linux, `open_url` and `reveal_in_file_manager` need `xdg-open`
+//! (the latter only opens the folder), and raising a thread's priority needs
+//! privileges (`PermissionDenied` otherwise). Android and iOS are compile-checked in CI only;
 //! no code in this crate has been run on a device.
 //!
 //! # `unsafe`
@@ -56,17 +69,20 @@
 //! `sysconf`, `sysctlbyname`, kernel32/ntdll, the Windows waitable timer,
 //! `SHGetKnownFolderPath`) in safe functions.
 
+pub mod env;
 pub mod error;
 mod ext;
 pub mod info;
 mod parse;
 pub mod paths;
+pub mod process;
 pub mod support;
 #[allow(
     unsafe_code,
     reason = "thin wrappers over OS calls std does not expose (uname, sysconf, sysctlbyname, kernel32); every unsafe block documents why it is sound"
 )]
 mod sys;
+pub mod thread;
 pub mod time;
 
 pub use ccore::platform::{Architecture, Endian, Platform};

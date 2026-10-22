@@ -250,3 +250,42 @@ mod tests {
         assert_eq!(physical_cores_from_sysfs(&tmp.path().join("missing")), None);
     }
 }
+
+/// The longest prefix of `text` that is at most `max_bytes` long and does not
+/// cut a UTF-8 character in half.
+pub(crate) fn truncate_utf8(text: &str, max_bytes: usize) -> &str {
+    if text.len() <= max_bytes {
+        return text;
+    }
+    let mut end = max_bytes;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
+#[cfg(test)]
+mod truncate_tests {
+    use super::truncate_utf8;
+
+    #[test]
+    fn keeps_short_text() {
+        assert_eq!(truncate_utf8("render", 15), "render");
+        assert_eq!(truncate_utf8("", 3), "");
+    }
+
+    #[test]
+    fn cuts_at_the_limit() {
+        assert_eq!(truncate_utf8("abcdefghij", 4), "abcd");
+    }
+
+    #[test]
+    fn never_splits_a_character() {
+        // "é" is two bytes: a cut at 3 must fall back to 2.
+        assert_eq!(truncate_utf8("aéb", 2), "a");
+        assert_eq!(truncate_utf8("aéb", 3), "aé");
+        assert_eq!(truncate_utf8("ééé", 5), "éé");
+        assert_eq!(truncate_utf8("日本語", 4), "日");
+        assert_eq!(truncate_utf8("日本語", 0), "");
+    }
+}

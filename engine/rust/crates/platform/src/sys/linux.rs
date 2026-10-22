@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::error::{PlatformError, Result};
 use crate::info::OsVersion;
 use crate::parse;
+use crate::thread::ThreadPriority;
 
 /// Kernel release (`uname -r`).
 fn kernel_release() -> Result<String> {
@@ -101,4 +102,68 @@ pub(crate) fn total_memory_bytes() -> Result<u64> {
     pages
         .checked_mul(page_size)
         .ok_or_else(|| PlatformError::unusable("sysconf", "total memory overflows u64"))
+}
+
+/// Linux limits a thread name to 15 bytes plus the terminating NUL.
+const MAX_THREAD_NAME_BYTES: usize = 15;
+
+/// Names the calling thread (`prctl(PR_SET_NAME)`), cutting the name to what
+/// the kernel accepts. `prctl` works on every Android API level, unlike
+/// `pthread_setname_np`, which bionic only has since API 26.
+pub(crate) fn set_thread_name(name: &str) -> Result<()> {
+    let name = parse::truncate_utf8(name, MAX_THREAD_NAME_BYTES);
+    let name = std::ffi::CString::new(name).map_err(|err| {
+        PlatformError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, err))
+    })?;
+    // SAFETY: PR_SET_NAME reads a NUL-terminated string of at most 16 bytes
+    // (including the NUL) at the address in the second argument; `name` is at
+    // most 15 bytes plus its NUL and outlives the call. The remaining
+    // arguments are unused by this option and passed as zero.
+    let rc = unsafe {
+        libc::prctl(
+            libc::PR_SET_NAME,
+            name.as_ptr() as libc::c_ulong,
+            0 as libc::c_ulong,
+            0 as libc::c_ulong,
+            0 as libc::c_ulong,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(PlatformError::last_os_error("prctl"))
+    }
+}
+
+/// The nice value of an abstract priority. Negative values need privileges.
+fn nice_value(priority: ThreadPriority) -> libc::c_int {
+    match priority {
+        ThreadPriority::Low => 10,
+        ThreadPriority::Normal => 0,
+        ThreadPriority::High => -5,
+        ThreadPriority::TimeCritical => -10,
+    }
+}
+
+/// Sets the nice value of the calling thread. Linux keeps a nice value per
+/// thread (a deviation from POSIX that `setpriority(PRIO_PROCESS, tid, ..)`
+/// relies on). Without `CAP_SYS_NICE` or a suitable `RLIMIT_NICE`, lowering
+/// the nice value is refused: that includes going back from `Low` to
+/// `Normal`.
+pub(crate) fn set_thread_priority(priority: ThreadPriority) -> Result<()> {
+    // SAFETY: `SYS_gettid` takes no arguments and cannot fail.
+    let tid = unsafe { libc::syscall(libc::SYS_gettid) };
+    let tid = libc::id_t::try_from(tid)
+        .map_err(|_| PlatformError::unusable("gettid", "returned an invalid thread id"))?;
+    // SAFETY: all arguments are plain integers.
+    let rc = unsafe { libc::setpriority(libc::PRIO_PROCESS, tid, nice_value(priority)) };
+    if rc == 0 {
+        return Ok(());
+    }
+    let err = std::io::Error::last_os_error();
+    match err.raw_os_error() {
+        // EPERM and EACCES both map to `ErrorKind::PermissionDenied`.
+        Some(code) if code == libc::EPERM || code == libc::EACCES => Err(PlatformError::Io(err)),
+        _ => Err(PlatformError::last_os_error("setpriority")),
+    }
 }

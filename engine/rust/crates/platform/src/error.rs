@@ -72,6 +72,20 @@ impl PlatformError {
         }
     }
 
+    /// An [`Os`](Self::Os) error from an explicit error number, for calls that
+    /// return the error instead of setting `errno` (the `pthread_*` family).
+    #[allow(
+        dead_code,
+        reason = "each OS backend uses a different subset of these constructors"
+    )]
+    pub(crate) fn from_errno(call: &'static str, errno: i32) -> Self {
+        Self::Os {
+            call,
+            code: errno,
+            message: std::io::Error::from_raw_os_error(errno).to_string(),
+        }
+    }
+
     /// An [`Os`](Self::Os) error for a call that succeeded but returned data
     /// this crate cannot use.
     #[allow(

@@ -7,20 +7,26 @@ use std::time::Duration;
 
 use windows_sys::Wdk::System::SystemServices::RtlGetVersion;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
-use windows_sys::Win32::System::Com::CoTaskMemFree;
+use windows_sys::Win32::System::Com::{
+    COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoTaskMemFree, CoUninitialize,
+};
 use windows_sys::Win32::System::SystemInformation::{
     GetLogicalProcessorInformationEx, GlobalMemoryStatusEx, MEMORYSTATUSEX, OSVERSIONINFOW,
     RelationProcessorCore,
 };
 use windows_sys::Win32::System::Threading::{
-    CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, CreateWaitableTimerExW, INFINITE, SetWaitableTimer,
+    CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, CreateWaitableTimerExW, GetCurrentThread, INFINITE,
+    SetThreadDescription, SetThreadPriority, SetWaitableTimer, THREAD_PRIORITY_HIGHEST,
+    THREAD_PRIORITY_LOWEST, THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_TIME_CRITICAL,
     TIMER_ALL_ACCESS, WaitForSingleObject,
 };
 use windows_sys::Win32::UI::Shell::{
-    FOLDERID_LocalAppData, FOLDERID_RoamingAppData, SHGetKnownFolderPath,
+    FOLDERID_LocalAppData, FOLDERID_RoamingAppData, SHGetKnownFolderPath, ShellExecuteW,
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 use crate::paths::KnownFolder;
+use crate::thread::ThreadPriority;
 
 use crate::error::{PlatformError, Result};
 use crate::info::OsVersion;
@@ -209,4 +215,104 @@ pub(crate) fn known_folder(folder: KnownFolder) -> Result<PathBuf> {
     // again. `CoTaskMemFree(NULL)` is a documented no-op.
     unsafe { CoTaskMemFree(raw.cast()) };
     result
+}
+
+/// A NUL-terminated UTF-16 copy of `text`; interior NULs are rejected so the
+/// string cannot be cut short behind the caller's back.
+fn wide(text: &str) -> Result<Vec<u16>> {
+    if text.contains('\0') {
+        return Err(PlatformError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "string contains a NUL character",
+        )));
+    }
+    Ok(text.encode_utf16().chain(std::iter::once(0)).collect())
+}
+
+/// Names the calling thread (`SetThreadDescription`, Windows 10 1607 and
+/// later). The name is not cut: Windows has no short limit.
+pub(crate) fn set_thread_name(name: &str) -> Result<()> {
+    let name = wide(name)?;
+    // SAFETY: `GetCurrentThread` returns a pseudo-handle that needs no
+    // closing; `name` is a valid NUL-terminated UTF-16 string for the call.
+    let hr = unsafe { SetThreadDescription(GetCurrentThread(), name.as_ptr()) };
+    if hr >= 0 {
+        Ok(())
+    } else {
+        Err(PlatformError::Os {
+            call: "SetThreadDescription",
+            code: hr,
+            message: format!("HRESULT {hr:#010x}"),
+        })
+    }
+}
+
+/// Maps the abstract priority to a `THREAD_PRIORITY_*` level of the calling
+/// thread: lowest, normal, highest and time-critical.
+pub(crate) fn set_thread_priority(priority: ThreadPriority) -> Result<()> {
+    let level = match priority {
+        ThreadPriority::Low => THREAD_PRIORITY_LOWEST,
+        ThreadPriority::Normal => THREAD_PRIORITY_NORMAL,
+        ThreadPriority::High => THREAD_PRIORITY_HIGHEST,
+        ThreadPriority::TimeCritical => THREAD_PRIORITY_TIME_CRITICAL,
+    };
+    // SAFETY: the pseudo-handle of the calling thread is always valid and
+    // `level` is one of the documented THREAD_PRIORITY_* values.
+    if unsafe { SetThreadPriority(GetCurrentThread(), level) } != 0 {
+        Ok(())
+    } else {
+        Err(PlatformError::last_os_error("SetThreadPriority"))
+    }
+}
+
+/// `ShellExecuteW` with the `open` verb on `file`, with optional command-line
+/// `parameters`. The caller is responsible for what `file` is allowed to be:
+/// `ShellExecute` will start programs and open documents, not just URLs.
+pub(crate) fn shell_execute(file: &str, parameters: Option<&str>) -> Result<()> {
+    let verb = wide("open")?;
+    let file = wide(file)?;
+    let parameters = parameters.map(wide).transpose()?;
+
+    // ShellExecute is documented to expect COM on the calling thread. A
+    // thread that is already in another apartment mode reports a failure
+    // here, which is fine: COM is usable, and we must not uninitialize it.
+    // SAFETY: the reserved pointer must be null; the flags are documented.
+    let hr = unsafe {
+        CoInitializeEx(
+            std::ptr::null(),
+            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
+        )
+    };
+    let initialized_com = hr >= 0;
+
+    // SAFETY: the window, working directory and (optionally) parameters may
+    // be null; all other strings are valid NUL-terminated UTF-16 buffers that
+    // outlive the call.
+    let instance = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            parameters
+                .as_ref()
+                .map_or(std::ptr::null(), |text| text.as_ptr()),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+
+    if initialized_com {
+        // SAFETY: balances the successful CoInitializeEx above on this thread.
+        unsafe { CoUninitialize() };
+    }
+
+    // Values up to 32 are error codes, mostly Win32 ones (2 is "file not
+    // found", 5 is "access denied"), the rest SE_ERR_*.
+    let code = instance.addr();
+    if code > 32 {
+        Ok(())
+    } else {
+        let code = i32::try_from(code).unwrap_or(0);
+        Err(PlatformError::from_errno("ShellExecuteW", code))
+    }
 }

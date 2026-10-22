@@ -4,6 +4,7 @@ use std::ffi::CStr;
 
 use crate::error::{PlatformError, Result};
 use crate::info::OsVersion;
+use crate::thread::ThreadPriority;
 
 /// Reads the sysctl `name` into `out` and returns the number of bytes written.
 fn sysctl_raw(name: &CStr, out: &mut [u8]) -> Result<usize> {
@@ -70,4 +71,61 @@ pub(crate) fn physical_cores() -> Option<usize> {
 
 pub(crate) fn total_memory_bytes() -> Result<u64> {
     sysctl_u64(c"hw.memsize")
+}
+
+/// Darwin accepts thread names up to 63 bytes.
+const MAX_THREAD_NAME_BYTES: usize = 63;
+
+/// Names the calling thread with `pthread_setname_np`.
+pub(crate) fn set_thread_name(name: &str) -> Result<()> {
+    let name = crate::parse::truncate_utf8(name, MAX_THREAD_NAME_BYTES);
+    let name = std::ffi::CString::new(name).map_err(|err| {
+        PlatformError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, err))
+    })?;
+    // SAFETY: `name` is a valid NUL-terminated string that outlives the call;
+    // the Darwin variant of the function names the calling thread.
+    let rc = unsafe { libc::pthread_setname_np(name.as_ptr()) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(PlatformError::from_errno("pthread_setname_np", rc))
+    }
+}
+
+// The libc crate does not export the QoS API, so it is declared here. The
+// declaration matches `<pthread/qos.h>`: `qos_class_t` is an `unsigned int`.
+unsafe extern "C" {
+    fn pthread_set_qos_class_self_np(
+        qos_class: libc::c_uint,
+        relative_priority: libc::c_int,
+    ) -> libc::c_int;
+}
+
+// The `QOS_CLASS_*` values of `<sys/qos.h>`.
+const QOS_CLASS_USER_INTERACTIVE: libc::c_uint = 0x21;
+const QOS_CLASS_USER_INITIATED: libc::c_uint = 0x19;
+const QOS_CLASS_DEFAULT: libc::c_uint = 0x15;
+const QOS_CLASS_UTILITY: libc::c_uint = 0x11;
+
+/// Maps the abstract priority to a Quality-of-Service class and applies it to
+/// the calling thread.
+pub(crate) fn set_thread_priority(priority: ThreadPriority) -> Result<()> {
+    let class = match priority {
+        ThreadPriority::Low => QOS_CLASS_UTILITY,
+        ThreadPriority::Normal => QOS_CLASS_DEFAULT,
+        ThreadPriority::High => QOS_CLASS_USER_INITIATED,
+        ThreadPriority::TimeCritical => QOS_CLASS_USER_INTERACTIVE,
+    };
+    // SAFETY: `class` is one of the documented QoS classes and 0 is the
+    // neutral relative priority; the function only changes the scheduling of
+    // the calling thread and takes no pointers.
+    let rc = unsafe { pthread_set_qos_class_self_np(class, 0) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(PlatformError::from_errno(
+            "pthread_set_qos_class_self_np",
+            rc,
+        ))
+    }
 }

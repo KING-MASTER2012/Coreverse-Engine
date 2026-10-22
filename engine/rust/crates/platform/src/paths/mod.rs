@@ -223,7 +223,7 @@ fn create(path: Utf8PathBuf) -> Result<Utf8PathBuf> {
     Ok(path)
 }
 
-fn utf8(path: std::path::PathBuf) -> Result<Utf8PathBuf> {
+pub(crate) fn utf8(path: std::path::PathBuf) -> Result<Utf8PathBuf> {
     Utf8PathBuf::from_path_buf(path).map_err(PlatformError::NonUtf8Path)
 }
 
