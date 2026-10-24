@@ -4,8 +4,8 @@
 engine/
 ├── rust/            Rust 2024 workspace
 │   ├── common/      ccore, fs, log-core, log-sinks ...
-│   ├── crates/      vfs, ffi, math, and placeholder crates for future systems
-│   └── macros/      proc macros (vfs-macros)
+│   ├── crates/      vfs, ffi, math, platform, and placeholder crates for future systems
+│   └── macros/      proc macros (vfs-macros, math-macros)
 └── cpp/             C++23
     ├── math/        cv-math: header-only mirror of the Rust math crate
     ├── renderer/    Vulkan renderer library
@@ -16,10 +16,12 @@ engine/
 ## Layers
 
 * **Rust core** owns things that benefit from memory safety and testing: the virtual file system, logging,
-  filesystem helpers, math.
+  filesystem helpers, math, and the operating-system abstraction (`platform`: system info, clocks and timers,
+  standard directories, process and thread helpers; see [Platform layer](platform.md)).
 * **`ffi`** is a C ABI over the Rust core (`cbindgen` generates `ffi.h`; Corrosion builds and links the static
-  library from CMake). Nothing else in Rust is exposed to C++ yet.
-* **`cv-ffi`** wraps that ABI in C++ RAII types (`Logger`, `DiagnosticBuilder`, `vfs::*`).
+  library from CMake). It exposes logging, the VFS, build info, and platform information and directories; the other
+  Rust crates are not exposed to C++.
+* **`cv-ffi`** wraps that ABI in C++ RAII types (`Logger`, `DiagnosticBuilder`, `vfs::*`, `platform::*`).
 * **`renderer`** is deliberately independent of Rust and of Qt. It talks to the GPU through the backend-neutral
   `RenderDevice` interface; only a Vulkan backend exists.
 * **`cv-math`** is header-only and dependency-free, so the renderer, the editor and tests can all use it.
