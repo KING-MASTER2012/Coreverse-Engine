@@ -73,6 +73,11 @@ pub mod diagnostic;
 /// have a real `enum`'s worth of distinct failure reasons).
 pub mod vfs;
 
+/// Platform FFI surface: [`platform::PlatformInfo`] (OS, CPU, memory,
+/// display server) and the standard application directories. Same
+/// thread-local last-error convention as `vfs`; see the module docs.
+pub mod platform;
+
 use std::ffi::CString;
 use std::os::raw::c_char;
 

@@ -1,6 +1,6 @@
 [package]
 name = "acse"
-description = "Placeholder for Advanced Connecting System for ECS(ACSE)"
+description = "Auto Connecting System for ECS (ACSE): the engine's macro system that connects code to the ECS world automatically (placeholder)"
 edition.workspace = true
 version.workspace = true
 rust-version.workspace = true

@@ -19,6 +19,9 @@ log-sinks = { path = "../log-sinks" }
 # same module (`use vfs::Foo;` inside `mod vfs { ... }` is ambiguous —
 # see vfs.rs's module docs).
 vfs-crate = { package = "vfs", path = "../vfs" }
+# Renamed on import for the same reason as `vfs-crate`: this crate has its
+# own `platform` FFI module (src/platform.rs).
+platform-crate = { package = "platform", path = "../platform" }
 camino.workspace = true
 
 [lints]

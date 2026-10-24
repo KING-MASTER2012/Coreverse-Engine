@@ -22,6 +22,7 @@ add_library(cv-ffi STATIC
         src/Logger.cpp
         src/Diagnostic.cpp
         src/Vfs.cpp
+        src/Platform.cpp
 )
 
 add_library(cv-ffi::cv-ffi ALIAS cv-ffi)

@@ -231,6 +231,7 @@ dependencies = [
  "ccore",
  "log-core",
  "log-sinks",
+ "platform",
  "vfs",
 ]
 

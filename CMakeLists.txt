@@ -145,11 +145,15 @@ if(BUILD_RENDERER)
 endif()
 
 # cv-ffi (C++ RAII wrappers over ffi.h — see engine/cpp/ffi-cpp/CMakeLists.txt)
-# is built whenever the editor is, since it's currently the only consumer;
-# split this out from BUILD_EDITOR the day something else needs it (e.g. a
-# headless tool) without needing the whole Qt editor.
-if(BUILD_EDITOR)
+# needs only the Rust `ffi` library, not Qt. It is built whenever the editor is
+# (its consumer) and whenever the tests are, so its own tests (e.g.
+# cv_ffi_platform_test) also run in a headless configuration with
+# -DBUILD_EDITOR=OFF.
+if(BUILD_EDITOR OR BUILD_TESTS)
     add_subdirectory(engine/cpp/ffi-cpp)
+endif()
+
+if(BUILD_EDITOR)
     add_subdirectory(engine/cpp/editor)
 endif()
 

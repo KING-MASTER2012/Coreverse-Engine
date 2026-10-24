@@ -74,16 +74,17 @@ The result is a native engine architecture that combines Rust's safety and concu
 
 An honest snapshot of what exists today (details and the prioritized to-do list live in [`PROGRESS.md`](PROGRESS.md)):
 
-| Area | State |
-| :--- | :---- |
-| **Rust core** (`ccore`, `fs`, `vfs`, `log-core`, `log-sinks`) | 🟢 Implemented and tested |
-| **Math** (`math`: vectors, matrices, quaternions, geometry, curves, noise, ... ; `std` and `no_std`/`libm` backends, optional `serde`) | 🟢 Implemented, tested and benchmarked (criterion); the C++ mirror `cv-math` (Vec/Quat/Mat4) is verified against it by a shared golden file |
-| **FFI** (`ffi` crate + C++ RAII wrappers `cv-ffi`: logger, diagnostics, VFS, build info) | 🟢 Implemented and tested |
-| **Renderer** (Vulkan backend: device, buffers, surface, swapchain + depth buffer, frame sync, graphics pipelines, push constants, validation as a test signal) | 🟢 First graphics pass (Vulkan 1.3 dynamic rendering), device-loss recovery; no descriptor sets/textures/shader loading from the VFS yet |
-| **Editor** (Qt 6 window with a native Vulkan viewport and render loop) | 🟡 Early: the viewport draws a spinning cube; no project/scene/asset workflows yet |
-| **Other Rust crates** (`ecs`, `asset`, `audio`, `physics`, `runtime`, `scripting`, ...) | 🔵 Placeholders (documented skeletons that inherit the workspace settings and lints) |
-| **Documentation** (mdBook, `docs/` + `book.toml`) | 🟢 Book builds; published by `deploy-docs.yml` |
-| **CI** (Linux/Windows/macOS builds, Rust tests, Clippy, formatting, CodeQL) | 🟢 Green |
+| Area                                                                                                                                                                                               | State                                                                                                                                                                                                            |
+|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Rust core** (`ccore`, `fs`, `vfs`, `log-core`, `log-sinks`)                                                                                                                                      | 🟢 Implemented and tested                                                                                                                                                                                        |
+| **Math** (`math`: vectors, matrices, quaternions, geometry, curves, noise, ... ; `std` and `no_std`/`libm` backends, optional `serde`)                                                             | 🟢 Implemented, tested and benchmarked (criterion); the C++ mirror `cv-math` (Vec/Quat/Mat4) is verified against it by a shared golden file                                                                      |
+| **Platform** (`platform`: OS/CPU/memory/display-server info, clocks and timers, standard directories, environment, process and thread helpers; support matrix in the [book](docs/src/platform.md)) | 🟢 Implemented and tested (Linux; Windows/macOS in CI); Android/iOS compile-checked in CI only. Window and input are not part of it yet                                                                          |
+| **FFI** (`ffi` crate + C++ RAII wrappers `cv-ffi`: logger, diagnostics, VFS, platform info and directories, build info)                                                                            | 🟢 Implemented and tested                                                                                                                                                                                        |
+| **Renderer** (Vulkan backend: device, buffers, surface, swapchain + depth buffer, frame sync, graphics pipelines, push constants, validation as a test signal)                                     | 🟢 First graphics pass (Vulkan 1.3 dynamic rendering), device-loss recovery; no descriptor sets/textures/shader loading from the VFS yet                                                                         |
+| **Editor** (Qt 6 window with a native Vulkan viewport and render loop)                                                                                                                             | 🟡 Early: the viewport draws a spinning cube; no project/scene/asset workflows yet                                                                                                                               |
+| **Other Rust crates** (`ecs`, `asset`, `audio`, `physics`, `runtime`, `scripting`, ...)                                                                                                            | 🔵 Placeholders (documented skeletons that inherit the workspace settings and lints); `acse` (Auto Connecting System for ECS) and `aose` (Auto from OOP convert System to ECS) are the planned ECS macro systems |
+| **Documentation** (mdBook, `docs/` + `book.toml`)                                                                                                                                                  | 🟢 Book builds; published by `deploy-docs.yml`                                                                                                                                                                   |
+| **CI** (Linux/Windows/macOS builds, Rust tests, Clippy, formatting, CodeQL)                                                                                                                        | 🟢 Green                                                                                                                                                                                                         |
 
 ---
 
@@ -203,12 +204,12 @@ Coreverse's rendering layer is implemented in native C++ and integrated into the
 
 ### Current Graphics Direction
 
-| Graphics API |            Status            | Intended Platforms                     |
-| :----------- | :--------------------------: | :------------------------------------- |
-| **Vulkan**   |   🟢 Implemented (primary)   | Linux, Windows, macOS via MoltenVK     |
-| **OpenGL**   |          🔵 Planned          | Cross-platform fallback                |
-| **Metal**    |   🔵 Planned (native backend) | macOS / Apple platforms               |
-| **Direct3D** |          🔵 Planned          | Windows                                |
+| Graphics API |            Status             | Intended Platforms                     |
+| :----------- |:-----------------------------:|:---------------------------------------|
+| **Vulkan**   |   🟢 Implemented (primary)    | Linux, Windows, macOS via MoltenVK     |
+| **OpenGL**   |          🔵 Planned           | Cross-platform fallback                |
+| **Metal**    |  🔵 Planned (native backend)  | macOS / Apple platforms                |
+| **Direct3D** |          🔵 Planned           | Windows                                |
 
 The renderer sits behind a backend-neutral `RenderDevice` interface; today only the Vulkan backend exists (on macOS it presents through MoltenVK into a `CAMetalLayer`). It is designed around explicit graphics APIs, multithreaded workloads, predictable resource lifetime, and minimal abstraction overhead.
 
@@ -349,14 +350,14 @@ Developers can use:
 
 The pipeline in [`.github/workflows/`](.github/workflows/) (entry point `ci.yml`) consists of:
 
-| Workflow | What it does |
-| :------- | :----------- |
-| `rust.yml` | Cargo check/test for the whole workspace on Linux (bootstrap toolchain, including the `no_std` math backend) and `cargo test` on Windows and macOS |
-| `cpp.yml` | C++/Qt builds and tests: Linux (GCC, Vulkan validation layers, Xvfb editor smoke test, Wayland test), Windows (MSVC), macOS (Apple Clang) |
-| `lint.yml` | Clippy with `-D warnings` and Rustdoc for `math` |
-| `formatting.yml` | `cargo fmt --check` and `clang-format` over C++ **and** Objective-C++ (`*.mm`) sources |
-| `codeql.yml`, `dependency-review.yml` | Security analysis and dependency review |
-| `nightly.yml`, `release.yml`, `deploy.yml`, `deploy-docs.yml`, `benchmarks.yml`, `stale.yml` | Scheduled/manual/release automation (benchmarks: manual `cargo bench`; documentation: mdBook to GitHub Pages) |
+| Workflow                                                                                     | What it does                                                                                                                                       |
+|:---------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `rust.yml`                                                                                   | Cargo check/test for the whole workspace on Linux (bootstrap toolchain, including the `no_std` math backend) and `cargo test` on Windows and macOS |
+| `cpp.yml`                                                                                    | C++/Qt builds and tests: Linux (GCC, Vulkan validation layers, Xvfb editor smoke test, Wayland test), Windows (MSVC), macOS (Apple Clang)          |
+| `lint.yml`                                                                                   | Clippy with `-D warnings` and Rustdoc for `math`                                                                                                   |
+| `formatting.yml`                                                                             | `cargo fmt --check` and `clang-format` over C++ **and** Objective-C++ (`*.mm`) sources                                                             |
+| `codeql.yml`, `dependency-review.yml`                                                        | Security analysis and dependency review                                                                                                            |
+| `nightly.yml`, `release.yml`, `deploy.yml`, `deploy-docs.yml`, `benchmarks.yml`, `stale.yml` | Scheduled/manual/release automation (benchmarks: manual `cargo bench`; documentation: mdBook to GitHub Pages)                                      |
 
 CI pipelines are used to verify:
 
@@ -403,7 +404,7 @@ coreverse-engine/
 ├── assets/                 # Branding (emblems)
 ├── cmake/                  # CMake modules (toolchains, Rust integration, clang tools, ...)
 ├── devkit/scripts/         # Bootstrap, configure and format scripts (setup/config/*.json)
-├── docs/                   # Documentation (index only for now)
+├── docs/                   # mdBook sources (docs/src)
 ├── engine/
 │   ├── cpp/                # C++23: editor (Qt 6), renderer (Vulkan), ffi-cpp (cv-ffi)
 │   └── rust/               # Rust 2024 workspace: common/ (ccore, fs, ...), crates/ (vfs, ffi, math, ...), macros/
@@ -553,7 +554,7 @@ On Windows use `devkit/scripts/format.ps1` (`-Check`). The CMake targets `format
 
 ## 🟢 Documentation
 
-Technical documentation is an mdBook (`book.toml`, pages in [`docs/src/`](docs/src/SUMMARY.md)): introduction, architecture, building and testing, FFI, rendering, math, editor and CI. Build it with `mdbook build`; `deploy-docs.yml` publishes it to GitHub Pages.
+Technical documentation is an mdBook (`book.toml`, pages in [`docs/src/`](docs/src/SUMMARY.md)): introduction, architecture, building and testing, FFI, the platform layer, rendering, math, editor and CI. Build it with `mdbook build`; `deploy-docs.yml` publishes it to GitHub Pages.
 
 Areas the book should grow into include:
 

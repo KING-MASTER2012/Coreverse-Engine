@@ -1,6 +1,6 @@
 [package]
 name = "aose"
-description = "Placeholder for Auto converting from OOP System for ECS(AOSE)"
+description = "Auto from OOP convert System to ECS (AOSE): the engine's macro system that converts OOP-style code to ECS automatically (placeholder)"
 edition.workspace = true
 version.workspace = true
 rust-version.workspace = true
