@@ -4,7 +4,8 @@ The `platform` crate (`engine/rust/crates/platform`) is Coreverse's operating-sy
 `ccore` and has no other engine dependencies. It answers the questions the rest of the engine must not answer with
 `#[cfg]` blocks of its own: *what machine is this, what time is it, where do I put my files, how do I name a thread.*
 
-Window and input handling are **not** part of the crate yet; they are a separate group of phases (see
+Windows and the application lifecycle have an API and a headless backend (see [Windows and the application
+lifecycle](#windows-and-the-application-lifecycle)); the real window backends and input are separate phases (see
 [What is not here yet](#what-is-not-here-yet)).
 
 ## Modules
@@ -17,6 +18,7 @@ Window and input handling are **not** part of the crate yet; they are a separate
 | `env`     | Read-only environment access (`var`, `var_path`, `var_bool`, `args`, `current_dir`)                                                                                       |
 | `process` | `id`, `current_exe`, `open_url`, `reveal_in_file_manager`                                                                                                                 |
 | `thread`  | OS-level thread names and abstract priorities (`Low`, `Normal`, `High`, `TimeCritical`)                                                                                   |
+| `window`  | The callback-based `App` lifecycle, `WindowDesc`, `WindowEvent`, `NativeWindowHandle` and a headless backend; see [below](#windows-and-the-application-lifecycle)         |
 | `support` | `support(feature, platform)`: the table below, queryable at run time                                                                                                      |
 | `error`   | `PlatformError` (`Unsupported`, `Io`, `Os`, `NonUtf8Path`), convertible into `ccore::CoreError`                                                                           |
 
@@ -43,21 +45,21 @@ Design decisions worth knowing:
 `platform::support::support`, which is the source of truth; a test checks it against what the functions really do on
 the platform the tests run on.
 
-| Feature | Windows | Linux | macOS | Android | iOS |
-| :------ | :-----: | :---: | :---: | :-----: | :-: |
-| OS version | Full | Full | Full | Partial | Full |
-| Logical cores | Full | Full | Full | Full | Full |
-| Physical cores | Full | Partial | Full | Partial | Full |
-| Total memory | Full | Full | Full | Full | Full |
-| Display server | Full | Partial | Full | Full | Full |
-| Clocks | Full | Full | Full | Full | Full |
-| Precise sleep | Full | Full | Full | Full | Full |
-| Standard directories | Full | Full | Full | Unsupported | Unsupported |
-| Environment / process id / executable path | Full | Full | Full | Full | Full |
-| Open URL | Full | Partial | Full | Unsupported | Unsupported |
-| Reveal in file manager | Full | Partial | Full | Unsupported | Unsupported |
-| Thread name | Full | Full | Full | Partial | Partial |
-| Thread priority | Full | Partial | Full | Partial | Partial |
+| Feature                                    | Windows  |  Linux  | macOS  |   Android   |     iOS     |
+|:-------------------------------------------|:--------:|:-------:|:------:|:-----------:|:-----------:|
+| OS version                                 |   Full   |  Full   |  Full  |   Partial   |    Full     |
+| Logical cores                              |   Full   |  Full   |  Full  |    Full     |    Full     |
+| Physical cores                             |   Full   | Partial |  Full  |   Partial   |    Full     |
+| Total memory                               |   Full   |  Full   |  Full  |    Full     |    Full     |
+| Display server                             |   Full   | Partial |  Full  |    Full     |    Full     |
+| Clocks                                     |   Full   |  Full   |  Full  |    Full     |    Full     |
+| Precise sleep                              |   Full   |  Full   |  Full  |    Full     |    Full     |
+| Standard directories                       |   Full   |  Full   |  Full  | Unsupported | Unsupported |
+| Environment / process id / executable path |   Full   |  Full   |  Full  |    Full     |    Full     |
+| Open URL                                   |   Full   | Partial |  Full  | Unsupported | Unsupported |
+| Reveal in file manager                     |   Full   | Partial |  Full  | Unsupported | Unsupported |
+| Thread name                                |   Full   |  Full   |  Full  |   Partial   |   Partial   |
+| Thread priority                            |   Full   | Partial |  Full  |   Partial   |   Partial   |
 
 What "Partial" means in practice:
 
@@ -71,19 +73,94 @@ What "Partial" means in practice:
   Windows older than 10 1803 it may overshoot by the system timer granularity but never wakes early.
 * Platforms other than the five above still compile and report `Unsupported`.
 
+## Windows and the application lifecycle
+
+`platform::window` is an engine-owned window API. A backend runs your `App`, creates the real windows and calls you
+back; code written against `App` and `AppContext` does not change between backends.
+
+```rust
+use platform::window::{App, AppContext, WindowDesc, WindowEvent, WindowId};
+
+struct Game;
+
+impl App for Game {
+    fn resumed(&mut self, ctx: &mut AppContext) {
+        ctx.create_window(WindowDesc::new("Game")).unwrap();   // windows are created here
+    }
+    fn window_event(&mut self, ctx: &mut AppContext, window: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => ctx.exit(),
+            WindowEvent::SurfaceCreated(handle) => { /* create the swapchain from `handle` */ }
+            WindowEvent::SurfaceLost => { /* destroy everything made from that handle */ }
+            WindowEvent::RedrawRequested => { /* draw a frame */ }
+            _ => {}
+        }
+    }
+    fn about_to_wait(&mut self, ctx: &mut AppContext) { /* per-frame work, then request_redraw */ }
+}
+```
+
+**Order of callbacks** (the contract every backend keeps):
+
+| Moment                                 | What is delivered, in this order                                                                                              |
+|:---------------------------------------|:------------------------------------------------------------------------------------------------------------------------------|
+| Loop start, and after every suspension | `resumed`                                                                                                                     |
+| Each loop iteration                    | the pending events, then `about_to_wait`, then `RedrawRequested` for the windows that asked (not while suspended)             |
+| App goes to the background             | `SurfaceLost` for every window that has a surface, then `suspended`                                                           |
+| System replaces a window's surface     | `SurfaceLost`, then `SurfaceCreated` with the new handle                                                                      |
+| `close_window`                         | `SurfaceLost` (if it has a surface), `Destroyed`, then the window is gone (it is still readable while `Destroyed` is handled) |
+| `exit`                                 | the callback finishes; every remaining window gets `SurfaceLost` (if any) and `Destroyed`; the loop returns the exit code     |
+
+Every `SurfaceCreated` is eventually followed by exactly one `SurfaceLost`, so releasing swapchain resources in that
+handler is always enough. `WindowEvent` is `#[non_exhaustive]`: input events will be added, so keep a catch-all arm.
+
+**Units and requests.** `WindowDesc` and the setters use logical (DPI-independent) units; what windows report (`Resized`,
+`Window::inner_size`) is in physical pixels, the size a swapchain needs. Title and visibility read back immediately; size,
+position and fullscreen are requests that come back as `Resized`/`Moved` events, because the window system may adjust
+them.
+
+**`NativeWindowHandle`** has one variant per windowing system, mirroring `DisplayServer`:
+
+| Variant   | Carries                       | Used for        |
+|:----------|:------------------------------|:----------------|
+| `Win32`   | `HWND`, optional `HINSTANCE`  | Windows         |
+| `Cocoa`   | `CAMetalLayer*`               | macOS           |
+| `X11`     | `Window`, optional `Display*` | Linux (Xlib)    |
+| `Wayland` | `wl_display*`, `wl_surface*`  | Linux (Wayland) |
+| `Android` | `ANativeWindow*`              | Android         |
+| `UiKit`   | `CAMetalLayer*`               | iOS             |
+
+The fields are the ones the renderer's C++ `renderer::NativeWindowHandle` already takes (plus the two mobile ones). Pointers
+are stored as non-zero integers, so the type is `Copy + Send + Sync` and the crate stays free of `unsafe`.
+
+**Backends.**
+
+| Backend                                      | Status                                   | Needs     |
+|:---------------------------------------------|:-----------------------------------------|:----------|
+| Headless (`HeadlessBackend`, `HeadlessLoop`) | Implemented; tested on every CI platform | nothing   |
+| Desktop on `winit` (Windows, macOS, Linux)   | Planned                                  | a display |
+| Android, iOS                                 | Planned; compile-checked only            | a device  |
+
+The headless backend simulates an operating system: a test queues `HostEvent`s (a resize, a close click, `Suspend`, a new
+Android surface) and the loop turns them into the same callbacks, in the same order, as a real backend; requests such as
+a resize come back as events like a window manager would send them. `HeadlessLoop` runs the loop step by step and hands
+the app back for inspection; `HeadlessBackend` implements `Backend::run`. It has no clock, so `ControlFlow::WaitUntil`
+behaves like `Wait`, and a loop that is waiting with nothing queued is idle (`Backend::run` reports it as
+`WindowError::Stalled` instead of blocking forever).
+
 ## Standard directories
 
 `<org>` is `paths::ORGANIZATION` (`Coreverse`; `coreverse` on Linux, which keeps one constant for the name) and
 `<app>` the name given to `AppDirs::new`. The application name becomes a directory name, so an empty name, `.`, `..`,
 path separators, control characters, any of `` :*?"<>| `` or a trailing space or dot are rejected.
 
-| Kind   | Windows                            | macOS                                               | Linux                                                         |
-|:-------|:-----------------------------------|:----------------------------------------------------|:--------------------------------------------------------------|
-| config | `%APPDATA%\<org>\<app>\config`     | `~/Library/Application Support/<org>/<app>/config`  | `$XDG_CONFIG_HOME/<org>/<app>`                                |
-| data   | `%LOCALAPPDATA%\<org>\<app>\data`  | `~/Library/Application Support/<org>/<app>/data`    | `$XDG_DATA_HOME/<org>/<app>`                                  |
-| cache  | `%LOCALAPPDATA%\<org>\<app>\cache` | `~/Library/Caches/<org>/<app>`                      | `$XDG_CACHE_HOME/<org>/<app>`                                 |
-| log    | `%LOCALAPPDATA%\<org>\<app>\log`   | `~/Library/Logs/<org>/<app>`                        | `$XDG_STATE_HOME/<org>/<app>`                                 |
-| temp   | `<temp dir>\<org>\<app>`           | `<temp dir>/<org>/<app>`                            | `$XDG_RUNTIME_DIR/<org>/<app>`, else `<temp dir>/<org>/<app>` |
+| Kind   | Windows                            | macOS                                              | Linux                                                         |
+|:-------|:-----------------------------------|:---------------------------------------------------|:--------------------------------------------------------------|
+| config | `%APPDATA%\<org>\<app>\config`     | `~/Library/Application Support/<org>/<app>/config` | `$XDG_CONFIG_HOME/<org>/<app>`                                |
+| data   | `%LOCALAPPDATA%\<org>\<app>\data`  | `~/Library/Application Support/<org>/<app>/data`   | `$XDG_DATA_HOME/<org>/<app>`                                  |
+| cache  | `%LOCALAPPDATA%\<org>\<app>\cache` | `~/Library/Caches/<org>/<app>`                     | `$XDG_CACHE_HOME/<org>/<app>`                                 |
+| log    | `%LOCALAPPDATA%\<org>\<app>\log`   | `~/Library/Logs/<org>/<app>`                       | `$XDG_STATE_HOME/<org>/<app>`                                 |
+| temp   | `<temp dir>\<org>\<app>`           | `<temp dir>/<org>/<app>`                           | `$XDG_RUNTIME_DIR/<org>/<app>`, else `<temp dir>/<org>/<app>` |
 
 On Windows the roots come from `SHGetKnownFolderPath` (Roaming for config, Local for the rest). On Linux an `XDG_*`
 variable is used only when it is an absolute path, as the XDG specification requires; otherwise the default under the
@@ -114,11 +191,14 @@ Clocks, timers, threads and processes are not exposed: Rust code uses them direc
 | `cargo check` and Clippy for `aarch64-linux-android` and `aarch64-apple-ios`                                                | `platform-mobile` job in `rust.yml`; nothing links, so no NDK or Xcode project is needed                                                                                                                                                 |
 | Windows-specific code (`windows-sys`, waitable timer, `SHGetKnownFolderPath`) and Apple-specific code (QoS, `sysctlbyname`) | Executed by the Windows and macOS runners of `rust-cross-platform` in `rust.yml` (`cargo test --workspace`) and on a developer's own machine; type-checking them from Linux is possible with `cargo check -p platform --target <triple>` |
 | `ffi` platform functions                                                                                                    | Rust tests in `ffi/src/platform.rs` on every Rust CI platform; C++ side by `cv_ffi_platform_test` (`ctest -L ffi`)                                                                                                                       |
+| `window` API and headless backend                                                                                           | Part of the `platform` unit and doc tests, so they run on every Rust CI platform; no display is needed. Nothing here opens a real window                                                                                                 |
 
 No code in the crate has been run on an Android or iOS device.
 
 ## What is not here yet
 
-Window, input, gamepad, clipboard, dynamic-library loading and dialogs are not part of this crate. Window and input
-are planned as a separate group of phases with an engine-owned API, a headless backend first and a `winit` backend for
-the desktop; each phase gets its own design review before it is implemented. See `PROGRESS.md`.
+The real window backends are not part of the crate yet: no code opens an actual window, handles DPI of real monitors,
+the mouse cursor, monitor enumeration or fullscreen on a real display (the `winit` desktop backend), or implements the
+Android and iOS lifecycles. Input (keyboard, mouse, touch, IME), the FFI event loop for the C++ runtime and the renderer
+integration come after that. Gamepad, clipboard, dynamic-library loading and dialogs are not planned. Each phase gets its
+own design review before it is implemented; see `PROGRESS.md`.

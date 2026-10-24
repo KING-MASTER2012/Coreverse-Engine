@@ -22,8 +22,12 @@
 //!   [`ThreadPriority`](thread::ThreadPriority) levels.
 //! * [`support`] — which of those features works how well on which platform.
 //! * [`error`] — [`PlatformError`], convertible into [`ccore::CoreError`].
-//!
-//! Window and input handling are planned as a separate group of phases.
+//! * [`window`] — windows and the application lifecycle: the callback-based
+//!   [`App`](window::App), [`WindowDesc`](window::WindowDesc),
+//!   [`WindowEvent`](window::WindowEvent) (surface lost/created included),
+//!   [`NativeWindowHandle`](window::NativeWindowHandle) and a headless backend
+//!   that needs no display. The desktop (`winit`) and mobile backends and
+//!   input handling are planned as further phases.
 //!
 //! [`Platform`], [`Architecture`] and [`Endian`] are re-exported from
 //! [`ccore::platform`] (the compile-time tags stay there), and [`PlatformExt`]
@@ -45,10 +49,10 @@
 //! | Display server   | full    | partial | full  | full    | full |
 //! | Clocks           | full    | full    | full  | full    | full |
 //! | Precise sleep    | full    | full    | full  | full    | full |
-//! | Standard dirs    | full    | full    | full  | none    | none |
+//! | Standard dirs    | full    | full    | full  | unsupported | unsupported |
 //! | Environment      | full    | full    | full  | full    | full |
-//! | Open URL         | full    | partial | full  | none    | none |
-//! | Reveal in files  | full    | partial | full  | none    | none |
+//! | Open URL         | full    | partial | full  | unsupported | unsupported |
+//! | Reveal in files  | full    | partial | full  | unsupported | unsupported |
 //! | Thread name      | full    | full    | full  | partial | partial |
 //! | Thread priority  | full    | partial | full  | partial | partial |
 //!
@@ -84,6 +88,7 @@ pub mod support;
 mod sys;
 pub mod thread;
 pub mod time;
+pub mod window;
 
 pub use ccore::platform::{Architecture, Endian, Platform};
 pub use error::{PlatformError, Result};
