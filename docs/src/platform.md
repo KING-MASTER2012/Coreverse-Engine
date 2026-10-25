@@ -4,23 +4,23 @@ The `platform` crate (`engine/rust/crates/platform`) is Coreverse's operating-sy
 `ccore` and has no other engine dependencies. It answers the questions the rest of the engine must not answer with
 `#[cfg]` blocks of its own: *what machine is this, what time is it, where do I put my files, how do I name a thread.*
 
-Windows and the application lifecycle have an API and a headless backend (see [Windows and the application
-lifecycle](#windows-and-the-application-lifecycle)); the real window backends and input are separate phases (see
-[What is not here yet](#what-is-not-here-yet)).
+Windows and the application lifecycle have an API, a headless backend and a desktop backend (see [Windows and the
+application lifecycle](#windows-and-the-application-lifecycle)); mobile backends and input are separate phases (see [What is
+not here yet](#what-is-not-here-yet)).
 
 ## Modules
 
-| Module    | What it gives you                                                                                                                                                         |
-|:----------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `info`    | OS name and version, logical/physical cores, installed memory, `DisplayServer` (Win32, Cocoa, X11, Wayland, Android, UIKit, Headless), all in one `SystemInfo::collect()` |
-| `time`    | Monotonic `Clock` and `WallClock`, `Stopwatch`, `FrameTimer` (delta time, smoothed FPS), `FixedStep` accumulator, `precise_sleep`                                         |
-| `paths`   | `AppDirs`: config, data, cache, log, temp, home and executable directories as `Utf8PathBuf`                                                                               |
-| `env`     | Read-only environment access (`var`, `var_path`, `var_bool`, `args`, `current_dir`)                                                                                       |
-| `process` | `id`, `current_exe`, `open_url`, `reveal_in_file_manager`                                                                                                                 |
-| `thread`  | OS-level thread names and abstract priorities (`Low`, `Normal`, `High`, `TimeCritical`)                                                                                   |
-| `window`  | The callback-based `App` lifecycle, `WindowDesc`, `WindowEvent`, `NativeWindowHandle` and a headless backend; see [below](#windows-and-the-application-lifecycle)         |
-| `support` | `support(feature, platform)`: the table below, queryable at run time                                                                                                      |
-| `error`   | `PlatformError` (`Unsupported`, `Io`, `Os`, `NonUtf8Path`), convertible into `ccore::CoreError`                                                                           |
+| Module    | What it gives you                                                                                                                                                                                                        |
+|:----------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `info`    | OS name and version, logical/physical cores, installed memory, `DisplayServer` (Win32, Cocoa, X11, Wayland, Android, UIKit, Headless), all in one `SystemInfo::collect()`                                                |
+| `time`    | Monotonic `Clock` and `WallClock`, `Stopwatch`, `FrameTimer` (delta time, smoothed FPS), `FixedStep` accumulator, `precise_sleep`                                                                                        |
+| `paths`   | `AppDirs`: config, data, cache, log, temp, home and executable directories as `Utf8PathBuf`                                                                                                                              |
+| `env`     | Read-only environment access (`var`, `var_path`, `var_bool`, `args`, `current_dir`)                                                                                                                                      |
+| `process` | `id`, `current_exe`, `open_url`, `reveal_in_file_manager`                                                                                                                                                                |
+| `thread`  | OS-level thread names and abstract priorities (`Low`, `Normal`, `High`, `TimeCritical`)                                                                                                                                  |
+| `window`  | The callback-based `App` lifecycle, `WindowDesc`, `WindowEvent`, `NativeWindowHandle`, monitors, cursor, a headless backend and (feature `winit`) a desktop backend; see [below](#windows-and-the-application-lifecycle) |
+| `support` | `support(feature, platform)`: the table below, queryable at run time                                                                                                                                                     |
+| `error`   | `PlatformError` (`Unsupported`, `Io`, `Os`, `NonUtf8Path`), convertible into `ccore::CoreError`                                                                                                                          |
 
 `Platform`, `Architecture` and `Endian` are re-exported from `ccore::platform`, where the compile-time tags stay;
 `PlatformExt` adds `is_desktop`, `is_mobile` and `is_unix` to `Platform`.
@@ -135,11 +135,11 @@ are stored as non-zero integers, so the type is `Copy + Send + Sync` and the cra
 
 **Backends.**
 
-| Backend                                      | Status                                   | Needs     |
-|:---------------------------------------------|:-----------------------------------------|:----------|
-| Headless (`HeadlessBackend`, `HeadlessLoop`) | Implemented; tested on every CI platform | nothing   |
-| Desktop on `winit` (Windows, macOS, Linux)   | Planned                                  | a display |
-| Android, iOS                                 | Planned; compile-checked only            | a device  |
+| Backend                                                                                | Status                                                    | Needs     |
+|:---------------------------------------------------------------------------------------|:----------------------------------------------------------|:----------|
+| Headless (`HeadlessBackend`, `HeadlessLoop`)                                           | Implemented; tested on every CI platform                  | nothing   |
+| Desktop (`WinitBackend`, cargo feature `winit`; Windows, macOS, Linux X11 and Wayland) | Implemented; smoke-tested on Linux (X11) under Xvfb in CI | a display |
+| Android, iOS                                                                           | Planned; compile-checked only                             | a device  |
 
 The headless backend simulates an operating system: a test queues `HostEvent`s (a resize, a close click, `Suspend`, a new
 Android surface) and the loop turns them into the same callbacks, in the same order, as a real backend; requests such as
@@ -147,6 +147,39 @@ a resize come back as events like a window manager would send them. `HeadlessLoo
 the app back for inspection; `HeadlessBackend` implements `Backend::run`. It has no clock, so `ControlFlow::WaitUntil`
 behaves like `Wait`, and a loop that is waiting with nothing queued is idle (`Backend::run` reports it as
 `WindowError::Stalled` instead of blocking forever).
+
+### Desktop backend (`winit` feature)
+
+`platform::window::WinitBackend` opens real windows through [`winit`](https://crates.io/crates/winit) 0.30. It is behind the
+`winit` cargo feature (off by default, so code that only needs the platform services or the headless backend does not build
+it): `platform = { path = "...", features = ["winit"] }`. An `App` written against the headless backend runs on it
+unchanged.
+
+```rust
+let exit_code = WinitBackend::new().run(Game)?;   // on macOS this must be the main thread
+```
+
+What it does on a real desktop, beyond the contract above:
+
+* **Surfaces.** `SurfaceCreated` is delivered right after the window is created, with the native handle of the session's
+  window system (`Win32`, `X11`, `Wayland`, `Cocoa`); `SurfaceLost`/`Destroyed` follow `close_window` and `exit` as in the
+  headless backend. On macOS the handle carries a `CAMetalLayer` that `raw-window-metal` adds to the window's view.
+* **DPI.** New windows start at the primary monitor's scale factor. When a window moves to a monitor with another scale
+  factor, `ScaleFactorChanged` reports the new physical size, which keeps the logical size. `Resized` is only delivered when
+  the size really changed.
+* **Monitors.** `AppContext::monitors()` and `primary_monitor()` list name, position, size, scale factor and refresh rate.
+  The list is read when the app resumes, when a window is created and when a scale factor changes. Wayland has no primary
+  monitor; the first one is reported as primary.
+* **Cursor.** `set_cursor_icon`, `set_cursor_visible` and `set_cursor_grab` (`None`, `Confined`, `Locked`). Icon and
+  visibility read back at once; a grab the platform refuses leaves the previous mode, and `Window::cursor_grab()` always
+  reports what is in effect. Which mode works depends on the platform (Windows and X11 confine, macOS locks).
+* **Fullscreen.** `Fullscreen::Borderless` on the window's monitor. The new size arrives as `Resized`. Window managers keep
+  a fullscreen window within its maximum size, so a window with a small `max_inner_size` cannot fill a larger monitor.
+* **Failures.** A window that cannot be created is fatal: the loop exits and `Backend::run` returns
+  `WindowError::Backend`. So does an event loop that cannot start (no display).
+
+Not covered yet: input events, exclusive fullscreen, choosing the monitor for fullscreen, window icons, and anything
+Android or iOS specific.
 
 ## Standard directories
 
@@ -185,20 +218,20 @@ Clocks, timers, threads and processes are not exposed: Rust code uses them direc
 
 ## Verification
 
-| What                                                                                                                        | Where it runs                                                                                                                                                                                                                            |
-|:----------------------------------------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `platform` unit and doc tests (`cargo test`)                                                                                | Linux, Windows and macOS (`rust.yml`)                                                                                                                                                                                                    |
-| `cargo check` and Clippy for `aarch64-linux-android` and `aarch64-apple-ios`                                                | `platform-mobile` job in `rust.yml`; nothing links, so no NDK or Xcode project is needed                                                                                                                                                 |
-| Windows-specific code (`windows-sys`, waitable timer, `SHGetKnownFolderPath`) and Apple-specific code (QoS, `sysctlbyname`) | Executed by the Windows and macOS runners of `rust-cross-platform` in `rust.yml` (`cargo test --workspace`) and on a developer's own machine; type-checking them from Linux is possible with `cargo check -p platform --target <triple>` |
-| `ffi` platform functions                                                                                                    | Rust tests in `ffi/src/platform.rs` on every Rust CI platform; C++ side by `cv_ffi_platform_test` (`ctest -L ffi`)                                                                                                                       |
-| `window` API and headless backend                                                                                           | Part of the `platform` unit and doc tests, so they run on every Rust CI platform; no display is needed. Nothing here opens a real window                                                                                                 |
+| What                                                                                                                        | Where it runs                                                                                                                                                                                                                                                                                  |
+|:----------------------------------------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `platform` unit and doc tests (`cargo test`)                                                                                | Linux, Windows and macOS (`rust.yml`)                                                                                                                                                                                                                                                          |
+| `cargo check` and Clippy for `aarch64-linux-android` and `aarch64-apple-ios`                                                | `platform-mobile` job in `rust.yml`; nothing links, so no NDK or Xcode project is needed                                                                                                                                                                                                       |
+| Windows-specific code (`windows-sys`, waitable timer, `SHGetKnownFolderPath`) and Apple-specific code (QoS, `sysctlbyname`) | Executed by the Windows and macOS runners of `rust-cross-platform` in `rust.yml` (`cargo test --workspace`) and on a developer's own machine; type-checking them from Linux is possible with `cargo check -p platform --target <triple>`                                                       |
+| `ffi` platform functions                                                                                                    | Rust tests in `ffi/src/platform.rs` on every Rust CI platform; C++ side by `cv_ffi_platform_test` (`ctest -L ffi`)                                                                                                                                                                             |
+| `window` API and headless backend                                                                                           | Part of the `platform` unit and doc tests, so they run on every Rust CI platform; no display is needed                                                                                                                                                                                         |
+| Desktop backend on Linux (X11)                                                                                              | `platform-window-xvfb` job in `rust.yml`: a real window on Xvfb, once with openbox as window manager (fullscreen included) and once without (`cargo test -p platform --features winit --test winit_smoke`). The test skips itself when there is no display, unless `CV_REQUIRE_DISPLAY` is set |
+| Desktop backend on Windows and macOS, Wayland                                                                               | Compiled (and linted) by the `rust-cross-platform` jobs, which build with `--all-features`; **no CI job opens a window there**, so run `WinitBackend` on a real machine to verify                                                                                                              |
 
 No code in the crate has been run on an Android or iOS device.
 
 ## What is not here yet
 
-The real window backends are not part of the crate yet: no code opens an actual window, handles DPI of real monitors,
-the mouse cursor, monitor enumeration or fullscreen on a real display (the `winit` desktop backend), or implements the
-Android and iOS lifecycles. Input (keyboard, mouse, touch, IME), the FFI event loop for the C++ runtime and the renderer
-integration come after that. Gamepad, clipboard, dynamic-library loading and dialogs are not planned. Each phase gets its
+The Android and iOS backends are not part of the crate yet (the code compiles for both, nothing runs on a device). Input
+(keyboard, mouse, touch, IME), the FFI event loop for the C++ runtime and the renderer integration come after that. Gamepad, clipboard, dynamic-library loading and dialogs are not planned. Each phase gets its
 own design review before it is implemented; see `PROGRESS.md`.

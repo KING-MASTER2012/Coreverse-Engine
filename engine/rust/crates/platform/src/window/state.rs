@@ -1,5 +1,6 @@
 //! The readable state of a window.
 
+use super::cursor::{CursorGrab, CursorIcon};
 use super::desc::{Fullscreen, WindowDesc};
 use super::event::WindowId;
 use super::geometry::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize};
@@ -31,6 +32,9 @@ pub struct Window {
     focused: bool,
     occluded: bool,
     surface: Option<NativeWindowHandle>,
+    cursor_icon: CursorIcon,
+    cursor_visible: bool,
+    cursor_grab: CursorGrab,
 }
 
 impl Window {
@@ -52,6 +56,9 @@ impl Window {
             focused: false,
             occluded: false,
             surface: None,
+            cursor_icon: CursorIcon::Default,
+            cursor_visible: true,
+            cursor_grab: CursorGrab::None,
         }
     }
 
@@ -158,6 +165,25 @@ impl Window {
         self.surface
     }
 
+    /// The shape of the mouse cursor over the window.
+    #[must_use]
+    pub fn cursor_icon(&self) -> CursorIcon {
+        self.cursor_icon
+    }
+
+    /// Whether the mouse cursor is shown over the window.
+    #[must_use]
+    pub fn is_cursor_visible(&self) -> bool {
+        self.cursor_visible
+    }
+
+    /// The cursor grab mode in effect. A request the platform refused does not
+    /// show up here.
+    #[must_use]
+    pub fn cursor_grab(&self) -> CursorGrab {
+        self.cursor_grab
+    }
+
     // Mutators for the application-owned state; used by `AppContext`.
 
     pub(crate) fn set_title(&mut self, title: String) {
@@ -168,7 +194,19 @@ impl Window {
         self.visible = visible;
     }
 
+    pub(crate) fn set_cursor_icon(&mut self, icon: CursorIcon) {
+        self.cursor_icon = icon;
+    }
+
+    pub(crate) fn set_cursor_visible(&mut self, visible: bool) {
+        self.cursor_visible = visible;
+    }
+
     // Mutators for state the window system reports; used by the backends.
+
+    pub(crate) fn report_cursor_grab(&mut self, grab: CursorGrab) {
+        self.cursor_grab = grab;
+    }
 
     pub(crate) fn report_inner_size(&mut self, size: PhysicalSize) {
         self.inner_size = size;
@@ -246,6 +284,9 @@ mod tests {
         assert_eq!(w.fullscreen(), Fullscreen::None);
         assert!(!w.is_focused() && !w.is_occluded());
         assert!(w.native_handle().is_none());
+        assert_eq!(w.cursor_icon(), CursorIcon::Default);
+        assert!(w.is_cursor_visible());
+        assert_eq!(w.cursor_grab(), CursorGrab::None);
     }
 
     #[test]

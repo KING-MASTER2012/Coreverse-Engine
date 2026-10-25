@@ -30,6 +30,7 @@ use super::error::WindowError;
 use super::event::{ControlFlow, WindowEvent, WindowId};
 use super::geometry::{PhysicalPosition, PhysicalSize};
 use super::handle::NativeWindowHandle;
+use super::monitor::MonitorInfo;
 
 /// The most events one [`HeadlessLoop::step`] delivers before it gives up.
 pub const MAX_EVENTS_PER_STEP: usize = 10_000;
@@ -236,9 +237,20 @@ impl<A: App> HeadlessLoop<A> {
     /// fails.
     pub fn new(app: A, config: HeadlessConfig) -> Result<Self, WindowError> {
         config.validate()?;
+        let mut ctx = AppContext::new(config.scale_factor);
+        ctx.set_monitors(vec![
+            MonitorInfo::new(
+                PhysicalPosition::default(),
+                config.monitor_size,
+                config.scale_factor,
+            )
+                .with_name(Some(String::from("Headless")))
+                .with_refresh_rate(Some(60_000))
+                .with_primary(true),
+        ]);
         Ok(Self {
             app,
-            ctx: AppContext::new(config.scale_factor),
+            ctx,
             config,
             queue: VecDeque::new(),
             phase: Phase::NotStarted,
@@ -416,8 +428,19 @@ impl<A: App> HeadlessLoop<A> {
 
     fn apply(&mut self, request: Request) {
         match request {
-            // Nothing to create, show or retitle without a window system.
-            Request::Create(_) | Request::SetTitle(_) | Request::SetVisible(_) => {}
+            // Nothing to create, show, retitle or restyle without a window
+            // system.
+            Request::Create(..)
+            | Request::SetTitle(_)
+            | Request::SetVisible(_)
+            | Request::SetCursorIcon(_)
+            | Request::SetCursorVisible(_) => {}
+            // A headless window can always be grabbed.
+            Request::SetCursorGrab(id, grab) => {
+                if let Some(window) = self.ctx.windows.get_mut(&id) {
+                    window.report_cursor_grab(grab);
+                }
+            }
             Request::SetInnerSize(id, size) => {
                 let Some(window) = self.ctx.windows.get(&id) else {
                     return;

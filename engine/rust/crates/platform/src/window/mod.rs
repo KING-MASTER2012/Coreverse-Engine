@@ -1,11 +1,11 @@
 //! Windows and the application lifecycle: an engine-owned API that every
 //! window backend implements.
 //!
-//! This module is the *API* and the *headless backend*; the desktop backend
-//! (on `winit`) and the Android and iOS backends come later and plug into the
-//! same [`Backend`] contract. Input events (keyboard, mouse, touch, IME) are
-//! not part of it yet; [`WindowEvent`] is `#[non_exhaustive]` so they can be
-//! added.
+//! This module is the *API* and two backends: the *headless backend* and, with
+//! the `winit` cargo feature, the *desktop backend*. The Android and iOS
+//! backends come later and plug into the same [`Backend`] contract. Input
+//! events (keyboard, mouse, touch, IME) are not part of it yet;
+//! [`WindowEvent`] is `#[non_exhaustive]` so they can be added.
 //!
 //! # The pieces
 //!
@@ -22,6 +22,9 @@
 //!   [`SurfaceLost`](WindowEvent::SurfaceLost) for platforms (Android, iOS)
 //!   where the presentation surface disappears and comes back while the app
 //!   lives.
+//! * [`MonitorInfo`] — the monitors of the desktop
+//!   ([`AppContext::monitors`]), and [`CursorIcon`] / [`CursorGrab`] for the
+//!   mouse cursor of a window.
 //! * [`NativeWindowHandle`] — the handle a graphics API needs to create a
 //!   surface, one variant per windowing system, Android and iOS included.
 //! * [`Backend`] — runs an [`App`]. [`HeadlessBackend`] needs no display;
@@ -80,24 +83,29 @@
 //! | Backend | Status | Needs |
 //! | :------ | :----- | :---- |
 //! | headless ([`HeadlessBackend`], [`HeadlessLoop`]) | implemented, tested on every CI platform | nothing |
-//! | desktop (`winit`: Windows, macOS, Linux X11/Wayland) | planned | a display |
+//! | desktop ([`WinitBackend`], cargo feature `winit`: Windows, macOS, Linux X11/Wayland) | implemented; smoke-tested on Linux under Xvfb | a display |
 //! | Android, iOS | planned, compile-checked only | a device |
 
 mod app;
 mod backend;
+mod cursor;
 mod desc;
 mod error;
 mod event;
 mod geometry;
 mod handle;
 mod headless;
+mod monitor;
 mod state;
+#[cfg(feature = "winit")]
+mod winit_backend;
 
 #[cfg(test)]
 mod tests;
 
 pub use app::{App, AppContext};
 pub use backend::Backend;
+pub use cursor::{CursorGrab, CursorIcon};
 pub use desc::{Fullscreen, WindowDesc};
 pub use error::WindowError;
 pub use event::{ControlFlow, WindowEvent, WindowId};
@@ -107,4 +115,7 @@ pub use headless::{
     DEFAULT_STEP_LIMIT, HeadlessBackend, HeadlessConfig, HeadlessLoop, HostEvent,
     MAX_EVENTS_PER_STEP, RunOutcome, StepOutcome,
 };
+pub use monitor::MonitorInfo;
 pub use state::Window;
+#[cfg(feature = "winit")]
+pub use winit_backend::WinitBackend;

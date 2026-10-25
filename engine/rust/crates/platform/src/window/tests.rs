@@ -590,6 +590,50 @@ fn an_app_that_answers_every_resize_with_another_one_is_stopped() {
     ));
 }
 
+#[test]
+fn the_cursor_grab_is_applied_and_reported() {
+    let mut event_loop = started(loop_with_windows(1));
+    event_loop
+        .context_mut()
+        .set_cursor_grab(id(1), CursorGrab::Locked)
+        .unwrap();
+    assert_eq!(
+        event_loop.context().window(id(1)).unwrap().cursor_grab(),
+        CursorGrab::None,
+        "a request until the system answers"
+    );
+    event_loop.step().unwrap();
+    assert_eq!(
+        event_loop.context().window(id(1)).unwrap().cursor_grab(),
+        CursorGrab::Locked
+    );
+    event_loop
+        .context_mut()
+        .set_cursor_grab(id(1), CursorGrab::None)
+        .unwrap();
+    event_loop.step().unwrap();
+    assert_eq!(
+        event_loop.context().window(id(1)).unwrap().cursor_grab(),
+        CursorGrab::None
+    );
+}
+
+#[test]
+fn the_simulated_monitor_follows_the_configuration() {
+    let config = HeadlessConfig::default()
+        .with_scale_factor(2.0)
+        .with_monitor_size(PhysicalSize::new(3840, 2160));
+    let event_loop = HeadlessLoop::new(Probe::default(), config).unwrap();
+    let monitors = event_loop.context().monitors();
+    assert_eq!(monitors.len(), 1);
+    let monitor = event_loop.context().primary_monitor().unwrap();
+    assert_eq!(monitor.size, PhysicalSize::new(3840, 2160));
+    assert_eq!(monitor.scale_factor, 2.0);
+    assert_eq!(monitor.position, PhysicalPosition::new(0, 0));
+    assert_eq!(monitor.refresh_rate_millihertz, Some(60_000));
+    assert!(monitor.name.is_some());
+}
+
 // --- redraw ----------------------------------------------------------------
 
 #[test]

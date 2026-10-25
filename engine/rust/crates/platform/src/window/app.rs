@@ -3,10 +3,12 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use super::cursor::{CursorGrab, CursorIcon};
 use super::desc::{Fullscreen, WindowDesc};
 use super::error::WindowError;
 use super::event::{ControlFlow, WindowEvent, WindowId};
 use super::geometry::{LogicalPosition, LogicalSize};
+use super::monitor::MonitorInfo;
 use super::state::Window;
 
 /// The callbacks of an application, driven by a [`Backend`](super::Backend).
@@ -58,13 +60,17 @@ pub trait App {
 /// A change the application asked for, for the backend to carry out.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Request {
-    /// A window was added to the context and must be created for real.
-    Create(WindowId),
+    /// A window was added to the context and must be created for real, from
+    /// this description.
+    Create(WindowId, Box<WindowDesc>),
     SetTitle(WindowId),
     SetVisible(WindowId),
     SetInnerSize(WindowId, LogicalSize),
     SetPosition(WindowId, LogicalPosition),
     SetFullscreen(WindowId, Fullscreen),
+    SetCursorIcon(WindowId),
+    SetCursorVisible(WindowId),
+    SetCursorGrab(WindowId, CursorGrab),
     /// Close the window: `SurfaceLost` (if it has a surface), `Destroyed`, gone.
     Close(WindowId),
 }
@@ -87,6 +93,7 @@ pub struct AppContext {
     /// The scale factor new windows start with, until the window system
     /// reports the real one.
     scale_factor: f64,
+    monitors: Vec<MonitorInfo>,
 }
 
 impl AppContext {
@@ -100,7 +107,17 @@ impl AppContext {
             control_flow: ControlFlow::default(),
             exit_code: None,
             scale_factor,
+            monitors: Vec::new(),
         }
+    }
+
+    /// Replaces the monitor list (and so the scale factor new windows start
+    /// with: the primary monitor's, if there is one).
+    pub(crate) fn set_monitors(&mut self, monitors: Vec<MonitorInfo>) {
+        if let Some(primary) = monitors.iter().find(|m| m.is_primary) {
+            self.scale_factor = primary.scale_factor;
+        }
+        self.monitors = monitors;
     }
 
     /// Creates a window from `desc` and returns its id. The window exists in
@@ -115,10 +132,11 @@ impl AppContext {
         self.next_id += 1;
         self.windows
             .insert(id, Window::new(id, &desc, self.scale_factor));
-        self.requests.push_back(Request::Create(id));
-        if desc.fullscreen != Fullscreen::None {
+        let fullscreen = desc.fullscreen;
+        self.requests.push_back(Request::Create(id, Box::new(desc)));
+        if fullscreen != Fullscreen::None {
             self.requests
-                .push_back(Request::SetFullscreen(id, desc.fullscreen));
+                .push_back(Request::SetFullscreen(id, fullscreen));
         }
         Ok(id)
     }
@@ -227,6 +245,54 @@ impl AppContext {
         Ok(())
     }
 
+    /// Sets the shape of the mouse cursor over the window. The new shape is
+    /// readable right away.
+    ///
+    /// # Errors
+    /// [`WindowError::UnknownWindow`].
+    pub fn set_cursor_icon(&mut self, id: WindowId, icon: CursorIcon) -> Result<(), WindowError> {
+        self.window_mut(id)?.set_cursor_icon(icon);
+        self.requests.push_back(Request::SetCursorIcon(id));
+        Ok(())
+    }
+
+    /// Shows or hides the mouse cursor over the window. The new state is
+    /// readable right away.
+    ///
+    /// # Errors
+    /// [`WindowError::UnknownWindow`].
+    pub fn set_cursor_visible(&mut self, id: WindowId, visible: bool) -> Result<(), WindowError> {
+        self.window_mut(id)?.set_cursor_visible(visible);
+        self.requests.push_back(Request::SetCursorVisible(id));
+        Ok(())
+    }
+
+    /// Asks the window to confine or lock the mouse cursor. Not every
+    /// platform supports every mode; a refused request leaves the mode
+    /// unchanged, so read [`Window::cursor_grab`] for what is in effect.
+    ///
+    /// # Errors
+    /// [`WindowError::UnknownWindow`].
+    pub fn set_cursor_grab(&mut self, id: WindowId, grab: CursorGrab) -> Result<(), WindowError> {
+        self.window_mut(id)?;
+        self.requests.push_back(Request::SetCursorGrab(id, grab));
+        Ok(())
+    }
+
+    /// The monitors of the desktop, in no particular order (see
+    /// [`MonitorInfo::is_primary`]). Empty on a system without a display. See
+    /// [`MonitorInfo`] for when the list is refreshed.
+    #[must_use]
+    pub fn monitors(&self) -> &[MonitorInfo] {
+        &self.monitors
+    }
+
+    /// The primary monitor, if the system reports one.
+    #[must_use]
+    pub fn primary_monitor(&self) -> Option<&MonitorInfo> {
+        self.monitors.iter().find(|m| m.is_primary)
+    }
+
     /// Asks for a [`RedrawRequested`](WindowEvent::RedrawRequested) event for
     /// the window in this loop iteration (after `about_to_wait`) or, when
     /// already inside the redraw, in the next one. Several requests before the
@@ -285,7 +351,13 @@ mod tests {
         assert!(a < b);
         assert_eq!(ctx.window(a).unwrap().title(), "A");
         assert_eq!(ctx.windows().map(Window::id).collect::<Vec<_>>(), [a, b]);
-        assert_eq!(ctx.requests, [Request::Create(a), Request::Create(b)]);
+        assert_eq!(
+            ctx.requests,
+            [
+                Request::Create(a, Box::new(WindowDesc::new("A"))),
+                Request::Create(b, Box::new(WindowDesc::new("B")))
+            ]
+        );
     }
 
     #[test]
@@ -314,7 +386,10 @@ mod tests {
         assert_eq!(
             ctx.requests,
             [
-                Request::Create(id),
+                Request::Create(
+                    id,
+                    Box::new(WindowDesc::default().with_fullscreen(Fullscreen::Borderless))
+                ),
                 Request::SetFullscreen(id, Fullscreen::Borderless)
             ]
         );
@@ -384,10 +459,59 @@ mod tests {
             ctx.set_position(ghost, LogicalPosition::new(0.0, 0.0)),
             ctx.set_fullscreen(ghost, Fullscreen::None),
             ctx.request_redraw(ghost),
+            ctx.set_cursor_icon(ghost, CursorIcon::Text),
+            ctx.set_cursor_visible(ghost, false),
+            ctx.set_cursor_grab(ghost, CursorGrab::Locked),
         ] {
             assert!(matches!(result, Err(WindowError::UnknownWindow(id)) if id == ghost));
         }
         assert!(ctx.requests.is_empty() && ctx.redraws.is_empty());
+    }
+
+    #[test]
+    fn cursor_icon_and_visibility_read_back_immediately_and_the_grab_is_only_a_request() {
+        let mut ctx = ctx();
+        let id = ctx.create_window(WindowDesc::default()).unwrap();
+        ctx.requests.clear();
+        ctx.set_cursor_icon(id, CursorIcon::Text).unwrap();
+        ctx.set_cursor_visible(id, false).unwrap();
+        ctx.set_cursor_grab(id, CursorGrab::Confined).unwrap();
+        let window = ctx.window(id).unwrap();
+        assert_eq!(window.cursor_icon(), CursorIcon::Text);
+        assert!(!window.is_cursor_visible());
+        assert_eq!(window.cursor_grab(), CursorGrab::None);
+        assert_eq!(
+            ctx.requests,
+            [
+                Request::SetCursorIcon(id),
+                Request::SetCursorVisible(id),
+                Request::SetCursorGrab(id, CursorGrab::Confined)
+            ]
+        );
+    }
+
+    #[test]
+    fn monitors_come_from_the_backend_and_set_the_scale_of_new_windows() {
+        use super::super::geometry::{PhysicalPosition, PhysicalSize};
+        let mut ctx = ctx();
+        assert!(ctx.monitors().is_empty() && ctx.primary_monitor().is_none());
+        let secondary = MonitorInfo::new(
+            PhysicalPosition::new(-1920, 0),
+            PhysicalSize::new(1920, 1080),
+            1.0,
+        );
+        let primary = MonitorInfo::new(
+            PhysicalPosition::default(),
+            PhysicalSize::new(3840, 2160),
+            2.0,
+        )
+            .with_name(Some("Main".to_owned()))
+            .with_primary(true);
+        ctx.set_monitors(vec![secondary, primary]);
+        assert_eq!(ctx.monitors().len(), 2);
+        assert_eq!(ctx.primary_monitor().unwrap().name.as_deref(), Some("Main"));
+        let id = ctx.create_window(WindowDesc::default()).unwrap();
+        assert_eq!(ctx.window(id).unwrap().scale_factor(), 2.0);
     }
 
     #[test]

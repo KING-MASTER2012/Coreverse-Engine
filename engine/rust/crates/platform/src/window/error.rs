@@ -35,6 +35,11 @@ pub enum WindowError {
     /// resize inside its own `Resized` handler).
     #[error("more than {0} events in a single step; an event handler keeps producing events")]
     EventStorm(usize),
+    /// The window system failed in a way the application cannot recover from
+    /// (the event loop could not start, a window could not be created, ...).
+    /// The text is the backend's own message.
+    #[error("window backend error: {0}")]
+    Backend(String),
 }
 
 impl From<WindowError> for CoreError {
@@ -47,6 +52,7 @@ impl From<WindowError> for CoreError {
             WindowError::Stalled | WindowError::StepLimit(_) | WindowError::EventStorm(_) => {
                 CoreError::InvalidState(message)
             }
+            WindowError::Backend(_) => CoreError::Other(message),
         }
     }
 }
@@ -65,5 +71,7 @@ mod tests {
         assert!(matches!(stalled, CoreError::InvalidState(_)));
         let limit: CoreError = WindowError::StepLimit(5).into();
         assert!(matches!(limit, CoreError::InvalidState(ref m) if m.contains('5')));
+        let backend: CoreError = WindowError::Backend("no display".into()).into();
+        assert!(matches!(backend, CoreError::Other(ref m) if m.contains("no display")));
     }
 }

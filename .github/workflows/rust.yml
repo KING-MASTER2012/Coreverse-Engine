@@ -92,3 +92,47 @@ jobs:
 
             - name: Clippy
               run: cargo clippy -p platform --target ${{ matrix.target }} -- -D warnings
+
+    # The desktop window backend (`platform` with the `winit` feature) opens a
+    # real window, so it needs an X server. Xvfb is a virtual one; a small
+    # window manager (openbox) runs next to it because X11 fullscreen is a
+    # request to the window manager. `CV_REQUIRE_DISPLAY` makes a missing
+    # display an error instead of a skipped test. The `rust` job above compiles
+    # the same code with `--all-features` but has no display, so the smoke test
+    # skips itself there.
+    platform-window-xvfb:
+        name: platform (winit on Xvfb)
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: dtolnay/rust-toolchain@stable
+
+            - uses: Swatinem/rust-cache@v2
+
+            # winit loads these at run time (dlopen); none is needed to build.
+            - name: Install the X server and the libraries winit loads
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                      xvfb openbox libx11-6 libxkbcommon0 libxkbcommon-x11-0 \
+                      libxcursor1 libxi6 libxrandr2 libxcb1
+
+            - name: Smoke test (Xvfb + openbox)
+              env:
+                  CV_REQUIRE_DISPLAY: "1"
+                  CV_EXPECT_WM: "1"
+              run: >
+                  xvfb-run -a -s "-screen 0 1280x1024x24" bash -c
+                  'openbox >/dev/null 2>&1 & sleep 2;
+                  cargo test -p platform --features winit --test winit_smoke -- --nocapture'
+
+            # Without a window manager fullscreen is a no-op; the test notes it
+            # and still checks everything else.
+            - name: Smoke test (Xvfb only)
+              env:
+                  CV_REQUIRE_DISPLAY: "1"
+              run: >
+                  xvfb-run -a -s "-screen 0 1280x1024x24"
+                  cargo test -p platform --features winit --test winit_smoke -- --nocapture

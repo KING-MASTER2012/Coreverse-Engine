@@ -21,6 +21,11 @@ pub(crate) use apple::{
     os_version, physical_cores, set_thread_name, set_thread_priority, total_memory_bytes,
 };
 
+#[cfg(all(feature = "winit", any(target_os = "macos", target_os = "ios")))]
+mod metal;
+#[cfg(all(feature = "winit", any(target_os = "macos", target_os = "ios")))]
+pub(crate) use metal::metal_layer;
+
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
