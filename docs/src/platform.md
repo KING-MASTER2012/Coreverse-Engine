@@ -5,8 +5,8 @@ The `platform` crate (`engine/rust/crates/platform`) is Coreverse's operating-sy
 `#[cfg]` blocks of its own: *what machine is this, what time is it, where do I put my files, how do I name a thread.*
 
 Windows and the application lifecycle have an API, a headless backend and a desktop backend (see [Windows and the
-application lifecycle](#windows-and-the-application-lifecycle)); mobile backends and input are separate phases (see [What is
-not here yet](#what-is-not-here-yet)).
+application lifecycle](#windows-and-the-application-lifecycle)); keyboard, mouse, touch and IME events with a per-frame query layer are described under [Input](#input); mobile backends
+are a separate phase (see [What is not here yet](#what-is-not-here-yet)).
 
 ## Modules
 
@@ -19,6 +19,7 @@ not here yet](#what-is-not-here-yet)).
 | `process` | `id`, `current_exe`, `open_url`, `reveal_in_file_manager`                                                                                                                                                                |
 | `thread`  | OS-level thread names and abstract priorities (`Low`, `Normal`, `High`, `TimeCritical`)                                                                                                                                  |
 | `window`  | The callback-based `App` lifecycle, `WindowDesc`, `WindowEvent`, `NativeWindowHandle`, monitors, cursor, a headless backend and (feature `winit`) a desktop backend; see [below](#windows-and-the-application-lifecycle) |
+| `input`   | `InputEvent` (keyboard with physical `KeyCode` and logical `Key`, mouse, touch, IME) and `InputState`, the per-frame "held / just pressed / just released" queries; see [Input](#input) |
 | `support` | `support(feature, platform)`: the table below, queryable at run time                                                                                                                                                     |
 | `error`   | `PlatformError` (`Unsupported`, `Io`, `Os`, `NonUtf8Path`), convertible into `ccore::CoreError`                                                                                                                          |
 
@@ -112,7 +113,7 @@ impl App for Game {
 | `exit`                                 | the callback finishes; every remaining window gets `SurfaceLost` (if any) and `Destroyed`; the loop returns the exit code     |
 
 Every `SurfaceCreated` is eventually followed by exactly one `SurfaceLost`, so releasing swapchain resources in that
-handler is always enough. `WindowEvent` is `#[non_exhaustive]`: input events will be added, so keep a catch-all arm.
+handler is always enough. `WindowEvent` is `#[non_exhaustive]`, so keep a catch-all arm.
 
 **Units and requests.** `WindowDesc` and the setters use logical (DPI-independent) units; what windows report (`Resized`,
 `Window::inner_size`) is in physical pixels, the size a swapchain needs. Title and visibility read back immediately; size,
@@ -178,8 +179,67 @@ What it does on a real desktop, beyond the contract above:
 * **Failures.** A window that cannot be created is fatal: the loop exits and `Backend::run` returns
   `WindowError::Backend`. So does an event loop that cannot start (no display).
 
-Not covered yet: input events, exclusive fullscreen, choosing the monitor for fullscreen, window icons, and anything
+Not covered yet: exclusive fullscreen, choosing the monitor for fullscreen, window icons, and anything
 Android or iOS specific.
+
+## Input
+
+Keyboard, mouse, touch and input-method (IME) events arrive as `WindowEvent::Input(InputEvent)`, the same on every
+backend. `platform::input` also has `InputState`, which turns the event stream into "is it held, did it just go down" for
+game loops.
+
+| Events (`InputEvent`) | What it carries |
+|:----------------------|:----------------|
+| `Key(KeyEvent)` | the **physical** key (`KeyCode`, where it sits on the keyboard: `KeyW` is the same key on QWERTY, AZERTY and Dvorak, use it for controls), the **logical** key (`Key`: a character such as `"A"` or a `NamedKey` such as Enter, use it for shortcuts), the text the press produces, `repeat` for auto-repeat, `synthetic` for events the system made up |
+| `ModifiersChanged` | `Modifiers`: Shift, Control, Alt, Super (left and right are not told apart) |
+| `CursorMoved`, `CursorEntered`, `CursorLeft` | positions in physical pixels (`PointerPosition`, fractional) from the client area's top-left corner |
+| `MouseButton`, `MouseWheel` | `MouseButton` (Left, Right, Middle, Back, Forward, Other) with `ButtonState`; `ScrollDelta` in lines (wheels) or pixels (touchpads) |
+| `RawMouseMotion` | unaccelerated relative movement for camera control; keeps coming while the cursor is `CursorGrab::Locked`; goes to the window that has focus |
+| `Touch(TouchEvent)` | finger id, `TouchPhase` (Started, Moved, Ended, Cancelled) and position |
+| `Ime(ImeEvent)` | `Enabled`, `Preedit` (text being composed), `Commit`, `Disabled` |
+
+`InputEvent`, `KeyCode`, `NamedKey`, `Key` and the other enums are `#[non_exhaustive]`; keep a catch-all arm.
+
+**IME.** An input method only talks to a window that asked for it: call `AppContext::set_ime_allowed(window, true)` while a
+text field has focus and `set_ime_cursor_area` to tell the system where the caret is (so its candidate window does not
+cover the text). `Window::is_ime_allowed` reads back at once. Text typed without composition arrives as `KeyEvent::text`,
+text composed by an IME as `Commit`. The headless backend drops IME events while the permission is off, as a real system
+would.
+
+**Querying state.** Feed every event to `InputState::handle_event`, ask during the update, call `end_frame` once per frame:
+
+```rust
+fn window_event(&mut self, _: &mut AppContext, _: WindowId, event: WindowEvent) {
+    self.input.handle_event(&event);
+}
+
+fn about_to_wait(&mut self, _: &mut AppContext) {
+    if self.input.key_just_pressed(KeyCode::Space) { self.jump(); }
+    let (dx, dy) = self.input.raw_mouse_delta();
+    self.camera.turn(dx, dy);
+    self.input.end_frame();
+}
+```
+
+| Query | Meaning |
+|:------|:--------|
+| `key_pressed`, `mouse_pressed`, `logical_key_pressed` | held right now |
+| `*_just_pressed`, `*_just_released` | the change happened this frame; a press and release within one frame reports both and is not held afterwards, so a quick tap is not lost |
+| `cursor_position`, `cursor_delta` | position (`None` while the cursor is outside the window) and movement of this frame; a position from before the cursor left never produces a jump |
+| `raw_mouse_delta`, `scroll_lines`, `scroll_pixels` | sums over the frame |
+| `touches`, `touches_started`, `touches_ended` | fingers on the screen and those that started or ended this frame (a cancelled touch counts as ended) |
+| `text`, `ime_preedit` | printable text typed this frame (control characters left out), and the text an IME is composing |
+
+Auto-repeat never counts as a new press. When the window loses focus everything that is held is released (and reported as
+just released), so no key stays stuck after Alt-Tab. One `InputState` follows one window; with several windows keep one
+per `WindowId`.
+
+**Where it was verified.** The event types, `InputState` and the headless backend (`HostEvent::Input`) by unit and
+doc tests on every Rust CI platform. The `winit` conversions (every key, button, scroll and IME variant) by unit tests, and
+the X11 path by hand on Linux under Xvfb with `xdotool`: mouse movement, buttons and wheel, `W`, Shift+H, `i`, Ctrl+A with
+the right physical and logical keys, text and modifiers all arrived and were seen by `InputState`. The CI smoke test only
+checks that the IME permission and caret area are accepted; it does not inject input. Not run anywhere: raw mouse motion
+(Xvfb does not produce it), touch, real IME composition, Windows, macOS and Wayland input.
 
 ## Standard directories
 
@@ -226,12 +286,13 @@ Clocks, timers, threads and processes are not exposed: Rust code uses them direc
 | `ffi` platform functions                                                                                                    | Rust tests in `ffi/src/platform.rs` on every Rust CI platform; C++ side by `cv_ffi_platform_test` (`ctest -L ffi`)                                                                                                                                                                             |
 | `window` API and headless backend                                                                                           | Part of the `platform` unit and doc tests, so they run on every Rust CI platform; no display is needed                                                                                                                                                                                         |
 | Desktop backend on Linux (X11)                                                                                              | `platform-window-xvfb` job in `rust.yml`: a real window on Xvfb, once with openbox as window manager (fullscreen included) and once without (`cargo test -p platform --features winit --test winit_smoke`). The test skips itself when there is no display, unless `CV_REQUIRE_DISPLAY` is set |
+| Input events and `InputState` | Unit and doc tests (all Rust CI platforms); `winit` conversions by unit tests; real X11 input by hand under Xvfb with `xdotool` (not in CI); the smoke test checks the IME permission only |
 | Desktop backend on Windows and macOS, Wayland                                                                               | Compiled (and linted) by the `rust-cross-platform` jobs, which build with `--all-features`; **no CI job opens a window there**, so run `WinitBackend` on a real machine to verify                                                                                                              |
 
 No code in the crate has been run on an Android or iOS device.
 
 ## What is not here yet
 
-The Android and iOS backends are not part of the crate yet (the code compiles for both, nothing runs on a device). Input
-(keyboard, mouse, touch, IME), the FFI event loop for the C++ runtime and the renderer integration come after that. Gamepad, clipboard, dynamic-library loading and dialogs are not planned. Each phase gets its
+The Android and iOS backends are not part of the crate yet (the code compiles for both, nothing runs on a device). Touch
+and IME on them come with those backends. The FFI event loop for the C++ runtime and the renderer integration come after that. Gamepad, clipboard, dynamic-library loading and dialogs are not planned. Each phase gets its
 own design review before it is implemented; see `PROGRESS.md`.

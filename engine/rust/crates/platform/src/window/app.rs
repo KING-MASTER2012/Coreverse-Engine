@@ -71,6 +71,8 @@ pub(crate) enum Request {
     SetCursorIcon(WindowId),
     SetCursorVisible(WindowId),
     SetCursorGrab(WindowId, CursorGrab),
+    SetImeAllowed(WindowId),
+    SetImeCursorArea(WindowId, LogicalPosition, LogicalSize),
     /// Close the window: `SurfaceLost` (if it has a surface), `Destroyed`, gone.
     Close(WindowId),
 }
@@ -279,6 +281,52 @@ impl AppContext {
         Ok(())
     }
 
+    /// Allows or forbids input-method (IME) events for the window. Enable it
+    /// while a text field has focus and disable it again afterwards: with it
+    /// on, composition text arrives as
+    /// [`ImeEvent`](crate::input::ImeEvent)s and the system may show its
+    /// candidate window. The new state is readable right away through
+    /// [`Window::is_ime_allowed`].
+    ///
+    /// # Errors
+    /// [`WindowError::UnknownWindow`].
+    pub fn set_ime_allowed(&mut self, id: WindowId, allowed: bool) -> Result<(), WindowError> {
+        self.window_mut(id)?.set_ime_allowed(allowed);
+        self.requests.push_back(Request::SetImeAllowed(id));
+        Ok(())
+    }
+
+    /// Tells the input method where the text caret is, so that it can place its
+    /// candidate window next to it and not over it. `position` is the top-left
+    /// corner of the caret or selection and `size` its extent, in logical units
+    /// of the client area.
+    ///
+    /// # Errors
+    /// [`WindowError::UnknownWindow`], or [`WindowError::InvalidArgument`]
+    /// when `position` is not finite or `size` is negative or not finite.
+    pub fn set_ime_cursor_area(
+        &mut self,
+        id: WindowId,
+        position: LogicalPosition,
+        size: LogicalSize,
+    ) -> Result<(), WindowError> {
+        self.window_mut(id)?;
+        if !position.is_valid() {
+            return Err(WindowError::InvalidArgument(
+                "position must be finite".to_owned(),
+            ));
+        }
+        let usable = |extent: f64| extent.is_finite() && extent >= 0.0;
+        if !usable(size.width) || !usable(size.height) {
+            return Err(WindowError::InvalidArgument(
+                "size must be finite and not negative".to_owned(),
+            ));
+        }
+        self.requests
+            .push_back(Request::SetImeCursorArea(id, position, size));
+        Ok(())
+    }
+
     /// The monitors of the desktop, in no particular order (see
     /// [`MonitorInfo::is_primary`]). Empty on a system without a display. See
     /// [`MonitorInfo`] for when the list is refreshed.
@@ -462,6 +510,12 @@ mod tests {
             ctx.set_cursor_icon(ghost, CursorIcon::Text),
             ctx.set_cursor_visible(ghost, false),
             ctx.set_cursor_grab(ghost, CursorGrab::Locked),
+            ctx.set_ime_allowed(ghost, true),
+            ctx.set_ime_cursor_area(
+                ghost,
+                LogicalPosition::new(0.0, 0.0),
+                LogicalSize::new(1.0, 1.0),
+            ),
         ] {
             assert!(matches!(result, Err(WindowError::UnknownWindow(id)) if id == ghost));
         }
@@ -488,6 +542,57 @@ mod tests {
                 Request::SetCursorGrab(id, CursorGrab::Confined)
             ]
         );
+    }
+
+    #[test]
+    fn ime_permission_reads_back_immediately_and_the_cursor_area_is_a_request() {
+        let mut ctx = ctx();
+        let id = ctx.create_window(WindowDesc::default()).unwrap();
+        ctx.requests.clear();
+        assert!(!ctx.window(id).unwrap().is_ime_allowed());
+        ctx.set_ime_allowed(id, true).unwrap();
+        assert!(ctx.window(id).unwrap().is_ime_allowed());
+        ctx.set_ime_cursor_area(
+            id,
+            LogicalPosition::new(4.0, 5.0),
+            LogicalSize::new(2.0, 0.0),
+        )
+            .unwrap();
+        assert_eq!(
+            ctx.requests,
+            [
+                Request::SetImeAllowed(id),
+                Request::SetImeCursorArea(
+                    id,
+                    LogicalPosition::new(4.0, 5.0),
+                    LogicalSize::new(2.0, 0.0)
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unusable_ime_cursor_area_is_rejected() {
+        let mut ctx = ctx();
+        let id = ctx.create_window(WindowDesc::default()).unwrap();
+        ctx.requests.clear();
+        for (position, size) in [
+            (
+                LogicalPosition::new(f64::NAN, 0.0),
+                LogicalSize::new(1.0, 1.0),
+            ),
+            (LogicalPosition::new(0.0, 0.0), LogicalSize::new(-1.0, 1.0)),
+            (
+                LogicalPosition::new(0.0, 0.0),
+                LogicalSize::new(1.0, f64::INFINITY),
+            ),
+        ] {
+            assert!(matches!(
+                ctx.set_ime_cursor_area(id, position, size),
+                Err(WindowError::InvalidArgument(_))
+            ));
+        }
+        assert!(ctx.requests.is_empty());
     }
 
     #[test]

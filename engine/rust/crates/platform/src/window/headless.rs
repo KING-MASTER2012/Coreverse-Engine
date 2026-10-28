@@ -31,6 +31,7 @@ use super::event::{ControlFlow, WindowEvent, WindowId};
 use super::geometry::{PhysicalPosition, PhysicalSize};
 use super::handle::NativeWindowHandle;
 use super::monitor::MonitorInfo;
+use crate::input::InputEvent;
 
 /// The most events one [`HeadlessLoop::step`] delivers before it gives up.
 pub const MAX_EVENTS_PER_STEP: usize = 10_000;
@@ -168,6 +169,20 @@ pub enum HostEvent {
     SurfaceLost {
         /// The window.
         window: WindowId,
+    },
+    /// The user did something with an input device (a key, the mouse, a touch,
+    /// an input method) and the window system tells the window. Delivered as
+    /// [`WindowEvent::Input`] as it is, with one exception: input-method
+    /// events are dropped while the window does not allow them
+    /// ([`AppContext::set_ime_allowed`]), as a real system would not send
+    /// them. The headless backend does not check the event for plausibility
+    /// (a release without a press, a cursor outside the window), so a test can
+    /// provoke those cases on purpose.
+    Input {
+        /// The window.
+        window: WindowId,
+        /// What the user did.
+        event: InputEvent,
     },
 }
 
@@ -434,7 +449,9 @@ impl<A: App> HeadlessLoop<A> {
             | Request::SetTitle(_)
             | Request::SetVisible(_)
             | Request::SetCursorIcon(_)
-            | Request::SetCursorVisible(_) => {}
+            | Request::SetCursorVisible(_)
+            | Request::SetImeAllowed(_)
+            | Request::SetImeCursorArea(..) => {}
             // A headless window can always be grabbed.
             Request::SetCursorGrab(id, grab) => {
                 if let Some(window) = self.ctx.windows.get_mut(&id) {
@@ -590,6 +607,14 @@ impl<A: App> HeadlessLoop<A> {
                     if let Some(w) = self.ctx.windows.get_mut(&window) {
                         w.report_surface(Some(handle));
                         self.deliver(window, WindowEvent::SurfaceCreated(handle));
+                    }
+                }
+            }
+            HostEvent::Input { window, event } => {
+                if let Some(w) = self.ctx.windows.get(&window) {
+                    let dropped = matches!(event, InputEvent::Ime(_)) && !w.is_ime_allowed();
+                    if !dropped {
+                        self.deliver(window, WindowEvent::Input(event));
                     }
                 }
             }

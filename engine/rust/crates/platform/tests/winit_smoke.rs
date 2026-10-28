@@ -18,8 +18,8 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use platform::window::{
-    App, AppContext, Backend, ControlFlow, CursorGrab, CursorIcon, Fullscreen, LogicalSize,
-    NativeWindowHandle, PhysicalSize, WindowDesc, WindowEvent, WindowId, WinitBackend,
+    App, AppContext, Backend, ControlFlow, CursorGrab, CursorIcon, Fullscreen, LogicalPosition,
+    LogicalSize, NativeWindowHandle, PhysicalSize, WindowDesc, WindowEvent, WindowId, WinitBackend,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -205,6 +205,15 @@ impl App for Smoke {
                     ctx.set_cursor_icon(id, CursorIcon::Text).unwrap();
                     ctx.set_cursor_visible(id, false).unwrap();
                     ctx.set_cursor_grab(id, CursorGrab::Confined).unwrap();
+                    // The input method is switched on and told where the caret
+                    // is; the system must take both without complaint.
+                    ctx.set_ime_allowed(id, true).unwrap();
+                    ctx.set_ime_cursor_area(
+                        id,
+                        LogicalPosition::new(10.0, 20.0),
+                        LogicalSize::new(2.0, 16.0),
+                    )
+                        .unwrap();
                     self.stage = Stage::CursorCheck;
                 }
             }
@@ -215,6 +224,9 @@ impl App for Smoke {
                     || window.is_cursor_visible()
                 {
                     self.fail("title or cursor state does not read back");
+                }
+                if !window.is_ime_allowed() {
+                    self.fail("the IME permission does not read back");
                 }
                 if window.cursor_grab() != CursorGrab::Confined {
                     self.note(format!(

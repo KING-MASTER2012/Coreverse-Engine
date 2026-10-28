@@ -4,8 +4,8 @@
 //! This module is the *API* and two backends: the *headless backend* and, with
 //! the `winit` cargo feature, the *desktop backend*. The Android and iOS
 //! backends come later and plug into the same [`Backend`] contract. Input
-//! events (keyboard, mouse, touch, IME) are not part of it yet;
-//! [`WindowEvent`] is `#[non_exhaustive]` so they can be added.
+//! (keyboard, mouse, touch, IME) arrives as [`WindowEvent::Input`]; its types
+//! and the per-frame query layer live in [`input`](crate::input).
 //!
 //! # The pieces
 //!
@@ -21,7 +21,8 @@
 //!   [`SurfaceCreated`](WindowEvent::SurfaceCreated) and
 //!   [`SurfaceLost`](WindowEvent::SurfaceLost) for platforms (Android, iOS)
 //!   where the presentation surface disappears and comes back while the app
-//!   lives.
+//!   lives, and [`Input`](WindowEvent::Input) for the keyboard, mouse, touch
+//!   and input methods.
 //! * [`MonitorInfo`] — the monitors of the desktop
 //!   ([`AppContext::monitors`]), and [`CursorIcon`] / [`CursorGrab`] for the
 //!   mouse cursor of a window.
@@ -99,6 +100,8 @@ mod monitor;
 mod state;
 #[cfg(feature = "winit")]
 mod winit_backend;
+#[cfg(feature = "winit")]
+mod winit_input;
 
 #[cfg(test)]
 mod tests;

@@ -32,7 +32,7 @@ use winit::dpi::{
     LogicalPosition as WinitLogicalPosition, LogicalSize as WinitLogicalSize,
     PhysicalSize as WinitPhysicalSize,
 };
-use winit::event::WindowEvent as WinitEvent;
+use winit::event::{DeviceEvent, DeviceId, WindowEvent as WinitEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow as WinitControlFlow, EventLoop};
 use winit::raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
@@ -51,6 +51,8 @@ use super::event::{ControlFlow, WindowEvent, WindowId};
 use super::geometry::{PhysicalPosition, PhysicalSize};
 use super::handle::NativeWindowHandle;
 use super::monitor::MonitorInfo;
+use super::winit_input;
+use crate::input::{InputEvent, PointerPosition};
 
 /// The desktop backend: real windows through `winit`.
 ///
@@ -312,6 +314,21 @@ impl<A: App> Driver<A> {
                     }
                 }
             }
+            Request::SetImeAllowed(id) => {
+                if let (Some(state), Some(window)) =
+                    (self.ctx.windows.get(&id), self.windows.get(&id))
+                {
+                    window.set_ime_allowed(state.is_ime_allowed());
+                }
+            }
+            Request::SetImeCursorArea(id, position, size) => {
+                if let Some(window) = self.windows.get(&id) {
+                    window.set_ime_cursor_area(
+                        WinitLogicalPosition::new(position.x, position.y),
+                        WinitLogicalSize::new(size.width, size.height),
+                    );
+                }
+            }
             Request::Close(id) => self.close(id),
         }
     }
@@ -538,8 +555,51 @@ impl<A: App> Driver<A> {
             WinitEvent::RedrawRequested if !self.suspended => {
                 self.deliver_raw(id, WindowEvent::RedrawRequested);
             }
-            // Input arrives with its own phase; everything else is not part of
-            // the window contract.
+            WinitEvent::KeyboardInput {
+                event,
+                is_synthetic,
+                ..
+            } => {
+                let key = winit_input::key_event(&event, is_synthetic);
+                self.deliver_raw(id, WindowEvent::Input(InputEvent::Key(key)));
+            }
+            WinitEvent::ModifiersChanged(modifiers) => {
+                let modifiers = winit_input::modifiers(modifiers.state());
+                self.deliver_raw(
+                    id,
+                    WindowEvent::Input(InputEvent::ModifiersChanged(modifiers)),
+                );
+            }
+            WinitEvent::CursorMoved { position, .. } => {
+                let position = PointerPosition::new(position.x, position.y);
+                self.deliver_raw(id, WindowEvent::Input(InputEvent::CursorMoved(position)));
+            }
+            WinitEvent::CursorEntered { .. } => {
+                self.deliver_raw(id, WindowEvent::Input(InputEvent::CursorEntered));
+            }
+            WinitEvent::CursorLeft { .. } => {
+                self.deliver_raw(id, WindowEvent::Input(InputEvent::CursorLeft));
+            }
+            WinitEvent::MouseInput { state, button, .. } => {
+                let event = InputEvent::MouseButton {
+                    button: winit_input::mouse_button(button),
+                    state: winit_input::button_state(state),
+                };
+                self.deliver_raw(id, WindowEvent::Input(event));
+            }
+            WinitEvent::MouseWheel { delta, .. } => {
+                let delta = winit_input::scroll_delta(delta);
+                self.deliver_raw(id, WindowEvent::Input(InputEvent::MouseWheel(delta)));
+            }
+            WinitEvent::Touch(touch) => {
+                let touch = winit_input::touch(&touch);
+                self.deliver_raw(id, WindowEvent::Input(InputEvent::Touch(touch)));
+            }
+            WinitEvent::Ime(ime) => {
+                let ime = winit_input::ime(ime);
+                self.deliver_raw(id, WindowEvent::Input(InputEvent::Ime(ime)));
+            }
+            // Everything else is not part of the window contract.
             _ => {}
         }
     }
@@ -602,6 +662,33 @@ impl<A: App> ApplicationHandler for Driver<A> {
         };
         self.handle_window_event(event_loop, id, event);
         self.end_callback(event_loop);
+    }
+
+    // Raw mouse motion has no window of its own: it goes to the window that has
+    // keyboard focus (the lowest id if the system reports several).
+    fn device_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        if self.stopped() {
+            return;
+        }
+        if let DeviceEvent::MouseMotion {
+            delta: (delta_x, delta_y),
+        } = event
+            && let Some(id) = self
+            .ctx
+            .windows
+            .values()
+            .find(|w| w.is_focused())
+            .map(super::state::Window::id)
+        {
+            let motion = InputEvent::RawMouseMotion { delta_x, delta_y };
+            self.deliver_raw(id, WindowEvent::Input(motion));
+            self.end_callback(event_loop);
+        }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {

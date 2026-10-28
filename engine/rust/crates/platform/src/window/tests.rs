@@ -3,6 +3,10 @@
 use std::num::NonZeroUsize;
 
 use super::*;
+use crate::input::{
+    ButtonState, ImeEvent, InputEvent, InputState, Key, KeyCode, KeyEvent, Modifiers, MouseButton,
+    PointerPosition, ScrollDelta, TouchEvent, TouchPhase,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 enum Entry {
@@ -289,6 +293,10 @@ fn host_events_for_unknown_windows_are_ignored() {
             handle: handle(1),
         },
         HostEvent::SurfaceLost { window: id(9) },
+        HostEvent::Input {
+            window: id(9),
+            event: InputEvent::CursorLeft,
+        },
     ] {
         event_loop.push(event);
     }
@@ -1056,4 +1064,166 @@ fn the_lifecycle_is_the_same_for_a_whole_session() {
             ev(1, WindowEvent::Destroyed),
         ]
     );
+}
+
+// --- input -----------------------------------------------------------------
+
+fn input(window: u64, event: InputEvent) -> HostEvent {
+    HostEvent::Input {
+        window: id(window),
+        event,
+    }
+}
+
+fn key_down(code: KeyCode, text: &str) -> InputEvent {
+    InputEvent::Key(KeyEvent::new(code, Key::character(text), ButtonState::Pressed).with_text(text))
+}
+
+#[test]
+fn input_events_are_delivered_in_order_to_their_window() {
+    let mut event_loop = started(loop_with_windows(2));
+    let events = [
+        key_down(KeyCode::KeyA, "a"),
+        InputEvent::ModifiersChanged(Modifiers::SHIFT),
+        InputEvent::CursorEntered,
+        InputEvent::CursorMoved(PointerPosition::new(3.5, 4.5)),
+        InputEvent::MouseButton {
+            button: MouseButton::Left,
+            state: ButtonState::Pressed,
+        },
+        InputEvent::MouseWheel(ScrollDelta::Lines { x: 0.0, y: 1.0 }),
+        InputEvent::RawMouseMotion {
+            delta_x: 1.0,
+            delta_y: -2.0,
+        },
+        InputEvent::Touch(TouchEvent::new(
+            1,
+            TouchPhase::Started,
+            PointerPosition::new(9.0, 9.0),
+        )),
+        InputEvent::CursorLeft,
+    ];
+    for (n, event) in events.iter().enumerate() {
+        let window = if n % 2 == 0 { 1 } else { 2 };
+        event_loop.push(input(window, event.clone()));
+    }
+    event_loop.step().unwrap();
+
+    let mut expected: Vec<Entry> = events
+        .into_iter()
+        .enumerate()
+        .map(|(n, event)| ev(if n % 2 == 0 { 1 } else { 2 }, WindowEvent::Input(event)))
+        .collect();
+    expected.push(Entry::AboutToWait);
+    assert_eq!(event_loop.app_mut().take_log(), expected);
+}
+
+#[test]
+fn ime_events_are_dropped_until_the_window_allows_them() {
+    let mut event_loop = started(loop_with_windows(1));
+    let composing = InputEvent::Ime(ImeEvent::Preedit {
+        text: "あ".to_owned(),
+        cursor: None,
+    });
+
+    event_loop.push(input(1, InputEvent::Ime(ImeEvent::Enabled)));
+    event_loop.push(input(1, composing.clone()));
+    event_loop.step().unwrap();
+    assert_eq!(event_loop.app_mut().take_log(), [Entry::AboutToWait]);
+
+    event_loop
+        .context_mut()
+        .set_ime_allowed(id(1), true)
+        .unwrap();
+    event_loop.push(input(1, InputEvent::Ime(ImeEvent::Enabled)));
+    event_loop.push(input(1, composing.clone()));
+    event_loop.push(input(1, key_down(KeyCode::KeyA, "a")));
+    event_loop.step().unwrap();
+    assert_eq!(
+        event_loop.app_mut().take_log(),
+        [
+            ev(1, WindowEvent::Input(InputEvent::Ime(ImeEvent::Enabled))),
+            ev(1, WindowEvent::Input(composing)),
+            ev(1, WindowEvent::Input(key_down(KeyCode::KeyA, "a"))),
+            Entry::AboutToWait,
+        ],
+        "other input is never held back"
+    );
+
+    event_loop
+        .context_mut()
+        .set_ime_cursor_area(
+            id(1),
+            LogicalPosition::new(1.0, 2.0),
+            LogicalSize::new(3.0, 4.0),
+        )
+        .unwrap();
+    event_loop
+        .context_mut()
+        .set_ime_allowed(id(1), false)
+        .unwrap();
+    event_loop.step().unwrap();
+    assert!(!event_loop.context().window(id(1)).unwrap().is_ime_allowed());
+}
+
+/// An app that asks an [`InputState`] about the `W` key once per frame.
+#[derive(Default)]
+struct Frames {
+    input: InputState,
+    frames: Vec<(bool, bool, bool)>,
+    text: Vec<String>,
+}
+
+impl App for Frames {
+    fn resumed(&mut self, ctx: &mut AppContext) {
+        ctx.create_window(WindowDesc::default()).unwrap();
+    }
+
+    fn window_event(&mut self, _ctx: &mut AppContext, _window: WindowId, event: WindowEvent) {
+        self.input.handle_event(&event);
+    }
+
+    fn about_to_wait(&mut self, _ctx: &mut AppContext) {
+        let w = KeyCode::KeyW;
+        self.frames.push((
+            self.input.key_pressed(w),
+            self.input.key_just_pressed(w),
+            self.input.key_just_released(w),
+        ));
+        self.text.push(self.input.text().to_owned());
+        self.input.end_frame();
+    }
+}
+
+#[test]
+fn an_app_can_query_input_per_frame_through_the_event_stream() {
+    let mut event_loop = HeadlessLoop::new(Frames::default(), HeadlessConfig::default()).unwrap();
+    event_loop.step().unwrap();
+    event_loop.app_mut().frames.clear();
+    event_loop.app_mut().text.clear();
+
+    // Frame 1: W goes down and "hi" is typed. Frame 2: nothing happens.
+    // Frame 3: the window loses focus while W is held. Frame 4: quiet again.
+    event_loop.push(input(1, key_down(KeyCode::KeyW, "w")));
+    event_loop.push(input(1, key_down(KeyCode::KeyH, "h")));
+    event_loop.push(input(1, key_down(KeyCode::KeyI, "i")));
+    event_loop.step().unwrap();
+    event_loop.step().unwrap();
+    event_loop.push(HostEvent::Focused {
+        window: id(1),
+        focused: false,
+    });
+    event_loop.step().unwrap();
+    event_loop.step().unwrap();
+
+    assert_eq!(
+        event_loop.app_mut().frames,
+        [
+            (true, true, false),
+            (true, false, false),
+            (false, false, true),
+            (false, false, false)
+        ]
+    );
+    assert_eq!(event_loop.app_mut().text, ["whi", "", "", ""]);
 }

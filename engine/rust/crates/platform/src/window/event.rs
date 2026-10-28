@@ -3,6 +3,8 @@
 use std::fmt;
 use std::time::Instant;
 
+use crate::input::InputEvent;
+
 use super::geometry::{PhysicalPosition, PhysicalSize};
 use super::handle::NativeWindowHandle;
 
@@ -35,8 +37,8 @@ impl fmt::Display for WindowId {
 /// Something that happened to a window, delivered to
 /// [`App::window_event`](super::App::window_event).
 ///
-/// The enum is `#[non_exhaustive]`: input events (keyboard, mouse, touch, IME)
-/// will be added to it, so keep a catch-all arm.
+/// The enum is `#[non_exhaustive]`: more events may be added, so keep a
+/// catch-all arm.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum WindowEvent {
@@ -84,6 +86,11 @@ pub enum WindowEvent {
     /// followed by exactly one `SurfaceLost`: when the app is suspended, when
     /// the system replaces the surface, or when the window is destroyed.
     SurfaceLost,
+    /// The user did something with an input device: a key, the mouse, a touch
+    /// or an input method. See [`InputEvent`], and
+    /// [`InputState`](crate::input::InputState) to query input per frame
+    /// instead of tracking it by hand.
+    Input(InputEvent),
 }
 
 /// How the event loop waits between iterations.

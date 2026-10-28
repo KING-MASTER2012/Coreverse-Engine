@@ -6,6 +6,10 @@
 //! * [`info`] — OS name and version, CPU core counts, installed memory and the
 //!   session's display server, plus [`SystemInfo`](info::SystemInfo) to collect
 //!   all of it.
+//! * [`input`] — keyboard, mouse, touch and IME events ([`InputEvent`](input::InputEvent),
+//!   physical [`KeyCode`](input::KeyCode) and logical [`Key`](input::Key)) and
+//!   [`InputState`](input::InputState), the per-frame "is it held, did it just
+//!   go down" query layer.
 //! * [`time`] — monotonic and wall clocks, [`Stopwatch`](time::Stopwatch),
 //!   [`FrameTimer`](time::FrameTimer), a [`FixedStep`](time::FixedStep)
 //!   accumulator and [`precise_sleep`](time::precise_sleep). The timers are
@@ -26,8 +30,9 @@
 //!   [`App`](window::App), [`WindowDesc`](window::WindowDesc),
 //!   [`WindowEvent`](window::WindowEvent) (surface lost/created included),
 //!   [`NativeWindowHandle`](window::NativeWindowHandle) and a headless backend
-//!   that needs no display. The desktop (`winit`) and mobile backends and
-//!   input handling are planned as further phases.
+//!   that needs no display, plus the desktop backend on `winit` (cargo feature
+//!   `winit`). Input events are delivered through it, see [`input`]. The
+//!   mobile backends are a further phase.
 //!
 //! [`Platform`], [`Architecture`] and [`Endian`] are re-exported from
 //! [`ccore::platform`] (the compile-time tags stay there), and [`PlatformExt`]
@@ -77,6 +82,7 @@ pub mod env;
 pub mod error;
 mod ext;
 pub mod info;
+pub mod input;
 mod parse;
 pub mod paths;
 pub mod process;

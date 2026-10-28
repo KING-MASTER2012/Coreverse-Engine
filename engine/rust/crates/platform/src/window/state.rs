@@ -35,6 +35,7 @@ pub struct Window {
     cursor_icon: CursorIcon,
     cursor_visible: bool,
     cursor_grab: CursorGrab,
+    ime_allowed: bool,
 }
 
 impl Window {
@@ -59,6 +60,7 @@ impl Window {
             cursor_icon: CursorIcon::Default,
             cursor_visible: true,
             cursor_grab: CursorGrab::None,
+            ime_allowed: false,
         }
     }
 
@@ -184,6 +186,14 @@ impl Window {
         self.cursor_grab
     }
 
+    /// Whether input-method (IME) events are wanted, see
+    /// [`AppContext::set_ime_allowed`](super::AppContext::set_ime_allowed).
+    /// Off for a new window.
+    #[must_use]
+    pub fn is_ime_allowed(&self) -> bool {
+        self.ime_allowed
+    }
+
     // Mutators for the application-owned state; used by `AppContext`.
 
     pub(crate) fn set_title(&mut self, title: String) {
@@ -200,6 +210,10 @@ impl Window {
 
     pub(crate) fn set_cursor_visible(&mut self, visible: bool) {
         self.cursor_visible = visible;
+    }
+
+    pub(crate) fn set_ime_allowed(&mut self, allowed: bool) {
+        self.ime_allowed = allowed;
     }
 
     // Mutators for state the window system reports; used by the backends.
@@ -287,6 +301,7 @@ mod tests {
         assert_eq!(w.cursor_icon(), CursorIcon::Default);
         assert!(w.is_cursor_visible());
         assert_eq!(w.cursor_grab(), CursorGrab::None);
+        assert!(!w.is_ime_allowed());
     }
 
     #[test]
