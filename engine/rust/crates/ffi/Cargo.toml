@@ -24,5 +24,11 @@ vfs-crate = { package = "vfs", path = "../vfs" }
 platform-crate = { package = "platform", path = "../platform" }
 camino.workspace = true
 
+# The desktop window backend (`winit`) for `ffi_platform_run`. Desktop targets
+# only: on Android and iOS `winit` needs an activity or application entry point
+# of its own, which comes with the mobile backends.
+[target.'cfg(any(windows, target_os = "macos", target_os = "linux"))'.dependencies]
+platform-crate = { package = "platform", path = "../platform", features = ["winit"] }
+
 [lints]
 workspace = true

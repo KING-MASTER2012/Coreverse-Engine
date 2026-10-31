@@ -78,6 +78,18 @@ pub mod vfs;
 /// thread-local last-error convention as `vfs`; see the module docs.
 pub mod platform;
 
+/// The window event loop for C++: `ffi_platform_run`, the callback table
+/// ([`platform_run::PlatformCallbacks`]), the window events and the
+/// `ffi_platform_ctx_*` functions a callback uses to create windows, redraw,
+/// change the cursor and exit. Errors use the thread-local last error of the
+/// [`platform`] module; see the module docs for the lifetime rules of the
+/// context and of event data.
+pub mod platform_run;
+
+/// Numbers (`FFI_KEY_*`, `FFI_NAMED_KEY_*`) for the physical and logical keys
+/// of the input events, and their conversions.
+pub mod keys;
+
 use std::ffi::CString;
 use std::os::raw::c_char;
 

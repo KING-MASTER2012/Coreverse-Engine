@@ -657,7 +657,7 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateInstance()
     // VK_KHR_surface plus whichever platform-specific WSI extension(s)
     // this build was compiled for are required unconditionally —
     // surface creation (Phase 5.3) needs them regardless of whether
-    // validation is enabled. Win32/Metal are mutually exclusive with
+    // validation is enabled. Win32/Metal/Android are mutually exclusive with
     // everything else, matching NativeWindowHandle's #if ladder in
     // Surface.hpp. Linux is the one platform where more than one WSI
     // extension can be requested in the same build: Xlib and Wayland
@@ -671,6 +671,8 @@ std::expected<void, RenderError> VulkanRenderDevice::CreateInstance()
     extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
 #elif defined(__APPLE__)
     extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
+#elif defined(__ANDROID__)
+    extensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
 #elif defined(__linux__)
     #if defined(VK_USE_PLATFORM_XLIB_KHR)
     extensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
@@ -1004,6 +1006,13 @@ std::expected<Surface, RenderError> VulkanRenderDevice::CreateSurface(const Nati
         createInfo.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
         createInfo.pLayer = static_cast<const CAMetalLayer*>(handle.metalLayer);
         result = vkCreateMetalSurfaceEXT(m_instance, &createInfo, nullptr, &surface);
+    }
+#elif defined(__ANDROID__)
+    if (handle.nativeWindow != nullptr) {
+        VkAndroidSurfaceCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+        createInfo.window = static_cast<ANativeWindow*>(handle.nativeWindow);
+        result = vkCreateAndroidSurfaceKHR(m_instance, &createInfo, nullptr, &surface);
     }
 #elif defined(__linux__)
     // Both backends may be compiled in at once (see renderer/CMakeLists.txt),

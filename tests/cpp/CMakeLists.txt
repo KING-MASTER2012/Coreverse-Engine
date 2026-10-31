@@ -80,6 +80,16 @@ target_link_libraries(cv_ffi_platform_test PRIVATE cv-ffi::cv-ffi compiler_warni
 add_test(NAME cv_ffi_platform_test COMMAND cv_ffi_platform_test)
 set_tests_properties(cv_ffi_platform_test PROPERTIES ${CV_FFI_TEST_PROPERTIES})
 
+# Phase 10 (runtime integration) proof: cv-ffi's window event loop --
+# cv_ffi::window::Run() and the Context -- against the real Rust library on
+# the headless backend (no display needed): callback order, exit codes, the
+# stale-context guard, an exception leaving a callback, and the key tables.
+add_executable(cv_ffi_window_test cv_ffi_window_test.cpp)
+target_link_libraries(cv_ffi_window_test PRIVATE cv-ffi::cv-ffi compiler_warnings)
+
+add_test(NAME cv_ffi_window_test COMMAND cv_ffi_window_test)
+set_tests_properties(cv_ffi_window_test PROPERTIES ${CV_FFI_TEST_PROPERTIES})
+
 # Everything below needs the renderer library (and a Vulkan ICD at run time),
 # so it is skipped when the renderer is not built (-DBUILD_RENDERER=OFF).
 if(BUILD_RENDERER)

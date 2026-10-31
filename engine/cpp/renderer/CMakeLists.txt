@@ -24,7 +24,6 @@ add_library(renderer STATIC
         src/CommandBuffer.cpp
         src/FrameSync.cpp
         src/Diagnostics.cpp
-        src/backend/vulkan/VulkanRenderDevice.cpp
         src/backend/vulkan/VmaImpl.cpp
         src/backend/vulkan/VolkImpl.cpp
 )
@@ -104,6 +103,11 @@ if(WIN32)
     target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_WIN32_KHR NOMINMAX WIN32_LEAN_AND_MEAN)
 elseif(APPLE)
     target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_METAL_EXT)
+elseif(ANDROID)
+    # Phase 10: Android (a Linux, so this branch comes before UNIX). The
+    # surface is made from the ANativeWindow* the platform layer delivers; the
+    # Android NDK provides <android/native_window.h>.
+    target_compile_definitions(renderer PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
 elseif(UNIX)
     # Phase 5 (Wayland milestone): Xlib and Wayland are independent WSI
     # extensions — Vulkan-Headers allows VK_USE_PLATFORM_XLIB_KHR and

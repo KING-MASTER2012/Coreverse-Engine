@@ -23,6 +23,8 @@ add_library(cv-ffi STATIC
         src/Diagnostic.cpp
         src/Vfs.cpp
         src/Platform.cpp
+        src/Keys.cpp
+        src/Window.cpp
 )
 
 add_library(cv-ffi::cv-ffi ALIAS cv-ffi)

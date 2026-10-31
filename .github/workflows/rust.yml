@@ -60,8 +60,8 @@ jobs:
             - name: Cargo Test
               run: cargo test --workspace --all-features
 
-    # The `platform` crate has Android and iOS backends that no runner can
-    # execute. Type-check and lint them for their real targets so they cannot
+    # The `platform` crate (and the `ffi` crate on top of it) has Android and iOS
+    # code paths that no runner can execute. Type-check and lint them for their real targets so they cannot
     # rot unnoticed; nothing links, so no NDK or Xcode project is needed.
     platform-mobile:
         name: platform (${{ matrix.target }})
@@ -92,6 +92,15 @@ jobs:
 
             - name: Clippy
               run: cargo clippy -p platform --target ${{ matrix.target }} -- -D warnings
+
+            # The `ffi` crate builds the window event loop for C++ on top of
+            # `platform`; on these targets it must compile without the desktop
+            # backend (`winit` is a dependency of desktop targets only).
+            - name: Cargo Check (ffi)
+              run: cargo check -p ffi --target ${{ matrix.target }}
+
+            - name: Clippy (ffi)
+              run: cargo clippy -p ffi --target ${{ matrix.target }} -- -D warnings
 
     # The desktop window backend (`platform` with the `winit` feature) opens a
     # real window, so it needs an X server. Xvfb is a virtual one; a small

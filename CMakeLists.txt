@@ -132,6 +132,7 @@ generate_ffi_header()
 # ------------------------------------------------------------------
 option(BUILD_EDITOR   "Build the Qt editor"          ON)
 option(BUILD_RENDERER "Build the renderer library"   ON)
+option(BUILD_RUNTIME  "Build the runtime executable"  ON)
 option(BUILD_TESTS    "Build C++ tests"               OFF)
 
 enable_testing()
@@ -146,11 +147,17 @@ endif()
 
 # cv-ffi (C++ RAII wrappers over ffi.h — see engine/cpp/ffi-cpp/CMakeLists.txt)
 # needs only the Rust `ffi` library, not Qt. It is built whenever the editor is
-# (its consumer) and whenever the tests are, so its own tests (e.g.
+# (its consumer), whenever the runtime is and whenever the tests are, so its own tests (e.g.
 # cv_ffi_platform_test) also run in a headless configuration with
 # -DBUILD_EDITOR=OFF.
-if(BUILD_EDITOR OR BUILD_TESTS)
+if(BUILD_EDITOR OR BUILD_TESTS OR BUILD_RUNTIME)
     add_subdirectory(engine/cpp/ffi-cpp)
+endif()
+
+# The runtime executable (Phase 10): the Rust window loop through cv-ffi, and the
+# renderer when it is built. See engine/cpp/runtime/CMakeLists.txt.
+if(BUILD_RUNTIME)
+    add_subdirectory(engine/cpp/runtime)
 endif()
 
 if(BUILD_EDITOR)

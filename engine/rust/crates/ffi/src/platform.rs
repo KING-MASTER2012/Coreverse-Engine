@@ -50,6 +50,7 @@ use ccore::platform::{Architecture, Endian, Platform};
 use platform_crate::PlatformError;
 use platform_crate::info::{DisplayServer, SystemInfo};
 use platform_crate::paths::{AppDirs, DirKind};
+use platform_crate::window::WindowError;
 
 /// [`PlatformInfo::platform`]: Windows.
 pub const FFI_PLATFORM_WINDOWS: u8 = 0;
@@ -133,6 +134,14 @@ pub const FFI_PLATFORM_ERROR_INVALID_DATA: u8 = 5;
 /// [`ffi_platform_last_error_code`]: a `PlatformError` variant this header
 /// does not know yet.
 pub const FFI_PLATFORM_ERROR_OTHER: u8 = 6;
+/// [`ffi_platform_last_error_code`]: a window operation failed (`WindowError`):
+/// an unknown window id, an unusable window description, or the window system
+/// could not be started. The message says which.
+pub const FFI_PLATFORM_ERROR_WINDOW: u8 = 7;
+/// [`ffi_platform_last_error_code`]: a Rust panic was caught at the boundary of
+/// [`ffi_platform_run`](crate::platform_run::ffi_platform_run); the event loop
+/// is gone.
+pub const FFI_PLATFORM_ERROR_PANIC: u8 = 8;
 /// [`ffi_platform_last_error_code`]: the most recent call succeeded, or none
 /// has been made on this thread.
 pub const FFI_PLATFORM_ERROR_NONE: u8 = 255;
@@ -175,17 +184,22 @@ pub struct PlatformInfo {
 }
 
 /// Why the most recent call on this thread failed.
-enum Failure {
+#[derive(Debug)]
+pub(crate) enum Failure {
     /// An error of the `platform` crate itself.
     Platform(PlatformError),
     /// A malformed argument from the caller.
     InvalidArgument(String),
     /// Text from the OS that cannot be represented as a C string.
     InvalidData(String),
+    /// An error of the window API.
+    Window(WindowError),
+    /// A panic caught at the boundary; the text is its message.
+    Panic(String),
 }
 
 impl Failure {
-    fn code(&self) -> u8 {
+    pub(crate) fn code(&self) -> u8 {
         match self {
             Self::Platform(PlatformError::Unsupported { .. }) => FFI_PLATFORM_ERROR_UNSUPPORTED,
             Self::Platform(PlatformError::Io(_)) => FFI_PLATFORM_ERROR_IO,
@@ -195,6 +209,8 @@ impl Failure {
             Self::Platform(_) => FFI_PLATFORM_ERROR_OTHER,
             Self::InvalidArgument(_) => FFI_PLATFORM_ERROR_INVALID_ARGUMENT,
             Self::InvalidData(_) => FFI_PLATFORM_ERROR_INVALID_DATA,
+            Self::Window(_) => FFI_PLATFORM_ERROR_WINDOW,
+            Self::Panic(_) => FFI_PLATFORM_ERROR_PANIC,
         }
     }
 }
@@ -203,7 +219,10 @@ impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Platform(err) => err.fmt(f),
-            Self::InvalidArgument(message) | Self::InvalidData(message) => f.write_str(message),
+            Self::Window(err) => err.fmt(f),
+            Self::InvalidArgument(message) | Self::InvalidData(message) | Self::Panic(message) => {
+                f.write_str(message)
+            }
         }
     }
 }
@@ -212,11 +231,11 @@ thread_local! {
     static LAST_ERROR: RefCell<Option<Failure>> = const { RefCell::new(None) };
 }
 
-fn set_last_error(failure: Failure) {
+pub(crate) fn set_last_error(failure: Failure) {
     LAST_ERROR.with(|slot| *slot.borrow_mut() = Some(failure));
 }
 
-fn clear_last_error() {
+pub(crate) fn clear_last_error() {
     LAST_ERROR.with(|slot| *slot.borrow_mut() = None);
 }
 
