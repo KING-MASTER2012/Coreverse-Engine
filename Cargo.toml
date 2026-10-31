@@ -34,7 +34,7 @@ libc = "0.2.189"
 windows-sys = "0.61.2"
 winit = "0.30.13"
 raw-window-metal = "1.1.0"
-criterion = { version = "0.7.0", default-features = false, features = ["cargo_bench_support"] }
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
