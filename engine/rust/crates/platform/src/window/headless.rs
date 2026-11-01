@@ -259,9 +259,9 @@ impl<A: App> HeadlessLoop<A> {
                 config.monitor_size,
                 config.scale_factor,
             )
-                .with_name(Some(String::from("Headless")))
-                .with_refresh_rate(Some(60_000))
-                .with_primary(true),
+            .with_name(Some(String::from("Headless")))
+            .with_refresh_rate(Some(60_000))
+            .with_primary(true),
         ]);
         Ok(Self {
             app,

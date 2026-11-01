@@ -752,8 +752,8 @@ mod tests {
         std::thread::spawn(|| {
             assert_eq!(ffi_platform_last_error_code(), FFI_PLATFORM_ERROR_NONE);
         })
-            .join()
-            .unwrap();
+        .join()
+        .unwrap();
 
         assert_eq!(
             ffi_platform_last_error_code(),
@@ -767,7 +767,7 @@ mod tests {
             assert_eq!(ffi_platform_last_error_code(), FFI_PLATFORM_ERROR_NONE);
             assert!(ffi_platform_last_error_message().is_null());
         })
-            .join()
-            .unwrap();
+        .join()
+        .unwrap();
     }
 }

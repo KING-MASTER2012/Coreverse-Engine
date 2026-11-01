@@ -1,11 +1,41 @@
-//! The desktop window backend, built on `winit`.
+//! The window backend of the real window systems, built on `winit`.
 //!
 //! Enabled by the `winit` cargo feature. It opens real windows on Windows,
-//! macOS and Linux (X11 and Wayland) and delivers exactly the callbacks the
-//! [`App`] contract describes, so an app written against the headless backend
-//! runs unchanged.
+//! macOS and Linux (X11 and Wayland) and runs the application on Android and
+//! iOS, and delivers exactly the callbacks the [`App`] contract describes, so
+//! an app written against the headless backend runs unchanged.
 //!
-//! What it adds to the contract on a real desktop:
+//! # Mobile
+//!
+//! Android and iOS have no windows in the desktop sense: the application owns
+//! the whole screen, the system decides its size and takes the presentation
+//! surface away whenever the app goes to the background. The backend maps
+//! that onto the contract of the other backends:
+//!
+//! * [`App::resumed`] is called when the application comes to the foreground
+//!   (on Android: when the native window exists). Create windows there; a
+//!   window created on mobile is the whole screen, and the size, position and
+//!   fullscreen settings of its description do not apply (the real size is
+//!   reported with the window's state and [`Resized`](WindowEvent::Resized)).
+//! * [`SurfaceLost`](WindowEvent::SurfaceLost) is delivered for every window
+//!   right before [`App::suspended`]; the native handle it belonged to must be
+//!   dropped by then. The windows themselves survive: when the application
+//!   comes back, [`SurfaceCreated`](WindowEvent::SurfaceCreated) delivers a new
+//!   handle for each of them, after [`App::resumed`] has run.
+//! * Touch arrives as [`InputEvent::Touch`]; there is no cursor to move, hide or
+//!   confine (those requests are accepted and have no effect).
+//!
+//! **Android** runs on a `NativeActivity` (cargo feature
+//! `android-native-activity`). The activity starts the application through
+//! `android_main`, which receives an `AndroidApp` that the backend needs:
+//! [`WinitBackend::with_android_app`]. Android keeps the loop on the thread
+//! that `android_main` runs on.
+//!
+//! **iOS** runs the loop from `UIApplicationMain`, which never returns:
+//! [`Backend::run`] only returns on iOS when the loop could not be started. The
+//! loop must start on the main thread, from `main`.
+//!
+//! What the backend adds to the contract on a real desktop:
 //!
 //! * A window's surface exists as soon as the window does:
 //!   [`SurfaceCreated`](WindowEvent::SurfaceCreated) is delivered right after
@@ -77,6 +107,8 @@ use crate::input::{InputEvent, PointerPosition};
 #[derive(Debug, Clone, Default)]
 pub struct WinitBackend {
     any_thread: bool,
+    #[cfg(target_os = "android")]
+    android_app: Option<winit::platform::android::activity::AndroidApp>,
 }
 
 impl WinitBackend {
@@ -95,18 +127,49 @@ impl WinitBackend {
         self.any_thread = any_thread;
         self
     }
+
+    /// Gives the backend the `AndroidApp` that `android_main` received. Android
+    /// cannot start an event loop without it; [`run`](Backend::run) fails with a
+    /// [`WindowError::Backend`] that says so when it is missing.
+    ///
+    /// ```ignore
+    /// #[unsafe(no_mangle)]
+    /// fn android_main(app: platform::window::AndroidApp) {
+    ///     let _ = WinitBackend::new().with_android_app(app).run(Game);
+    /// }
+    /// ```
+    #[cfg(target_os = "android")]
+    #[must_use]
+    pub fn with_android_app(mut self, app: winit::platform::android::activity::AndroidApp) -> Self {
+        self.android_app = Some(app);
+        self
+    }
 }
 
 impl Backend for WinitBackend {
-    /// Opens the event loop and runs `app` in it until it exits.
+    /// Opens the event loop and runs `app` in it until it exits. On iOS the loop
+    /// is `UIApplicationMain`, which never returns, so this only returns there
+    /// when the loop could not be started.
     ///
     /// # Errors
     /// [`WindowError::Backend`] when the event loop cannot start (for example
-    /// no display is available), when a window cannot be created, or when the
-    /// loop fails.
+    /// no display is available, or on Android no `AndroidApp` was given), when a
+    /// window cannot be created, or when the loop fails.
     fn run<A: App>(self, app: A) -> Result<i32, WindowError> {
         let mut builder = EventLoop::builder();
         configure_thread(&mut builder, self.any_thread);
+        #[cfg(target_os = "android")]
+        {
+            use winit::platform::android::EventLoopBuilderExtAndroid;
+            let android_app = self.android_app.ok_or_else(|| {
+                WindowError::Backend(
+                    "Android needs the AndroidApp of `android_main`: \
+                     use `WinitBackend::with_android_app`"
+                        .to_owned(),
+                )
+            })?;
+            builder.with_android_app(android_app);
+        }
         let event_loop = builder
             .build()
             .map_err(|e| WindowError::Backend(format!("cannot start the event loop: {e}")))?;
@@ -196,9 +259,9 @@ impl<A: App> Driver<A> {
                     PhysicalSize::new(size.width, size.height),
                     monitor.scale_factor(),
                 )
-                    .with_name(monitor.name())
-                    .with_refresh_rate(monitor.refresh_rate_millihertz())
-                    .with_primary(primary.as_ref() == Some(&monitor))
+                .with_name(monitor.name())
+                .with_refresh_rate(monitor.refresh_rate_millihertz())
+                .with_primary(primary.as_ref() == Some(&monitor))
             })
             .collect();
         // Wayland has no notion of a primary monitor; report the first one so
@@ -679,11 +742,11 @@ impl<A: App> ApplicationHandler for Driver<A> {
             delta: (delta_x, delta_y),
         } = event
             && let Some(id) = self
-            .ctx
-            .windows
-            .values()
-            .find(|w| w.is_focused())
-            .map(super::state::Window::id)
+                .ctx
+                .windows
+                .values()
+                .find(|w| w.is_focused())
+                .map(super::state::Window::id)
         {
             let motion = InputEvent::RawMouseMotion { delta_x, delta_y };
             self.deliver_raw(id, WindowEvent::Input(motion));

@@ -61,8 +61,9 @@ jobs:
               run: cargo test --workspace --all-features
 
     # The `platform` crate (and the `ffi` crate on top of it) has Android and iOS
-    # code paths that no runner can execute. Type-check and lint them for their real targets so they cannot
-    # rot unnoticed; nothing links, so no NDK or Xcode project is needed.
+    # backends that no runner can execute. Type-check and lint them for their real targets, with the
+    # features that turn the backend on, so they cannot rot unnoticed; nothing links, so no NDK or Xcode
+    # project is needed. Android needs the activity feature (winit refuses to compile without one).
     platform-mobile:
         name: platform (${{ matrix.target }})
         runs-on: ${{ matrix.os }}
@@ -72,8 +73,10 @@ jobs:
                 include:
                     - os: ubuntu-latest
                       target: aarch64-linux-android
+                      features: android-native-activity
                     - os: macos-latest
                       target: aarch64-apple-ios
+                      features: winit
 
         steps:
             - uses: actions/checkout@v7
@@ -90,12 +93,19 @@ jobs:
             - name: Cargo Check
               run: cargo check -p platform --target ${{ matrix.target }}
 
+            - name: Cargo Check (mobile backend)
+              run: cargo check -p platform --features ${{ matrix.features }} --tests --target ${{ matrix.target }}
+
             - name: Clippy
               run: cargo clippy -p platform --target ${{ matrix.target }} -- -D warnings
 
-            # The `ffi` crate builds the window event loop for C++ on top of
-            # `platform`; on these targets it must compile without the desktop
-            # backend (`winit` is a dependency of desktop targets only).
+            - name: Clippy (mobile backend)
+              run: cargo clippy -p platform --features ${{ matrix.features }} --target ${{ matrix.target }} -- -D warnings
+
+            # The `ffi` crate runs the window event loop for C++ on top of
+            # `platform`. Its target-specific dependencies turn the mobile backend on
+            # (`android-native-activity` on Android, `winit` on iOS), and on Android
+            # it defines `android_main`.
             - name: Cargo Check (ffi)
               run: cargo check -p ffi --target ${{ matrix.target }}
 

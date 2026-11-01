@@ -54,12 +54,33 @@
 //! (`ffi_platform_last_error_code` / `ffi_platform_last_error_message`).
 //!
 //! ## Backends
-//! [`FFI_BACKEND_DESKTOP`] opens real windows (Windows, macOS, Linux; on
-//! Android and iOS it fails until their backends exist).
-//! [`FFI_BACKEND_HEADLESS`] needs no display: windows exist only as state, no
-//! surface is ever created and no input arrives. It returns an error instead
-//! of waiting when nothing can wake the loop, so an application that does not
-//! call exit stops with one; it is meant for tests and servers.
+//! [`FFI_BACKEND_DESKTOP`] is the real window system of the platform: windows
+//! on Windows, macOS and Linux, and the application loop of the system on
+//! Android and iOS (the name is from before the mobile backends and kept for
+//! the ABI). [`FFI_BACKEND_HEADLESS`] needs no display: windows exist only as
+//! state, no surface is ever created and no input arrives. It returns an error
+//! instead of waiting when nothing can wake the loop, so an application that
+//! does not call exit stops with one; it is meant for tests and servers.
+//!
+//! ## Mobile
+//! On Android and iOS the application does not own its windows the way a
+//! desktop program does: the system decides when the app runs and takes its
+//! presentation surface away in the background. Use the callbacks for that:
+//! create windows in `resumed`, expect `FFI_EVENT_SURFACE_LOST` for every window
+//! right before `suspended` (destroy the swapchain then), and a new
+//! `FFI_EVENT_SURFACE_CREATED` for each of them after the next `resumed`. A
+//! window is the whole screen and its size, position and fullscreen settings
+//! do not apply; the cursor requests have no effect; touch arrives as input
+//! events.
+//!
+//! * **iOS**: call `ffi_platform_run` from `main`, on the main thread. It hands
+//!   the thread to `UIApplicationMain` and does not return unless the loop
+//!   could not be started.
+//! * **Android**: the activity starts the application through `android_main`,
+//!   which this crate provides ([`crate::android`]); it calls the C function
+//!   `int cv_android_main(void)` that the C++ application must define, and
+//!   `cv_android_main` calls `ffi_platform_run`. Calling `ffi_platform_run` from
+//!   anywhere else on Android fails with an error.
 
 use std::cell::Cell;
 use std::ffi::{CStr, CString, c_char, c_void};
@@ -79,7 +100,8 @@ use platform_crate::window::{
 use crate::keys;
 use crate::platform::{Failure, clear_last_error, set_last_error};
 
-/// [`PlatformRunConfig::backend`]: real windows on the desktop.
+/// [`PlatformRunConfig::backend`]: the real window system of the platform:
+/// desktop windows, or the application loop on Android and iOS.
 pub const FFI_BACKEND_DESKTOP: u8 = 0;
 /// [`PlatformRunConfig::backend`]: no display, for tests and servers.
 pub const FFI_BACKEND_HEADLESS: u8 = 1;
@@ -961,15 +983,36 @@ fn run_backend<B: Backend>(backend: B, callbacks: PlatformCallbacks) -> Result<i
     backend.run(FfiApp { callbacks })
 }
 
-#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+#[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "ios"))]
 fn run_desktop(callbacks: PlatformCallbacks) -> Result<i32, WindowError> {
     run_backend(platform_crate::window::WinitBackend::new(), callbacks)
 }
 
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+#[cfg(target_os = "android")]
+fn run_desktop(callbacks: PlatformCallbacks) -> Result<i32, WindowError> {
+    let app = crate::android::current_app().ok_or_else(|| {
+        WindowError::Backend(
+            "on Android the loop can only be started from `cv_android_main`, on the thread \
+             that `android_main` started"
+                .to_owned(),
+        )
+    })?;
+    run_backend(
+        platform_crate::window::WinitBackend::new().with_android_app(app),
+        callbacks,
+    )
+}
+
+#[cfg(not(any(
+    windows,
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "ios",
+    target_os = "android"
+)))]
 fn run_desktop(_callbacks: PlatformCallbacks) -> Result<i32, WindowError> {
     Err(WindowError::Backend(
-        "the desktop window backend is not available on this platform".to_owned(),
+        "no window backend is available on this platform".to_owned(),
     ))
 }
 
@@ -1300,7 +1343,7 @@ pub unsafe extern "C" fn ffi_platform_ctx_set_title(
     with_context(ctx, |context| {
         context.set_title(WindowId::from_u64(id), title)
     })
-        .is_some()
+    .is_some()
 }
 
 /// Resizes the client area of a window to `width` x `height` logical units.
@@ -2241,7 +2284,7 @@ mod tests {
             Key::Named(NamedKey::Enter),
             ButtonState::Released,
         )
-            .with_synthetic(true);
+        .with_synthetic(true);
         assert_eq!(
             input(InputEvent::Key(enter)),
             format!(

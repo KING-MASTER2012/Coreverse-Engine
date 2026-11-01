@@ -213,7 +213,7 @@ impl App for Smoke {
                         LogicalPosition::new(10.0, 20.0),
                         LogicalSize::new(2.0, 16.0),
                     )
-                        .unwrap();
+                    .unwrap();
                     self.stage = Stage::CursorCheck;
                 }
             }

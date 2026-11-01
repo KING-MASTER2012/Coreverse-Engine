@@ -2,8 +2,10 @@
 //! window backend implements.
 //!
 //! This module is the *API* and two backends: the *headless backend* and, with
-//! the `winit` cargo feature, the *desktop backend*. The Android and iOS
-//! backends come later and plug into the same [`Backend`] contract. Input
+//! the `winit` cargo feature, the backend of the real window systems
+//! ([`WinitBackend`]): desktop windows, and on Android (cargo feature
+//! `android-native-activity`) and iOS the application loop of the system. Both
+//! plug into the same [`Backend`] contract. Input
 //! (keyboard, mouse, touch, IME) arrives as [`WindowEvent::Input`]; its types
 //! and the per-frame query layer live in [`input`](crate::input).
 //!
@@ -85,7 +87,7 @@
 //! | :------ | :----- | :---- |
 //! | headless ([`HeadlessBackend`], [`HeadlessLoop`]) | implemented, tested on every CI platform | nothing |
 //! | desktop ([`WinitBackend`], cargo feature `winit`: Windows, macOS, Linux X11/Wayland) | implemented; smoke-tested on Linux under Xvfb | a display |
-//! | Android, iOS | planned, compile-checked only | a device |
+//! | Android ([`WinitBackend`], cargo features `winit` and `android-native-activity`) and iOS ([`WinitBackend`], `winit`) | implemented; compile- and lint-checked only, never run on a device | a device |
 
 mod app;
 mod backend;
@@ -120,5 +122,7 @@ pub use headless::{
 };
 pub use monitor::MonitorInfo;
 pub use state::Window;
+#[cfg(all(feature = "winit", target_os = "android"))]
+pub use winit::platform::android::activity::AndroidApp;
 #[cfg(feature = "winit")]
 pub use winit_backend::WinitBackend;

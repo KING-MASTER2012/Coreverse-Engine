@@ -458,7 +458,7 @@ fn a_resize_request_is_limited_by_the_window_limits_and_ignored_when_nothing_cha
                 .with_min_inner_size(LogicalSize::new(640.0, 480.0))
                 .with_max_inner_size(LogicalSize::new(1920.0, 1080.0)),
         )
-            .unwrap();
+        .unwrap();
     });
     let mut event_loop = started(new_loop(probe));
 

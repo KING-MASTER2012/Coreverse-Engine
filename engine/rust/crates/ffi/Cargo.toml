@@ -24,11 +24,15 @@ vfs-crate = { package = "vfs", path = "../vfs" }
 platform-crate = { package = "platform", path = "../platform" }
 camino.workspace = true
 
-# The desktop window backend (`winit`) for `ffi_platform_run`. Desktop targets
-# only: on Android and iOS `winit` needs an activity or application entry point
-# of its own, which comes with the mobile backends.
-[target.'cfg(any(windows, target_os = "macos", target_os = "linux"))'.dependencies]
+# The window backend (`winit`) for `ffi_platform_run`: desktop windows on
+# Windows, macOS and Linux, and the application loop on iOS.
+[target.'cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "ios"))'.dependencies]
 platform-crate = { package = "platform", path = "../platform", features = ["winit"] }
+
+# Android runs on a NativeActivity, which needs the `android-native-activity`
+# feature of the platform crate (see src/android.rs for the entry point).
+[target.'cfg(target_os = "android")'.dependencies]
+platform-crate = { package = "platform", path = "../platform", features = ["android-native-activity"] }
 
 [lints]
 workspace = true

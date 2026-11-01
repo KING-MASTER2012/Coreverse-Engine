@@ -248,13 +248,13 @@ mod tests {
             invalid_message(
                 &WindowDesc::default().with_max_inner_size(LogicalSize::new(1.0, f64::INFINITY))
             )
-                .contains("max_inner_size")
+            .contains("max_inner_size")
         );
         assert!(
             invalid_message(
                 &WindowDesc::default().with_position(LogicalPosition::new(f64::NAN, 0.0))
             )
-                .contains("position")
+            .contains("position")
         );
     }
 

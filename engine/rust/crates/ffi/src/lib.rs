@@ -86,6 +86,11 @@ pub mod platform;
 /// context and of event data.
 pub mod platform_run;
 
+/// The Android entry point (`android_main`) that starts the C++ application's
+/// `cv_android_main` and lends it the `AndroidApp` for `ffi_platform_run`.
+#[cfg(target_os = "android")]
+pub mod android;
+
 /// Numbers (`FFI_KEY_*`, `FFI_NAMED_KEY_*`) for the physical and logical keys
 /// of the input events, and their conversions.
 pub mod keys;

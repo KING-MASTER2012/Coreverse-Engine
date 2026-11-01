@@ -557,7 +557,7 @@ mod tests {
             LogicalPosition::new(4.0, 5.0),
             LogicalSize::new(2.0, 0.0),
         )
-            .unwrap();
+        .unwrap();
         assert_eq!(
             ctx.requests,
             [
@@ -610,8 +610,8 @@ mod tests {
             PhysicalSize::new(3840, 2160),
             2.0,
         )
-            .with_name(Some("Main".to_owned()))
-            .with_primary(true);
+        .with_name(Some("Main".to_owned()))
+        .with_primary(true);
         ctx.set_monitors(vec![secondary, primary]);
         assert_eq!(ctx.monitors().len(), 2);
         assert_eq!(ctx.primary_monitor().unwrap().name.as_deref(), Some("Main"));

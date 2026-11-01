@@ -5,23 +5,23 @@ The `platform` crate (`engine/rust/crates/platform`) is Coreverse's operating-sy
 `#[cfg]` blocks of its own: *what machine is this, what time is it, where do I put my files, how do I name a thread.*
 
 Windows and the application lifecycle have an API, a headless backend and a desktop backend (see [Windows and the
-application lifecycle](#windows-and-the-application-lifecycle)); keyboard, mouse, touch and IME events with a per-frame query layer are described under [Input](#input); mobile backends
-are a separate phase (see [What is not here yet](#what-is-not-here-yet)).
+application lifecycle](#windows-and-the-application-lifecycle)); keyboard, mouse, touch and IME events with a per-frame query layer are described under [Input](#input); the Android
+and iOS backends are covered under [Mobile](#mobile).
 
 ## Modules
 
-| Module    | What it gives you                                                                                                                                                                                                        |
-|:----------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `info`    | OS name and version, logical/physical cores, installed memory, `DisplayServer` (Win32, Cocoa, X11, Wayland, Android, UIKit, Headless), all in one `SystemInfo::collect()`                                                |
-| `time`    | Monotonic `Clock` and `WallClock`, `Stopwatch`, `FrameTimer` (delta time, smoothed FPS), `FixedStep` accumulator, `precise_sleep`                                                                                        |
-| `paths`   | `AppDirs`: config, data, cache, log, temp, home and executable directories as `Utf8PathBuf`                                                                                                                              |
-| `env`     | Read-only environment access (`var`, `var_path`, `var_bool`, `args`, `current_dir`)                                                                                                                                      |
-| `process` | `id`, `current_exe`, `open_url`, `reveal_in_file_manager`                                                                                                                                                                |
-| `thread`  | OS-level thread names and abstract priorities (`Low`, `Normal`, `High`, `TimeCritical`)                                                                                                                                  |
-| `window`  | The callback-based `App` lifecycle, `WindowDesc`, `WindowEvent`, `NativeWindowHandle`, monitors, cursor, a headless backend and (feature `winit`) a desktop backend; see [below](#windows-and-the-application-lifecycle) |
-| `input`   | `InputEvent` (keyboard with physical `KeyCode` and logical `Key`, mouse, touch, IME) and `InputState`, the per-frame "held / just pressed / just released" queries; see [Input](#input) |
-| `support` | `support(feature, platform)`: the table below, queryable at run time                                                                                                                                                     |
-| `error`   | `PlatformError` (`Unsupported`, `Io`, `Os`, `NonUtf8Path`), convertible into `ccore::CoreError`                                                                                                                          |
+| Module    | What it gives you                                                                                                                                                                                                         |
+|:----------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `info`    | OS name and version, logical/physical cores, installed memory, `DisplayServer` (Win32, Cocoa, X11, Wayland, Android, UIKit, Headless), all in one `SystemInfo::collect()`                                                 |
+| `time`    | Monotonic `Clock` and `WallClock`, `Stopwatch`, `FrameTimer` (delta time, smoothed FPS), `FixedStep` accumulator, `precise_sleep`                                                                                         |
+| `paths`   | `AppDirs`: config, data, cache, log, temp, home and executable directories as `Utf8PathBuf`                                                                                                                               |
+| `env`     | Read-only environment access (`var`, `var_path`, `var_bool`, `args`, `current_dir`)                                                                                                                                       |
+| `process` | `id`, `current_exe`, `open_url`, `reveal_in_file_manager`                                                                                                                                                                 |
+| `thread`  | OS-level thread names and abstract priorities (`Low`, `Normal`, `High`, `TimeCritical`)                                                                                                                                   |
+| `window`  | The callback-based `App` lifecycle, `WindowDesc`, `WindowEvent`, `NativeWindowHandle`, monitors, cursor, a headless backend and (feature `winit`) a desktop backend; see [below](#windows-and-the-application-lifecycle)  |
+| `input`   | `InputEvent` (keyboard with physical `KeyCode` and logical `Key`, mouse, touch, IME) and `InputState`, the per-frame "held / just pressed / just released" queries; see [Input](#input)                                   |
+| `support` | `support(feature, platform)`: the table below, queryable at run time                                                                                                                                                      |
+| `error`   | `PlatformError` (`Unsupported`, `Io`, `Os`, `NonUtf8Path`), convertible into `ccore::CoreError`                                                                                                                           |
 
 `Platform`, `Architecture` and `Endian` are re-exported from `ccore::platform`, where the compile-time tags stay;
 `PlatformExt` adds `is_desktop`, `is_mobile` and `is_unix` to `Platform`.
@@ -136,11 +136,11 @@ are stored as non-zero integers, so the type is `Copy + Send + Sync` and the cra
 
 **Backends.**
 
-| Backend                                                                                | Status                                                    | Needs     |
-|:---------------------------------------------------------------------------------------|:----------------------------------------------------------|:----------|
-| Headless (`HeadlessBackend`, `HeadlessLoop`)                                           | Implemented; tested on every CI platform                  | nothing   |
-| Desktop (`WinitBackend`, cargo feature `winit`; Windows, macOS, Linux X11 and Wayland) | Implemented; smoke-tested on Linux (X11) under Xvfb in CI | a display |
-| Android, iOS                                                                           | Planned; compile-checked only                             | a device  |
+| Backend                                                                                                     | Status                                                                      | Needs     |
+|:------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------|:----------|
+| Headless (`HeadlessBackend`, `HeadlessLoop`)                                                                | Implemented; tested on every CI platform                                    | nothing   |
+| Desktop (`WinitBackend`, cargo feature `winit`; Windows, macOS, Linux X11 and Wayland)                      | Implemented; smoke-tested on Linux (X11) under Xvfb in CI                   | a display |
+| Android (`WinitBackend`, cargo features `winit` + `android-native-activity`), iOS (`WinitBackend`, `winit`) | Implemented; compiled and linted for the two targets, never run on a device | a device  |
 
 The headless backend simulates an operating system: a test queues `HostEvent`s (a resize, a close click, `Suspend`, a new
 Android surface) and the loop turns them into the same callbacks, in the same order, as a real backend; requests such as
@@ -182,21 +182,50 @@ What it does on a real desktop, beyond the contract above:
 Not covered yet: exclusive fullscreen, choosing the monitor for fullscreen, window icons, and anything
 Android or iOS specific.
 
+## Mobile
+
+Android and iOS use the same `WinitBackend` as the desktop: `winit` runs the application on the system's own loop, and the
+backend turns what the system does into the callbacks of the `App` contract. There is no window in the desktop sense. The
+application owns the whole screen, the system decides its size, and it takes the presentation surface away when the
+application goes to the background:
+
+| The system                                                                  | What the application sees                                                                                                                                                                                                  |
+|:----------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| the application comes to the foreground (Android: the native window exists) | `App::resumed`; create windows there. A window on mobile is the whole screen; the size, position and fullscreen settings of its description do not apply, the real size is reported as the window's state and as `Resized` |
+| it goes to the background (Android: the native window is destroyed)         | `SurfaceLost` for every window, then `App::suspended`. The native handle must be dropped by then                                                                                                                           |
+| it comes back                                                               | `App::resumed`, then a new `SurfaceCreated` (with a new native handle) for every window that survived                                                                                                                      |
+| a finger                                                                    | `InputEvent::Touch`; there is no cursor, so cursor requests are accepted and have no effect                                                                                                                                |
+
+**Android** runs on a `NativeActivity` (cargo feature `android-native-activity`; the Java-free option, `GameActivity` is not
+supported). The activity library does not call `main`: it starts a thread that calls `android_main(app: AndroidApp)`, and
+the backend needs that `AndroidApp`: `WinitBackend::new().with_android_app(app).run(game)` (`platform::window::AndroidApp`
+is the type). Without it `run` fails with a `WindowError::Backend` that says so. For C++ applications the `ffi` crate defines
+`android_main` itself, see [Runtime](runtime.md#android-and-ios).
+
+**iOS** needs no feature beyond `winit`. The loop is `UIApplicationMain`, which never returns, so `run` only returns when the
+loop could not be started; call it from `main`, on the main thread. The surface is the `CAMetalLayer` of the window's view
+(`NativeWindowHandle::UiKit`).
+
+What is checked: `cargo check` and Clippy for the two targets in CI (`platform-mobile`, now including the backend with its
+features and the `ffi` crate), and by hand in the development sandbox with the standard library built from source
+(`-Zbuild-std`): the same checks plus the type-check of the unit tests. Nothing links and nothing runs: no NDK, no Xcode,
+no device.
+
 ## Input
 
 Keyboard, mouse, touch and input-method (IME) events arrive as `WindowEvent::Input(InputEvent)`, the same on every
 backend. `platform::input` also has `InputState`, which turns the event stream into "is it held, did it just go down" for
 game loops.
 
-| Events (`InputEvent`) | What it carries |
-|:----------------------|:----------------|
-| `Key(KeyEvent)` | the **physical** key (`KeyCode`, where it sits on the keyboard: `KeyW` is the same key on QWERTY, AZERTY and Dvorak, use it for controls), the **logical** key (`Key`: a character such as `"A"` or a `NamedKey` such as Enter, use it for shortcuts), the text the press produces, `repeat` for auto-repeat, `synthetic` for events the system made up |
-| `ModifiersChanged` | `Modifiers`: Shift, Control, Alt, Super (left and right are not told apart) |
-| `CursorMoved`, `CursorEntered`, `CursorLeft` | positions in physical pixels (`PointerPosition`, fractional) from the client area's top-left corner |
-| `MouseButton`, `MouseWheel` | `MouseButton` (Left, Right, Middle, Back, Forward, Other) with `ButtonState`; `ScrollDelta` in lines (wheels) or pixels (touchpads) |
-| `RawMouseMotion` | unaccelerated relative movement for camera control; keeps coming while the cursor is `CursorGrab::Locked`; goes to the window that has focus |
-| `Touch(TouchEvent)` | finger id, `TouchPhase` (Started, Moved, Ended, Cancelled) and position |
-| `Ime(ImeEvent)` | `Enabled`, `Preedit` (text being composed), `Commit`, `Disabled` |
+| Events (`InputEvent`)                        | What it carries                                                                                                                                                                                                                                                                                                                                         |
+|:---------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Key(KeyEvent)`                              | the **physical** key (`KeyCode`, where it sits on the keyboard: `KeyW` is the same key on QWERTY, AZERTY and Dvorak, use it for controls), the **logical** key (`Key`: a character such as `"A"` or a `NamedKey` such as Enter, use it for shortcuts), the text the press produces, `repeat` for auto-repeat, `synthetic` for events the system made up |
+| `ModifiersChanged`                           | `Modifiers`: Shift, Control, Alt, Super (left and right are not told apart)                                                                                                                                                                                                                                                                             |
+| `CursorMoved`, `CursorEntered`, `CursorLeft` | positions in physical pixels (`PointerPosition`, fractional) from the client area's top-left corner                                                                                                                                                                                                                                                     |
+| `MouseButton`, `MouseWheel`                  | `MouseButton` (Left, Right, Middle, Back, Forward, Other) with `ButtonState`; `ScrollDelta` in lines (wheels) or pixels (touchpads)                                                                                                                                                                                                                     |
+| `RawMouseMotion`                             | unaccelerated relative movement for camera control; keeps coming while the cursor is `CursorGrab::Locked`; goes to the window that has focus                                                                                                                                                                                                            |
+| `Touch(TouchEvent)`                          | finger id, `TouchPhase` (Started, Moved, Ended, Cancelled) and position                                                                                                                                                                                                                                                                                 |
+| `Ime(ImeEvent)`                              | `Enabled`, `Preedit` (text being composed), `Commit`, `Disabled`                                                                                                                                                                                                                                                                                        |
 
 `InputEvent`, `KeyCode`, `NamedKey`, `Key` and the other enums are `#[non_exhaustive]`; keep a catch-all arm.
 
@@ -221,14 +250,14 @@ fn about_to_wait(&mut self, _: &mut AppContext) {
 }
 ```
 
-| Query | Meaning |
-|:------|:--------|
-| `key_pressed`, `mouse_pressed`, `logical_key_pressed` | held right now |
-| `*_just_pressed`, `*_just_released` | the change happened this frame; a press and release within one frame reports both and is not held afterwards, so a quick tap is not lost |
-| `cursor_position`, `cursor_delta` | position (`None` while the cursor is outside the window) and movement of this frame; a position from before the cursor left never produces a jump |
-| `raw_mouse_delta`, `scroll_lines`, `scroll_pixels` | sums over the frame |
-| `touches`, `touches_started`, `touches_ended` | fingers on the screen and those that started or ended this frame (a cancelled touch counts as ended) |
-| `text`, `ime_preedit` | printable text typed this frame (control characters left out), and the text an IME is composing |
+| Query                                                 | Meaning                                                                                                                                           |
+|:------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------|
+| `key_pressed`, `mouse_pressed`, `logical_key_pressed` | held right now                                                                                                                                    |
+| `*_just_pressed`, `*_just_released`                   | the change happened this frame; a press and release within one frame reports both and is not held afterwards, so a quick tap is not lost          |
+| `cursor_position`, `cursor_delta`                     | position (`None` while the cursor is outside the window) and movement of this frame; a position from before the cursor left never produces a jump |
+| `raw_mouse_delta`, `scroll_lines`, `scroll_pixels`    | sums over the frame                                                                                                                               |
+| `touches`, `touches_started`, `touches_ended`         | fingers on the screen and those that started or ended this frame (a cancelled touch counts as ended)                                              |
+| `text`, `ime_preedit`                                 | printable text typed this frame (control characters left out), and the text an IME is composing                                                   |
 
 Auto-repeat never counts as a new press. When the window loses focus everything that is held is released (and reported as
 just released), so no key stays stuck after Alt-Tab. One `InputState` follows one window; with several windows keep one
@@ -278,21 +307,22 @@ Clocks, timers, threads and processes are not exposed: Rust code uses them direc
 
 ## Verification
 
-| What                                                                                                                        | Where it runs                                                                                                                                                                                                                                                                                  |
-|:----------------------------------------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `platform` unit and doc tests (`cargo test`)                                                                                | Linux, Windows and macOS (`rust.yml`)                                                                                                                                                                                                                                                          |
-| `cargo check` and Clippy for `aarch64-linux-android` and `aarch64-apple-ios`                                                | `platform-mobile` job in `rust.yml`; nothing links, so no NDK or Xcode project is needed                                                                                                                                                                                                       |
-| Windows-specific code (`windows-sys`, waitable timer, `SHGetKnownFolderPath`) and Apple-specific code (QoS, `sysctlbyname`) | Executed by the Windows and macOS runners of `rust-cross-platform` in `rust.yml` (`cargo test --workspace`) and on a developer's own machine; type-checking them from Linux is possible with `cargo check -p platform --target <triple>`                                                       |
-| `ffi` platform functions                                                                                                    | Rust tests in `ffi/src/platform.rs` on every Rust CI platform; C++ side by `cv_ffi_platform_test` (`ctest -L ffi`)                                                                                                                                                                             |
-| `window` API and headless backend                                                                                           | Part of the `platform` unit and doc tests, so they run on every Rust CI platform; no display is needed                                                                                                                                                                                         |
-| Desktop backend on Linux (X11)                                                                                              | `platform-window-xvfb` job in `rust.yml`: a real window on Xvfb, once with openbox as window manager (fullscreen included) and once without (`cargo test -p platform --features winit --test winit_smoke`). The test skips itself when there is no display, unless `CV_REQUIRE_DISPLAY` is set |
-| Input events and `InputState` | Unit and doc tests (all Rust CI platforms); `winit` conversions by unit tests; real X11 input by hand under Xvfb with `xdotool` (not in CI); the smoke test checks the IME permission only |
-| Desktop backend on Windows and macOS, Wayland                                                                               | Compiled (and linted) by the `rust-cross-platform` jobs, which build with `--all-features`; **no CI job opens a window there**, so run `WinitBackend` on a real machine to verify                                                                                                              |
+| What                                                                                                                                                   | Where it runs                                                                                                                                                                                                                                                                                   |
+|:-------------------------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `platform` unit and doc tests (`cargo test`)                                                                                                           | Linux, Windows and macOS (`rust.yml`)                                                                                                                                                                                                                                                           |
+| `cargo check` and Clippy for `aarch64-linux-android` (with `android-native-activity`) and `aarch64-apple-ios` (with `winit`), for `platform` and `ffi` | `platform-mobile` job in `rust.yml`; nothing links, so no NDK or Xcode project is needed                                                                                                                                                                                                        |
+| Windows-specific code (`windows-sys`, waitable timer, `SHGetKnownFolderPath`) and Apple-specific code (QoS, `sysctlbyname`)                            | Executed by the Windows and macOS runners of `rust-cross-platform` in `rust.yml` (`cargo test --workspace`) and on a developer's own machine; type-checking them from Linux is possible with `cargo check -p platform --target <triple>`                                                        |
+| `ffi` platform functions                                                                                                                               | Rust tests in `ffi/src/platform.rs` on every Rust CI platform; C++ side by `cv_ffi_platform_test` (`ctest -L ffi`)                                                                                                                                                                              |
+| `window` API and headless backend                                                                                                                      | Part of the `platform` unit and doc tests, so they run on every Rust CI platform; no display is needed                                                                                                                                                                                          |
+| Desktop backend on Linux (X11)                                                                                                                         | `platform-window-xvfb` job in `rust.yml`: a real window on Xvfb, once with openbox as window manager (fullscreen included) and once without (`cargo test -p platform --features winit --test winit_smoke`). The test skips itself when there is no display, unless `CV_REQUIRE_DISPLAY` is set  |
+| Input events and `InputState`                                                                                                                          | Unit and doc tests (all Rust CI platforms); `winit` conversions by unit tests; real X11 input by hand under Xvfb with `xdotool` (not in CI); the smoke test checks the IME permission only                                                                                                      |
+| Desktop backend on Windows and macOS, Wayland                                                                                                          | Compiled (and linted) by the `rust-cross-platform` jobs, which build with `--all-features`; **no CI job opens a window there**, so run `WinitBackend` on a real machine to verify                                                                                                               |
 
-No code in the crate has been run on an Android or iOS device.
+No code in the crate has been run on an Android or iOS device, and the mobile backends have not even been linked into an application: the only checks are the compiler's and Clippy's (see [Mobile](#mobile)).
 
 ## What is not here yet
 
-The Android and iOS backends are not part of the crate yet (the code compiles for both, nothing runs on a device). Touch
-and IME on them come with those backends. The FFI event loop for the C++ runtime and the renderer integration come after that. Gamepad, clipboard, dynamic-library loading and dialogs are not planned. Each phase gets its
+The mobile backends are compile-checked only (see [Mobile](#mobile)); until one runs on a device, treat everything about
+them as unproven, in particular the soft keyboard and IME, orientation changes, and safe-area insets, which the crate does not
+handle at all. Gamepad, clipboard, dynamic-library loading and dialogs are not planned. Each phase gets its
 own design review before it is implemented; see `PROGRESS.md`.

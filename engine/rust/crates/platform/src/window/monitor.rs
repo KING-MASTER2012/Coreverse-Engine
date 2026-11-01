@@ -93,9 +93,9 @@ mod tests {
             PhysicalSize::new(2560, 1440),
             2.0,
         )
-            .with_name(Some("Main".to_owned()))
-            .with_refresh_rate(Some(143_981))
-            .with_primary(true);
+        .with_name(Some("Main".to_owned()))
+        .with_refresh_rate(Some(143_981))
+        .with_primary(true);
         assert_eq!(monitor.name.as_deref(), Some("Main"));
         assert_eq!(monitor.refresh_rate_millihertz, Some(143_981));
         assert!(monitor.is_primary);

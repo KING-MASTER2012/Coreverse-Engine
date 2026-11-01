@@ -13,6 +13,12 @@ default = []
 # Linux (X11 and Wayland). Off by default so the crate stays light for code
 # that only needs the platform services or the headless backend.
 winit = ["dep:winit", "dep:raw-window-metal"]
+# The Android window backend: `winit` on top of a `NativeActivity` (no Java
+# code needed). Android needs exactly one activity implementation, so this is
+# a feature of its own instead of part of `winit`; enable it when building for
+# an Android target. The application's entry point is `android_main`, which
+# hands over an `AndroidApp` (see `WinitBackend::with_android_app`).
+android-native-activity = ["winit", "winit/android-native-activity"]
 
 [dependencies]
 camino.workspace = true

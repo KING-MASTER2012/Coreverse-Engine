@@ -30,9 +30,10 @@
 //!   [`App`](window::App), [`WindowDesc`](window::WindowDesc),
 //!   [`WindowEvent`](window::WindowEvent) (surface lost/created included),
 //!   [`NativeWindowHandle`](window::NativeWindowHandle) and a headless backend
-//!   that needs no display, plus the desktop backend on `winit` (cargo feature
-//!   `winit`). Input events are delivered through it, see [`input`]. The
-//!   mobile backends are a further phase.
+//!   that needs no display, plus the backend of the real window systems on
+//!   `winit` (cargo feature `winit`; Android additionally needs
+//!   `android-native-activity`): desktop windows, and the application loop of
+//!   Android and iOS. Input events are delivered through it, see [`input`].
 //!
 //! [`Platform`], [`Architecture`] and [`Endian`] are re-exported from
 //! [`ccore::platform`] (the compile-time tags stay there), and [`PlatformExt`]
