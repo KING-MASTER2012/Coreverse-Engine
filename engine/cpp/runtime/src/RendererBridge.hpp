@@ -6,10 +6,10 @@
 #include <string>
 
 #include "cv-ffi/Window.hpp"
+#include "renderer/FrameSync.hpp"
 #include "renderer/RenderDevice.hpp"
 #include "renderer/Surface.hpp"
 #include "renderer/Swapchain.hpp"
-#include "renderer/FrameSync.hpp"
 
 namespace runtime {
 
@@ -53,7 +53,10 @@ public:
     /// Does nothing without a surface. Returns whether a frame was presented.
     [[nodiscard]] std::expected<bool, std::string> DrawFrame(double seconds);
 
-    [[nodiscard]] bool HasSurface() const noexcept { return m_surface.IsValid(); }
+    [[nodiscard]] bool HasSurface() const noexcept
+    {
+        return m_surface.IsValid();
+    }
 
     /// Waits for the GPU and destroys everything, in reverse creation order.
     void Shutdown() noexcept;

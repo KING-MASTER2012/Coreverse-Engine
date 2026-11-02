@@ -69,7 +69,10 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "coreverse-runtime: %s\n", result.error().c_str());
         return 1;
     }
-    std::printf("coreverse-runtime: %llu frame(s), exit code %d\n",
-                static_cast<unsigned long long>(app.FramesRendered()), *result);
+    std::printf(
+        "coreverse-runtime: %llu frame(s), exit code %d\n",
+        static_cast<unsigned long long>(app.FramesRendered()),
+        *result
+    );
     return *result;
 }

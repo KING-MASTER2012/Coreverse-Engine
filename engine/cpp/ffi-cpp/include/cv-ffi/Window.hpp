@@ -30,7 +30,8 @@
 ///         (void)ctx.SetControlFlow(cv_ffi::window::ControlFlow::Poll);
 ///     }
 ///
-///     void OnEvent(cv_ffi::window::Context& ctx, cv_ffi::window::WindowId, const cv_ffi::window::Event& event) override
+///     void OnEvent(cv_ffi::window::Context& ctx, cv_ffi::window::WindowId, const cv_ffi::window::Event& event)
+///     override
 ///     {
 ///         if (std::holds_alternative<cv_ffi::window::CloseRequested>(event)) {
 ///             (void)ctx.Exit(0);
@@ -152,14 +153,14 @@ enum class Backend : std::uint8_t {
 /// handle until the matching `SurfaceLost` has been handled.
 struct NativeWindowHandle {
     platform::DisplayServer kind = platform::DisplayServer::Unknown;
-    void* hwnd = nullptr;            ///< Windows: HWND.
-    void* hinstance = nullptr;       ///< Windows: HINSTANCE, null when unknown.
-    void* metalLayer = nullptr;      ///< macOS, iOS: CAMetalLayer*.
-    void* xlibDisplay = nullptr;     ///< X11: Display*, null when unknown.
-    std::uint64_t xlibWindow = 0;    ///< X11: Window.
-    void* waylandDisplay = nullptr;  ///< Wayland: wl_display*.
-    void* waylandSurface = nullptr;  ///< Wayland: wl_surface*.
-    void* nativeWindow = nullptr;    ///< Android: ANativeWindow*.
+    void* hwnd = nullptr;           ///< Windows: HWND.
+    void* hinstance = nullptr;      ///< Windows: HINSTANCE, null when unknown.
+    void* metalLayer = nullptr;     ///< macOS, iOS: CAMetalLayer*.
+    void* xlibDisplay = nullptr;    ///< X11: Display*, null when unknown.
+    std::uint64_t xlibWindow = 0;   ///< X11: Window.
+    void* waylandDisplay = nullptr; ///< Wayland: wl_display*.
+    void* waylandSurface = nullptr; ///< Wayland: wl_surface*.
+    void* nativeWindow = nullptr;   ///< Android: ANativeWindow*.
 };
 
 // --- window events ----------------------------------------------------------
@@ -287,9 +288,27 @@ struct UnknownEvent {};
 
 /// Everything `App::OnEvent` can be called with.
 using Event = std::variant<
-    CloseRequested, Destroyed, Resized, Moved, ScaleFactorChanged, Focused, Occluded, RedrawRequested, SurfaceCreated,
-    SurfaceLost, KeyInput, ModifiersChanged, CursorMoved, CursorEntered, CursorLeft, MouseButtonInput, MouseWheel,
-    RawMouseMotion, TouchInput, ImeInput, UnknownEvent>;
+    CloseRequested,
+    Destroyed,
+    Resized,
+    Moved,
+    ScaleFactorChanged,
+    Focused,
+    Occluded,
+    RedrawRequested,
+    SurfaceCreated,
+    SurfaceLost,
+    KeyInput,
+    ModifiersChanged,
+    CursorMoved,
+    CursorEntered,
+    CursorLeft,
+    MouseButtonInput,
+    MouseWheel,
+    RawMouseMotion,
+    TouchInput,
+    ImeInput,
+    UnknownEvent>;
 
 // --- windows ----------------------------------------------------------------
 

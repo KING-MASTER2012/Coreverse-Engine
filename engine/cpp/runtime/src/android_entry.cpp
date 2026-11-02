@@ -21,14 +21,14 @@
 
 namespace {
 
-    void Log(const std::string& message)
-    {
+void Log(const std::string& message)
+{
 #if defined(__ANDROID__)
-        __android_log_print(ANDROID_LOG_ERROR, "coreverse", "%s", message.c_str());
+    __android_log_print(ANDROID_LOG_ERROR, "coreverse", "%s", message.c_str());
 #else
-        std::fprintf(stderr, "coreverse: %s\n", message.c_str());
+    std::fprintf(stderr, "coreverse: %s\n", message.c_str());
 #endif
-    }
+}
 
 } // namespace
 

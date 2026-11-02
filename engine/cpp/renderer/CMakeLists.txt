@@ -24,6 +24,7 @@ add_library(renderer STATIC
         src/CommandBuffer.cpp
         src/FrameSync.cpp
         src/Diagnostics.cpp
+        src/backend/vulkan/VulkanRenderDevice.cpp
         src/backend/vulkan/VmaImpl.cpp
         src/backend/vulkan/VolkImpl.cpp
 )

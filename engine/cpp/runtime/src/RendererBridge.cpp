@@ -34,17 +34,33 @@ renderer::ClearColor ClearColorAt(double seconds)
     double g = 0.0;
     double b = 0.0;
     switch (static_cast<int>(hue)) {
-        case 0: r = chroma; g = x; break;
-        case 1: r = x; g = chroma; break;
-        case 2: g = chroma; b = x; break;
-        case 3: g = x; b = chroma; break;
-        case 4: r = x; b = chroma; break;
-        default: r = chroma; b = x; break;
+        case 0:
+            r = chroma;
+            g = x;
+            break;
+        case 1:
+            r = x;
+            g = chroma;
+            break;
+        case 2:
+            g = chroma;
+            b = x;
+            break;
+        case 3:
+            g = x;
+            b = chroma;
+            break;
+        case 4:
+            r = x;
+            b = chroma;
+            break;
+        default:
+            r = chroma;
+            b = x;
+            break;
     }
     const double m = value - chroma;
-    return renderer::ClearColor{
-        static_cast<float>(r + m), static_cast<float>(g + m), static_cast<float>(b + m), 1.0F
-    };
+    return renderer::ClearColor{static_cast<float>(r + m), static_cast<float>(g + m), static_cast<float>(b + m), 1.0F};
 }
 
 } // namespace
@@ -74,8 +90,9 @@ ToRendererHandle(const cv_ffi::window::NativeWindowHandle& handle)
     if (handle.kind == DisplayServer::X11 && handle.xlibWindow != 0) {
         native.xlibDisplay = handle.xlibDisplay;
         native.xlibWindow = static_cast<unsigned long>(handle.xlibWindow);
-    } else if (handle.kind == DisplayServer::Wayland && handle.waylandDisplay != nullptr
-               && handle.waylandSurface != nullptr) {
+    } else if (
+        handle.kind == DisplayServer::Wayland && handle.waylandDisplay != nullptr && handle.waylandSurface != nullptr
+    ) {
         native.waylandDisplay = handle.waylandDisplay;
         native.waylandSurface = handle.waylandSurface;
     } else {

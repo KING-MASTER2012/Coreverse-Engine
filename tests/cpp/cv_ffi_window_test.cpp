@@ -20,8 +20,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <new>
 #include <functional>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -62,7 +62,10 @@ public:
         }
     }
 
-    void Suspended(window::Context&) override { log.emplace_back("suspended"); }
+    void Suspended(window::Context&) override
+    {
+        log.emplace_back("suspended");
+    }
 
     void OnEvent(window::Context& ctx, window::WindowId id, const window::Event& event) override
     {
@@ -125,8 +128,10 @@ void TestLifecycleAndExitCode()
         Check(ctx.SetImeCursorArea(created, 1.0, 2.0, 3.0, 4.0).has_value(), "SetImeCursorArea");
         Check(ctx.SetCursorVisible(created, false).has_value(), "SetCursorVisible");
         Check(ctx.SetControlFlow(window::ControlFlow::Poll).has_value(), "SetControlFlow Poll");
-        Check(ctx.SetControlFlow(window::ControlFlow::WaitUntil, std::chrono::milliseconds{5}).has_value(),
-              "SetControlFlow WaitUntil");
+        Check(
+            ctx.SetControlFlow(window::ControlFlow::WaitUntil, std::chrono::milliseconds{5}).has_value(),
+            "SetControlFlow WaitUntil"
+        );
         auto info = ctx.GetWindowInfo(created);
         Check(info && info->imeAllowed, "the IME permission reads back");
         Check(ctx.Exit(42).has_value(), "Exit");
@@ -234,8 +239,10 @@ void TestAnExceptionStopsTheLoop()
     ScriptedApp other;
     other.onResumed = [](window::Context&) { throw 42; };
     auto unknown = window::Run(other, Headless());
-    Check(!unknown && unknown.error().find("unknown exception") != std::string::npos,
-          "a non-std exception is reported too");
+    Check(
+        !unknown && unknown.error().find("unknown exception") != std::string::npos,
+        "a non-std exception is reported too"
+    );
 }
 
 void TestHeadlessReportsAnApplicationThatNeverExits()

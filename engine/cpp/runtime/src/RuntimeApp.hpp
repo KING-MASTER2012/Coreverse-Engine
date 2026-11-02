@@ -43,14 +43,21 @@ public:
 
     void Resumed(cv_ffi::window::Context& ctx) override;
     void Suspended(cv_ffi::window::Context& ctx) override;
-    void OnEvent(cv_ffi::window::Context& ctx, cv_ffi::window::WindowId window, const cv_ffi::window::Event& event) override;
+    void
+    OnEvent(cv_ffi::window::Context& ctx, cv_ffi::window::WindowId window, const cv_ffi::window::Event& event) override;
     void AboutToWait(cv_ffi::window::Context& ctx) override;
 
     /// Frames drawn (or, without a renderer, redraw events handled).
-    [[nodiscard]] std::uint64_t FramesRendered() const noexcept { return m_frames; }
+    [[nodiscard]] std::uint64_t FramesRendered() const noexcept
+    {
+        return m_frames;
+    }
 
     /// Whether the application stopped because of an error (exit code 2).
-    [[nodiscard]] bool Failed() const noexcept { return m_failed; }
+    [[nodiscard]] bool Failed() const noexcept
+    {
+        return m_failed;
+    }
 
 private:
     void DrawFrame(cv_ffi::window::Context& ctx);

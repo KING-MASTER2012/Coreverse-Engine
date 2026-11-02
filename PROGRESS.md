@@ -1,6 +1,11 @@
 # PROGRESS.md
 Last changed 01.11.2026 by KING-MASTER2012.
 
+## What happened compared to the previous commit? (fix: CodeQL link error and deprecated atomic)
+- fixed (CMake): `engine/cpp/renderer/CMakeLists.txt` lost `src/backend/vulkan/VulkanRenderDevice.cpp` from the `renderer` source list in the Phase 10 change, so `coreverse-runtime` failed to link in the CodeQL C++ job (`undefined reference to VulkanRenderDevice::Initialize()` / `vtable for VulkanRenderDevice` / `~VulkanRenderDevice()`). The line is back.
+- fixed (platform): `ManualClock::advance` used `AtomicU64::fetch_update`, which newer Rust releases deprecate (renamed `try_update`), so `cargo clippy --workspace --all-features -- -D warnings` failed. It is now a `compare_exchange_weak` loop, which works on every toolchain (`try_update` would break the declared `rust-version`).
+- verified (sandbox, Rust 1.91.1): `cargo test -p platform --lib time` (28 passed). Not verified: the CodeQL/renderer build itself (no Vulkan/volk/VMA/vcpkg in the sandbox) and Clippy with the newer toolchain.
+
 ## What happened compared to the previous commit? (platform Phase 11: mobile backends)
 - finding: the `winit` backend of Phase 8 already contained the mobile lifecycle (`lose_all_surfaces` before `suspended`, `attach_missing_surfaces` after `resumed`) and the `winit` feature already compiled for `aarch64-apple-ios` unchanged. What was missing was Android: winit refuses to compile for it without an activity feature, and its event loop needs the `AndroidApp` of `android_main`.
 - added (platform): cargo feature `android-native-activity` (= `winit` + `winit/android-native-activity`; `NativeActivity`, no Java code; `GameActivity` is not supported), `WinitBackend::with_android_app(AndroidApp)` (Android only) and the re-export `platform::window::AndroidApp`; `run` fails with a `WindowError::Backend` that names the cause when the `AndroidApp` is missing. The module docs of the backend now state the mobile contract (windows are the whole screen, `SurfaceLost` for every window before `suspended`, a new `SurfaceCreated` after the next `resumed`, touch instead of a cursor, iOS `run` does not return). No change to the lifecycle code itself.

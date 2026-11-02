@@ -11,8 +11,7 @@
 namespace runtime {
 // No renderer in this build: an empty type keeps RuntimeApp's unique_ptr complete.
 class RendererBridge
-{
-};
+{};
 } // namespace runtime
 #endif
 
@@ -22,24 +21,29 @@ namespace window = cv_ffi::window;
 
 namespace {
 
-template <typename... Ts>
-struct Overloaded : Ts... {
+template <typename... Ts> struct Overloaded : Ts... {
     using Ts::operator()...;
 };
-template <typename... Ts>
-Overloaded(Ts...) -> Overloaded<Ts...>;
+template <typename... Ts> Overloaded(Ts...) -> Overloaded<Ts...>;
 
 const char* DisplayName(cv_ffi::platform::DisplayServer kind)
 {
     using cv_ffi::platform::DisplayServer;
     switch (kind) {
-        case DisplayServer::Win32: return "Win32";
-        case DisplayServer::Cocoa: return "Cocoa";
-        case DisplayServer::X11: return "X11";
-        case DisplayServer::Wayland: return "Wayland";
-        case DisplayServer::Android: return "Android";
-        case DisplayServer::UIKit: return "UIKit";
-        default: return "unknown";
+        case DisplayServer::Win32:
+            return "Win32";
+        case DisplayServer::Cocoa:
+            return "Cocoa";
+        case DisplayServer::X11:
+            return "X11";
+        case DisplayServer::Wayland:
+            return "Wayland";
+        case DisplayServer::Android:
+            return "Android";
+        case DisplayServer::UIKit:
+            return "UIKit";
+        default:
+            return "unknown";
     }
 }
 
@@ -57,15 +61,15 @@ std::string Describe(const window::Event& event)
         Overloaded{
             [](const window::CloseRequested&) { return std::string("CloseRequested"); },
             [](const window::Destroyed&) { return std::string("Destroyed"); },
-            [](const window::Resized& e) { return "Resized " + std::to_string(e.width) + "x" + std::to_string(e.height); },
+            [](const window::Resized& e) {
+                return "Resized " + std::to_string(e.width) + "x" + std::to_string(e.height);
+            },
             [](const window::Moved& e) { return "Moved " + std::to_string(e.x) + "," + std::to_string(e.y); },
             [](const window::ScaleFactorChanged& e) { return "ScaleFactorChanged " + std::to_string(e.scaleFactor); },
             [](const window::Focused& e) { return std::string("Focused ") + (e.focused ? "true" : "false"); },
             [](const window::Occluded& e) { return std::string("Occluded ") + (e.occluded ? "true" : "false"); },
             [](const window::RedrawRequested&) { return std::string("RedrawRequested"); },
-            [](const window::SurfaceCreated& e) {
-                return std::string("SurfaceCreated ") + DisplayName(e.handle.kind);
-            },
+            [](const window::SurfaceCreated& e) { return std::string("SurfaceCreated ") + DisplayName(e.handle.kind); },
             [](const window::SurfaceLost&) { return std::string("SurfaceLost"); },
             [](const window::KeyInput& e) {
                 std::string text = "Key ";
@@ -93,8 +97,8 @@ std::string Describe(const window::Event& event)
             [](const window::CursorEntered&) { return std::string("CursorEntered"); },
             [](const window::CursorLeft&) { return std::string("CursorLeft"); },
             [](const window::MouseButtonInput& e) {
-                return "MouseButton " + std::to_string(static_cast<int>(e.button))
-                       + (e.state == window::ButtonState::Pressed ? " pressed" : " released");
+                return "MouseButton " + std::to_string(static_cast<int>(e.button)) +
+                       (e.state == window::ButtonState::Pressed ? " pressed" : " released");
             },
             [](const window::MouseWheel& e) { return "MouseWheel " + std::to_string(e.x) + "," + std::to_string(e.y); },
             [](const window::RawMouseMotion& e) {

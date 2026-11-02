@@ -104,12 +104,18 @@ impl ManualClock {
     /// Moves the clock forward, saturating at roughly 584 years.
     pub fn advance(&self, by: Duration) {
         let by = saturating_nanos(by);
-        // The closure always returns `Some`, so `fetch_update` cannot fail.
-        let _ = self
-            .nanos
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-                Some(n.saturating_add(by))
-            });
+        // A plain compare-exchange loop instead of `fetch_update`: newer
+        // toolchains deprecate that name (renamed `try_update`), which breaks
+        // `clippy -D warnings`, while the loop works on every toolchain.
+        let mut current = self.nanos.load(Ordering::Relaxed);
+        while let Err(actual) = self.nanos.compare_exchange_weak(
+            current,
+            current.saturating_add(by),
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            current = actual;
+        }
     }
 
     /// Sets the clock to an absolute time. Going backwards is allowed so

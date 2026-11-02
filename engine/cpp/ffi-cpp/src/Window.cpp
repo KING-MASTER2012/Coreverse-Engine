@@ -235,8 +235,7 @@ RunState& State(void* userData) noexcept
 
 /// Runs `callback` for the application; an exception stops the loop (an
 /// exception must not unwind through the Rust frames below us).
-template <typename Callback>
-void Guarded(void* userData, ::PlatformContext* rawContext, Callback&& callback) noexcept
+template <typename Callback> void Guarded(void* userData, ::PlatformContext* rawContext, Callback&& callback) noexcept
 {
     RunState& state = State(userData);
     if (state.failed) {
