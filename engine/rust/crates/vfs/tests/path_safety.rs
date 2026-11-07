@@ -306,8 +306,10 @@ fn valid_archive_still_round_trips() {
         packed.read_bytes(Utf8Path::new("two.bin")).unwrap(),
         vec![9; 1000]
     );
-    assert!(packed
-        .read_bytes(Utf8Path::new("empty.bin"))
-        .unwrap()
-        .is_empty());
+    assert!(
+        packed
+            .read_bytes(Utf8Path::new("empty.bin"))
+            .unwrap()
+            .is_empty()
+    );
 }
