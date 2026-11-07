@@ -24,6 +24,7 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
+use crate::guard;
 use crate::logger::Logger;
 
 /// Opaque FFI handle wrapping [`log_core::DiagnosticBuilder`]. See the
@@ -58,26 +59,28 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_create(
     severity: u8,
     message: *const c_char,
 ) -> *mut DiagnosticBuilder {
-    if producer.is_null() || category.is_null() || message.is_null() {
-        return std::ptr::null_mut();
-    }
-    // SAFETY: all three pointers were just checked non-null; caller
-    // guarantees each points to a valid, NUL-terminated C string.
-    let Ok(producer) = (unsafe { CStr::from_ptr(producer) }).to_str() else {
-        return std::ptr::null_mut();
-    };
-    let Ok(category) = (unsafe { CStr::from_ptr(category) }).to_str() else {
-        return std::ptr::null_mut();
-    };
-    let Ok(message) = (unsafe { CStr::from_ptr(message) }).to_str() else {
-        return std::ptr::null_mut();
-    };
-    let Some(severity) = log_core::Severity::from_u8(severity) else {
-        return std::ptr::null_mut();
-    };
+    guard(std::ptr::null_mut(), || {
+        if producer.is_null() || category.is_null() || message.is_null() {
+            return std::ptr::null_mut();
+        }
+        // SAFETY: all three pointers were just checked non-null; caller
+        // guarantees each points to a valid, NUL-terminated C string.
+        let Ok(producer) = (unsafe { CStr::from_ptr(producer) }).to_str() else {
+            return std::ptr::null_mut();
+        };
+        let Ok(category) = (unsafe { CStr::from_ptr(category) }).to_str() else {
+            return std::ptr::null_mut();
+        };
+        let Ok(message) = (unsafe { CStr::from_ptr(message) }).to_str() else {
+            return std::ptr::null_mut();
+        };
+        let Some(severity) = log_core::Severity::from_u8(severity) else {
+            return std::ptr::null_mut();
+        };
 
-    let inner = log_core::DiagnosticBuilder::new(producer, category, number, severity, message);
-    Box::into_raw(Box::new(DiagnosticBuilder(Some(inner))))
+        let inner = log_core::DiagnosticBuilder::new(producer, category, number, severity, message);
+        Box::into_raw(Box::new(DiagnosticBuilder(Some(inner))))
+    })
 }
 
 /// Destroys a [`DiagnosticBuilder`] previously returned by
@@ -91,11 +94,13 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_create(
 /// this function or to [`ffi_diagnostic_builder_emit`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_diagnostic_builder_destroy(builder: *mut DiagnosticBuilder) {
-    if builder.is_null() {
-        return;
-    }
-    // SAFETY: caller upholds the contract documented above.
-    drop(unsafe { Box::from_raw(builder) });
+    guard((), || {
+        if builder.is_null() {
+            return;
+        }
+        // SAFETY: caller upholds the contract documented above.
+        drop(unsafe { Box::from_raw(builder) });
+    })
 }
 
 /// Sets the diagnostic's module name (see
@@ -113,19 +118,21 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_set_module(
     builder: *mut DiagnosticBuilder,
     module: *const c_char,
 ) -> bool {
-    if module.is_null() {
-        return false;
-    }
-    // SAFETY: just checked non-null; caller guarantees a valid,
-    // NUL-terminated C string.
-    let Ok(module) = (unsafe { CStr::from_ptr(module) }).to_str() else {
-        return false;
-    };
-    // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
-    let wrapper = unsafe { &mut *builder };
-    let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
-    wrapper.0 = Some(inner.module(module));
-    true
+    guard(false, || {
+        if module.is_null() {
+            return false;
+        }
+        // SAFETY: just checked non-null; caller guarantees a valid,
+        // NUL-terminated C string.
+        let Ok(module) = (unsafe { CStr::from_ptr(module) }).to_str() else {
+            return false;
+        };
+        // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
+        let wrapper = unsafe { &mut *builder };
+        let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
+        wrapper.0 = Some(inner.module(module));
+        true
+    })
 }
 
 /// Sets the diagnostic's file path (see
@@ -143,19 +150,21 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_set_file(
     builder: *mut DiagnosticBuilder,
     file: *const c_char,
 ) -> bool {
-    if file.is_null() {
-        return false;
-    }
-    // SAFETY: just checked non-null; caller guarantees a valid,
-    // NUL-terminated C string.
-    let Ok(file) = (unsafe { CStr::from_ptr(file) }).to_str() else {
-        return false;
-    };
-    // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
-    let wrapper = unsafe { &mut *builder };
-    let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
-    wrapper.0 = Some(inner.file(file));
-    true
+    guard(false, || {
+        if file.is_null() {
+            return false;
+        }
+        // SAFETY: just checked non-null; caller guarantees a valid,
+        // NUL-terminated C string.
+        let Ok(file) = (unsafe { CStr::from_ptr(file) }).to_str() else {
+            return false;
+        };
+        // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
+        let wrapper = unsafe { &mut *builder };
+        let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
+        wrapper.0 = Some(inner.file(file));
+        true
+    })
 }
 
 /// Sets the diagnostic's line number (see
@@ -174,15 +183,17 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_set_line(
     builder: *mut DiagnosticBuilder,
     line: *const u32,
 ) -> bool {
-    // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
-    let wrapper = unsafe { &mut *builder };
-    let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
-    // SAFETY: caller guarantees `line` is null or points to a valid u32.
-    wrapper.0 = Some(match unsafe { line.as_ref() } {
-        Some(&line) => inner.line(line),
-        None => inner,
-    });
-    true
+    guard(false, || {
+        // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
+        let wrapper = unsafe { &mut *builder };
+        let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
+        // SAFETY: caller guarantees `line` is null or points to a valid u32.
+        wrapper.0 = Some(match unsafe { line.as_ref() } {
+            Some(&line) => inner.line(line),
+            None => inner,
+        });
+        true
+    })
 }
 
 /// Sets whether the diagnostic's target log file should survive a clean
@@ -198,10 +209,12 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_set_persistent(
     builder: *mut DiagnosticBuilder,
     persistent: bool,
 ) {
-    // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
-    let wrapper = unsafe { &mut *builder };
-    let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
-    wrapper.0 = Some(inner.persistent(persistent));
+    guard((), || {
+        // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
+        let wrapper = unsafe { &mut *builder };
+        let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
+        wrapper.0 = Some(inner.persistent(persistent));
+    })
 }
 
 /// Builds the [`log_core::Diagnostic`] and emits it through `logger`
@@ -225,16 +238,18 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_emit(
     logger: *mut Logger,
     builder: *mut DiagnosticBuilder,
 ) -> bool {
-    if builder.is_null() {
-        return false;
-    }
-    // SAFETY: caller upholds the contract documented above — `builder`
-    // was returned by ffi_diagnostic_builder_create and not yet freed.
-    let mut wrapper = unsafe { Box::from_raw(builder) };
-    let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
-    // SAFETY: caller guarantees `logger` is a live Logger.
-    unsafe { &*logger }.inner().emit(inner.build());
-    true
+    guard(false, || {
+        if builder.is_null() {
+            return false;
+        }
+        // SAFETY: caller upholds the contract documented above — `builder`
+        // was returned by ffi_diagnostic_builder_create and not yet freed.
+        let mut wrapper = unsafe { Box::from_raw(builder) };
+        let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
+        // SAFETY: caller guarantees `logger` is a live Logger.
+        unsafe { &*logger }.inner().emit(inner.build());
+        true
+    })
 }
 
 /// Registers a producer at runtime (see
@@ -253,19 +268,21 @@ pub unsafe extern "C" fn ffi_producer_register(
     display_name: *const c_char,
     organization: *const c_char,
 ) -> bool {
-    if code.is_null() || display_name.is_null() || organization.is_null() {
-        return false;
-    }
-    // SAFETY: all three pointers were just checked non-null; caller
-    // guarantees each points to a valid, NUL-terminated C string.
-    let Ok(code) = (unsafe { CStr::from_ptr(code) }).to_str() else {
-        return false;
-    };
-    let Ok(display_name) = (unsafe { CStr::from_ptr(display_name) }).to_str() else {
-        return false;
-    };
-    let Ok(organization) = (unsafe { CStr::from_ptr(organization) }).to_str() else {
-        return false;
-    };
-    log_core::producer::register_dynamic(code, display_name, organization).is_ok()
+    guard(false, || {
+        if code.is_null() || display_name.is_null() || organization.is_null() {
+            return false;
+        }
+        // SAFETY: all three pointers were just checked non-null; caller
+        // guarantees each points to a valid, NUL-terminated C string.
+        let Ok(code) = (unsafe { CStr::from_ptr(code) }).to_str() else {
+            return false;
+        };
+        let Ok(display_name) = (unsafe { CStr::from_ptr(display_name) }).to_str() else {
+            return false;
+        };
+        let Ok(organization) = (unsafe { CStr::from_ptr(organization) }).to_str() else {
+            return false;
+        };
+        log_core::producer::register_dynamic(code, display_name, organization).is_ok()
+    })
 }

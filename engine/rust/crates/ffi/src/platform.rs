@@ -235,6 +235,20 @@ pub(crate) fn set_last_error(failure: Failure) {
     LAST_ERROR.with(|slot| *slot.borrow_mut() = Some(failure));
 }
 
+/// Runs `body`; if it panics, records [`Failure::Panic`] and returns
+/// `fallback` (the call's failure value) instead of aborting the process.
+fn guard_platform<T>(fallback: T, body: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(value) => value,
+        Err(payload) => {
+            set_last_error(Failure::Panic(crate::platform_run::panic_message(
+                payload.as_ref(),
+            )));
+            fallback
+        }
+    }
+}
+
 pub(crate) fn clear_last_error() {
     LAST_ERROR.with(|slot| *slot.borrow_mut() = None);
 }
@@ -379,9 +393,9 @@ pub extern "C" fn ffi_platform_last_error_code() -> u8 {
 #[unsafe(no_mangle)]
 pub extern "C" fn ffi_platform_last_error_message() -> *mut c_char {
     LAST_ERROR.with(|slot| match slot.borrow().as_ref() {
-        // A CString::new failure (an interior NUL in the message) is not
-        // actionable by the caller; fall back to null like "no error".
-        Some(failure) => CString::new(failure.to_string())
+        // An interior NUL would make `CString::new` fail and lose the whole
+        // message (null reads as "no error"); replace it instead.
+        Some(failure) => CString::new(failure.to_string().replace('\0', "\u{FFFD}"))
             .map(CString::into_raw)
             .unwrap_or(std::ptr::null_mut()),
         None => std::ptr::null_mut(),
@@ -403,24 +417,26 @@ pub extern "C" fn ffi_platform_last_error_message() -> *mut c_char {
 /// anything.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_platform_info(out: *mut PlatformInfo) -> bool {
-    clear_last_error();
-    if out.is_null() {
-        set_last_error(Failure::InvalidArgument("out was null".into()));
-        return false;
-    }
-    match build_info(&SystemInfo::collect()) {
-        Ok(info) => {
-            // SAFETY: `out` is valid and writable per the contract above.
-            // `write` does not drop the previous content, which the
-            // contract says owns nothing.
-            unsafe { out.write(info) };
-            true
+    guard_platform(false, || {
+        clear_last_error();
+        if out.is_null() {
+            set_last_error(Failure::InvalidArgument("out was null".into()));
+            return false;
         }
-        Err(failure) => {
-            set_last_error(failure);
-            false
+        match build_info(&SystemInfo::collect()) {
+            Ok(info) => {
+                // SAFETY: `out` is valid and writable per the contract above.
+                // `write` does not drop the previous content, which the
+                // contract says owns nothing.
+                unsafe { out.write(info) };
+                true
+            }
+            Err(failure) => {
+                set_last_error(failure);
+                false
+            }
         }
-    }
+    })
 }
 
 /// Releases the strings of a [`PlatformInfo`] filled by
@@ -433,17 +449,19 @@ pub unsafe extern "C" fn ffi_platform_info(out: *mut PlatformInfo) -> bool {
 /// through anything else).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_platform_info_free(info: *mut PlatformInfo) {
-    if info.is_null() {
-        return;
-    }
-    // SAFETY: `info` is non-null and valid per the contract above.
-    let info = unsafe { &mut *info };
-    free_c_string(info.os_name);
-    free_c_string(info.os_version);
-    free_c_string(info.kernel);
-    info.os_name = std::ptr::null_mut();
-    info.os_version = std::ptr::null_mut();
-    info.kernel = std::ptr::null_mut();
+    guard_platform((), || {
+        if info.is_null() {
+            return;
+        }
+        // SAFETY: `info` is non-null and valid per the contract above.
+        let info = unsafe { &mut *info };
+        free_c_string(info.os_name);
+        free_c_string(info.os_version);
+        free_c_string(info.kernel);
+        info.os_name = std::ptr::null_mut();
+        info.os_version = std::ptr::null_mut();
+        info.kernel = std::ptr::null_mut();
+    })
 }
 
 /// The path of one standard directory of the application `app` (see
@@ -463,40 +481,42 @@ pub unsafe extern "C" fn ffi_platform_info_free(info: *mut PlatformInfo) {
 /// string that outlives the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_platform_dir(kind: u8, app: *const c_char) -> *mut c_char {
-    clear_last_error();
+    guard_platform(std::ptr::null_mut(), || {
+        clear_last_error();
 
-    let Some(kind) = dir_kind_from_code(kind) else {
-        set_last_error(Failure::InvalidArgument(format!(
-            "kind byte {kind} is not a valid directory kind (0-6, see the FFI_DIR_* constants)"
-        )));
-        return std::ptr::null_mut();
-    };
-    if app.is_null() {
-        set_last_error(Failure::InvalidArgument("app was null".into()));
-        return std::ptr::null_mut();
-    }
-    // SAFETY: `app` is non-null and, per the contract above, a valid C string.
-    let Ok(app) = unsafe { CStr::from_ptr(app) }.to_str() else {
-        set_last_error(Failure::InvalidArgument("app was not valid UTF-8".into()));
-        return std::ptr::null_mut();
-    };
-
-    let path = match AppDirs::new(app).and_then(|dirs| dirs.dir(kind)) {
-        Ok(path) => path,
-        Err(e) => {
-            set_last_error(Failure::Platform(e));
+        let Some(kind) = dir_kind_from_code(kind) else {
+            set_last_error(Failure::InvalidArgument(format!(
+                "kind byte {kind} is not a valid directory kind (0-6, see the FFI_DIR_* constants)"
+            )));
+            return std::ptr::null_mut();
+        };
+        if app.is_null() {
+            set_last_error(Failure::InvalidArgument("app was null".into()));
             return std::ptr::null_mut();
         }
-    };
-    match CString::new(path.into_string()) {
-        Ok(c) => c.into_raw(),
-        Err(_) => {
-            set_last_error(Failure::InvalidData(
-                "directory path contains an interior NUL byte".into(),
-            ));
-            std::ptr::null_mut()
+        // SAFETY: `app` is non-null and, per the contract above, a valid C string.
+        let Ok(app) = unsafe { CStr::from_ptr(app) }.to_str() else {
+            set_last_error(Failure::InvalidArgument("app was not valid UTF-8".into()));
+            return std::ptr::null_mut();
+        };
+
+        let path = match AppDirs::new(app).and_then(|dirs| dirs.dir(kind)) {
+            Ok(path) => path,
+            Err(e) => {
+                set_last_error(Failure::Platform(e));
+                return std::ptr::null_mut();
+            }
+        };
+        match CString::new(path.into_string()) {
+            Ok(c) => c.into_raw(),
+            Err(_) => {
+                set_last_error(Failure::InvalidData(
+                    "directory path contains an interior NUL byte".into(),
+                ));
+                std::ptr::null_mut()
+            }
         }
-    }
+    })
 }
 
 #[cfg(test)]

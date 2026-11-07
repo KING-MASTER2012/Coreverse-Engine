@@ -91,6 +91,22 @@ fn set_last_error(err: VfsError) {
     LAST_ERROR.with(|slot| *slot.borrow_mut() = Some(err));
 }
 
+/// Runs `body`; if it panics, records an `InvalidPath` error (the closest
+/// existing variant, see the module docs) carrying the panic message and
+/// returns `fallback` (the call's failure value).
+fn guard_vfs<T>(fallback: T, body: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(value) => value,
+        Err(payload) => {
+            set_last_error(VfsError::InvalidPath(format!(
+                "internal error: panic caught at the FFI boundary: {}",
+                crate::platform_run::panic_message(payload.as_ref())
+            )));
+            fallback
+        }
+    }
+}
+
 fn clear_last_error() {
     LAST_ERROR.with(|slot| *slot.borrow_mut() = None);
 }
@@ -166,10 +182,11 @@ pub extern "C" fn ffi_vfs_last_error_code() -> u8 {
 #[unsafe(no_mangle)]
 pub extern "C" fn ffi_vfs_last_error_message() -> *mut c_char {
     LAST_ERROR.with(|slot| match slot.borrow().as_ref() {
-        // A CString::new failure here (an interior NUL in the message
-        // itself) is vanishingly unlikely and not actionable by the
-        // caller either way -- fall back to null, same as "no error".
-        Some(err) => CString::new(err.to_string())
+        // An interior NUL would make `CString::new` fail and the message
+        // would be lost (null reads as "no error"). Archive paths are
+        // arbitrary bytes, so a NUL can really occur in an error text:
+        // replace it instead of dropping the whole message.
+        Some(err) => CString::new(err.to_string().replace('\0', "\u{FFFD}"))
             .map(CString::into_raw)
             .unwrap_or(std::ptr::null_mut()),
         None => std::ptr::null_mut(),
@@ -198,39 +215,41 @@ pub unsafe extern "C" fn ffi_vfs_init(
     archive_path: *const c_char,
     mode: u8,
 ) -> bool {
-    clear_last_error();
+    guard_vfs(false, || {
+        clear_last_error();
 
-    // SAFETY: caller upholds the contract documented above.
-    let Ok(project_root) = (unsafe { required_str(project_root, "project_root") }) else {
-        return false;
-    };
-    let archive_path = if archive_path.is_null() {
-        None
-    } else {
         // SAFETY: caller upholds the contract documented above.
-        match unsafe { required_str(archive_path, "archive_path") } {
-            Ok(s) => Some(s),
-            Err(()) => return false,
-        }
-    };
-    let Some(mode) = VfsMode::from_u8(mode) else {
-        set_last_error(VfsError::InvalidPath(format!(
-            "mode byte {mode} is not a valid VfsMode (0 = Development, 1 = Release)"
-        )));
-        return false;
-    };
+        let Ok(project_root) = (unsafe { required_str(project_root, "project_root") }) else {
+            return false;
+        };
+        let archive_path = if archive_path.is_null() {
+            None
+        } else {
+            // SAFETY: caller upholds the contract documented above.
+            match unsafe { required_str(archive_path, "archive_path") } {
+                Ok(s) => Some(s),
+                Err(()) => return false,
+            }
+        };
+        let Some(mode) = VfsMode::from_u8(mode) else {
+            set_last_error(VfsError::InvalidPath(format!(
+                "mode byte {mode} is not a valid VfsMode (0 = Development, 1 = Release)"
+            )));
+            return false;
+        };
 
-    match VfsContext::init(
-        Utf8Path::new(project_root),
-        archive_path.map(Utf8Path::new),
-        mode,
-    ) {
-        Ok(()) => true,
-        Err(e) => {
-            set_last_error(e);
-            false
+        match VfsContext::init(
+            Utf8Path::new(project_root),
+            archive_path.map(Utf8Path::new),
+            mode,
+        ) {
+            Ok(()) => true,
+            Err(e) => {
+                set_last_error(e);
+                false
+            }
         }
-    }
+    })
 }
 
 /// Reads `root:/rel` as UTF-8 text (see
@@ -245,27 +264,29 @@ pub unsafe extern "C" fn ffi_vfs_init(
 /// `rel` must be a valid, NUL-terminated UTF-8 C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_vfs_read_to_string(root: u8, rel: *const c_char) -> *mut c_char {
-    clear_last_error();
-    // SAFETY: forwarded from the caller's contract.
-    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
-        return std::ptr::null_mut();
-    };
-    match vfs_crate::file_manager::read_to_string(&path) {
-        Ok(s) => match CString::new(s) {
-            Ok(c) => c.into_raw(),
-            Err(_) => {
-                set_last_error(VfsError::InvalidPath(
-                    "file content contains an interior NUL byte -- use ffi_vfs_read_bytes instead"
-                        .into(),
-                ));
+    guard_vfs(std::ptr::null_mut(), || {
+        clear_last_error();
+        // SAFETY: forwarded from the caller's contract.
+        let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+            return std::ptr::null_mut();
+        };
+        match vfs_crate::file_manager::read_to_string(&path) {
+            Ok(s) => match CString::new(s) {
+                Ok(c) => c.into_raw(),
+                Err(_) => {
+                    set_last_error(VfsError::InvalidPath(
+                        "file content contains an interior NUL byte -- use ffi_vfs_read_bytes instead"
+                            .into(),
+                    ));
+                    std::ptr::null_mut()
+                }
+            },
+            Err(e) => {
+                set_last_error(e);
                 std::ptr::null_mut()
             }
-        },
-        Err(e) => {
-            set_last_error(e);
-            std::ptr::null_mut()
         }
-    }
+    })
 }
 
 /// Reads `root:/rel` as raw bytes (see
@@ -285,33 +306,35 @@ pub unsafe extern "C" fn ffi_vfs_read_bytes(
     out_data: *mut *mut u8,
     out_len: *mut usize,
 ) -> bool {
-    clear_last_error();
-    if out_data.is_null() || out_len.is_null() {
-        set_last_error(VfsError::InvalidPath("out_data/out_len was null".into()));
-        return false;
-    }
-    // SAFETY: forwarded from the caller's contract.
-    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
-        return false;
-    };
-    match vfs_crate::file_manager::read_bytes(&path) {
-        Ok(data) => {
-            let boxed = data.into_boxed_slice();
-            let len = boxed.len();
-            let ptr = Box::into_raw(boxed).cast::<u8>();
-            // SAFETY: caller guarantees out_data/out_len are valid,
-            // writable, non-null pointers (checked above).
-            unsafe {
-                *out_data = ptr;
-                *out_len = len;
+    guard_vfs(false, || {
+        clear_last_error();
+        if out_data.is_null() || out_len.is_null() {
+            set_last_error(VfsError::InvalidPath("out_data/out_len was null".into()));
+            return false;
+        }
+        // SAFETY: forwarded from the caller's contract.
+        let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+            return false;
+        };
+        match vfs_crate::file_manager::read_bytes(&path) {
+            Ok(data) => {
+                let boxed = data.into_boxed_slice();
+                let len = boxed.len();
+                let ptr = Box::into_raw(boxed).cast::<u8>();
+                // SAFETY: caller guarantees out_data/out_len are valid,
+                // writable, non-null pointers (checked above).
+                unsafe {
+                    *out_data = ptr;
+                    *out_len = len;
+                }
+                true
             }
-            true
+            Err(e) => {
+                set_last_error(e);
+                false
+            }
         }
-        Err(e) => {
-            set_last_error(e);
-            false
-        }
-    }
+    })
 }
 
 /// Frees a buffer previously returned by [`ffi_vfs_read_bytes`].
@@ -323,13 +346,15 @@ pub unsafe extern "C" fn ffi_vfs_read_bytes(
 /// such call ever wrote a non-null pointer there.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_vfs_free_bytes(data: *mut u8, len: usize) {
-    if data.is_null() {
-        return;
-    }
-    // SAFETY: caller upholds the contract documented above -- `data`
-    // originated from a `Box<[u8]>` of exactly `len` elements via
-    // `ffi_vfs_read_bytes`.
-    drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(data, len)) });
+    guard_vfs((), || {
+        if data.is_null() {
+            return;
+        }
+        // SAFETY: caller upholds the contract documented above -- `data`
+        // originated from a `Box<[u8]>` of exactly `len` elements via
+        // `ffi_vfs_read_bytes`.
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(data, len)) });
+    })
 }
 
 /// Writes `data` (`len` bytes) to `root:/rel`, creating or truncating it
@@ -348,31 +373,33 @@ pub unsafe extern "C" fn ffi_vfs_write_bytes(
     data: *const u8,
     len: usize,
 ) -> bool {
-    clear_last_error();
-    if data.is_null() && len != 0 {
-        set_last_error(VfsError::InvalidPath(
-            "data was null but len was not 0".into(),
-        ));
-        return false;
-    }
-    // SAFETY: forwarded from the caller's contract.
-    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
-        return false;
-    };
-    let slice: &[u8] = if len == 0 {
-        &[]
-    } else {
-        // SAFETY: caller guarantees `data` points to at least `len`
-        // readable bytes (null-with-zero-len handled above).
-        unsafe { std::slice::from_raw_parts(data, len) }
-    };
-    match vfs_crate::file_manager::write_bytes(&path, slice) {
-        Ok(()) => true,
-        Err(e) => {
-            set_last_error(e);
-            false
+    guard_vfs(false, || {
+        clear_last_error();
+        if data.is_null() && len != 0 {
+            set_last_error(VfsError::InvalidPath(
+                "data was null but len was not 0".into(),
+            ));
+            return false;
         }
-    }
+        // SAFETY: forwarded from the caller's contract.
+        let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+            return false;
+        };
+        let slice: &[u8] = if len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees `data` points to at least `len`
+            // readable bytes (null-with-zero-len handled above).
+            unsafe { std::slice::from_raw_parts(data, len) }
+        };
+        match vfs_crate::file_manager::write_bytes(&path, slice) {
+            Ok(()) => true,
+            Err(e) => {
+                set_last_error(e);
+                false
+            }
+        }
+    })
 }
 
 /// Checks whether `root:/rel` exists (see
@@ -394,27 +421,29 @@ pub unsafe extern "C" fn ffi_vfs_exists(
     rel: *const c_char,
     out_exists: *mut bool,
 ) -> bool {
-    clear_last_error();
-    if out_exists.is_null() {
-        set_last_error(VfsError::InvalidPath("out_exists was null".into()));
-        return false;
-    }
-    // SAFETY: forwarded from the caller's contract.
-    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
-        return false;
-    };
-    match vfs_crate::file_manager::exists(&path) {
-        Ok(exists) => {
-            // SAFETY: caller guarantees out_exists is valid, writable,
-            // non-null (checked above).
-            unsafe { *out_exists = exists };
-            true
+    guard_vfs(false, || {
+        clear_last_error();
+        if out_exists.is_null() {
+            set_last_error(VfsError::InvalidPath("out_exists was null".into()));
+            return false;
         }
-        Err(e) => {
-            set_last_error(e);
-            false
+        // SAFETY: forwarded from the caller's contract.
+        let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+            return false;
+        };
+        match vfs_crate::file_manager::exists(&path) {
+            Ok(exists) => {
+                // SAFETY: caller guarantees out_exists is valid, writable,
+                // non-null (checked above).
+                unsafe { *out_exists = exists };
+                true
+            }
+            Err(e) => {
+                set_last_error(e);
+                false
+            }
         }
-    }
+    })
 }
 
 /// Removes `root:/rel` (see [`vfs_crate::file_manager::remove`]).
@@ -425,18 +454,20 @@ pub unsafe extern "C" fn ffi_vfs_exists(
 /// `rel` must be a valid, NUL-terminated UTF-8 C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_vfs_remove(root: u8, rel: *const c_char) -> bool {
-    clear_last_error();
-    // SAFETY: forwarded from the caller's contract.
-    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
-        return false;
-    };
-    match vfs_crate::file_manager::remove(&path) {
-        Ok(()) => true,
-        Err(e) => {
-            set_last_error(e);
-            false
+    guard_vfs(false, || {
+        clear_last_error();
+        // SAFETY: forwarded from the caller's contract.
+        let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+            return false;
+        };
+        match vfs_crate::file_manager::remove(&path) {
+            Ok(()) => true,
+            Err(e) => {
+                set_last_error(e);
+                false
+            }
         }
-    }
+    })
 }
 
 /// Reads `root:/rel`'s metadata (see
@@ -455,30 +486,32 @@ pub unsafe extern "C" fn ffi_vfs_metadata(
     out_is_dir: *mut bool,
     out_len: *mut u64,
 ) -> bool {
-    clear_last_error();
-    if out_is_dir.is_null() || out_len.is_null() {
-        set_last_error(VfsError::InvalidPath("out_is_dir/out_len was null".into()));
-        return false;
-    }
-    // SAFETY: forwarded from the caller's contract.
-    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
-        return false;
-    };
-    match vfs_crate::file_manager::metadata(&path) {
-        Ok(meta) => {
-            // SAFETY: caller guarantees out_is_dir/out_len are valid,
-            // writable, non-null (checked above).
-            unsafe {
-                *out_is_dir = meta.is_dir;
-                *out_len = meta.len;
+    guard_vfs(false, || {
+        clear_last_error();
+        if out_is_dir.is_null() || out_len.is_null() {
+            set_last_error(VfsError::InvalidPath("out_is_dir/out_len was null".into()));
+            return false;
+        }
+        // SAFETY: forwarded from the caller's contract.
+        let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+            return false;
+        };
+        match vfs_crate::file_manager::metadata(&path) {
+            Ok(meta) => {
+                // SAFETY: caller guarantees out_is_dir/out_len are valid,
+                // writable, non-null (checked above).
+                unsafe {
+                    *out_is_dir = meta.is_dir;
+                    *out_len = meta.len;
+                }
+                true
             }
-            true
+            Err(e) => {
+                set_last_error(e);
+                false
+            }
         }
-        Err(e) => {
-            set_last_error(e);
-            false
-        }
-    }
+    })
 }
 
 /// Lists the entries of the directory `root:/rel` (see
@@ -504,46 +537,48 @@ pub unsafe extern "C" fn ffi_vfs_list_dir(
     out_entries: *mut *mut *mut c_char,
     out_count: *mut usize,
 ) -> bool {
-    clear_last_error();
-    if out_entries.is_null() || out_count.is_null() {
-        set_last_error(VfsError::InvalidPath(
-            "out_entries/out_count was null".into(),
-        ));
-        return false;
-    }
-    // SAFETY: forwarded from the caller's contract.
-    let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
-        return false;
-    };
-    match vfs_crate::file_manager::list_dir(&path) {
-        Ok(entries) => {
-            // Every entry's `rel` is plain camino UTF-8 text built from
-            // path components the backend enumerated itself — never
-            // caller-supplied, so an interior NUL here would mean a
-            // corrupt backend, not a malformed request. Skip such an
-            // entry rather than fail the whole listing over it.
-            let mut strings: Vec<*mut c_char> = Vec::with_capacity(entries.len());
-            for entry in entries {
-                if let Ok(c) = CString::new(entry.rel().as_str()) {
-                    strings.push(c.into_raw());
+    guard_vfs(false, || {
+        clear_last_error();
+        if out_entries.is_null() || out_count.is_null() {
+            set_last_error(VfsError::InvalidPath(
+                "out_entries/out_count was null".into(),
+            ));
+            return false;
+        }
+        // SAFETY: forwarded from the caller's contract.
+        let Ok(path) = (unsafe { required_vfs_path(root, rel) }) else {
+            return false;
+        };
+        match vfs_crate::file_manager::list_dir(&path) {
+            Ok(entries) => {
+                // Every entry's `rel` is plain camino UTF-8 text built from
+                // path components the backend enumerated itself — never
+                // caller-supplied, so an interior NUL here would mean a
+                // corrupt backend, not a malformed request. Skip such an
+                // entry rather than fail the whole listing over it.
+                let mut strings: Vec<*mut c_char> = Vec::with_capacity(entries.len());
+                for entry in entries {
+                    if let Ok(c) = CString::new(entry.rel().as_str()) {
+                        strings.push(c.into_raw());
+                    }
                 }
+                let len = strings.len();
+                let boxed = strings.into_boxed_slice();
+                let ptr = Box::into_raw(boxed).cast::<*mut c_char>();
+                // SAFETY: caller guarantees out_entries/out_count are
+                // valid, writable, non-null (checked above).
+                unsafe {
+                    *out_entries = ptr;
+                    *out_count = len;
+                }
+                true
             }
-            let len = strings.len();
-            let boxed = strings.into_boxed_slice();
-            let ptr = Box::into_raw(boxed).cast::<*mut c_char>();
-            // SAFETY: caller guarantees out_entries/out_count are
-            // valid, writable, non-null (checked above).
-            unsafe {
-                *out_entries = ptr;
-                *out_count = len;
+            Err(e) => {
+                set_last_error(e);
+                false
             }
-            true
         }
-        Err(e) => {
-            set_last_error(e);
-            false
-        }
-    }
+    })
 }
 
 /// Frees an array previously returned by [`ffi_vfs_list_dir`].
@@ -555,21 +590,23 @@ pub unsafe extern "C" fn ffi_vfs_list_dir(
 /// no-op) only when no such call ever wrote a non-null pointer there.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_vfs_free_string_array(entries: *mut *mut c_char, count: usize) {
-    if entries.is_null() {
-        return;
-    }
-    // SAFETY: caller upholds the contract documented above -- `entries`
-    // originated from a `Box<[*mut c_char]>` of exactly `count`
-    // elements via ffi_vfs_list_dir, and each element originated from
-    // `CString::into_raw` there.
-    let boxed = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count)) };
-    for ptr in boxed.iter() {
-        if !ptr.is_null() {
-            // SAFETY: each element is a live CString::into_raw pointer
-            // from ffi_vfs_list_dir, per the contract above.
-            drop(unsafe { CString::from_raw(*ptr) });
+    guard_vfs((), || {
+        if entries.is_null() {
+            return;
         }
-    }
+        // SAFETY: caller upholds the contract documented above -- `entries`
+        // originated from a `Box<[*mut c_char]>` of exactly `count`
+        // elements via ffi_vfs_list_dir, and each element originated from
+        // `CString::into_raw` there.
+        let boxed = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count)) };
+        for ptr in boxed.iter() {
+            if !ptr.is_null() {
+                // SAFETY: each element is a live CString::into_raw pointer
+                // from ffi_vfs_list_dir, per the contract above.
+                drop(unsafe { CString::from_raw(*ptr) });
+            }
+        }
+    })
 }
 
 /// Copies `src` (read through the VFS's own [`fs::FileSystem`] — see
@@ -590,39 +627,41 @@ pub unsafe extern "C" fn ffi_vfs_add_file(
     dest_root: u8,
     dest_rel: *const c_char,
 ) -> bool {
-    clear_last_error();
-    // SAFETY: forwarded from the caller's contract.
-    let Ok(src) = (unsafe { required_str(src, "src") }) else {
-        return false;
-    };
-    let Ok(dest_root) = required_root(dest_root) else {
-        return false;
-    };
-    let src_path = Utf8Path::new(src);
-
-    let result = if dest_rel.is_null() {
-        vfs_crate::file_manager::add_file(src_path, dest_root)
-    } else {
+    guard_vfs(false, || {
+        clear_last_error();
         // SAFETY: forwarded from the caller's contract.
-        let Ok(dest_rel) = (unsafe { required_str(dest_rel, "dest_rel") }) else {
+        let Ok(src) = (unsafe { required_str(src, "src") }) else {
             return false;
         };
-        match VfsPath::new(dest_root, dest_rel) {
-            Ok(dest) => vfs_crate::file_manager::add_file_to(src_path, &dest),
+        let Ok(dest_root) = required_root(dest_root) else {
+            return false;
+        };
+        let src_path = Utf8Path::new(src);
+
+        let result = if dest_rel.is_null() {
+            vfs_crate::file_manager::add_file(src_path, dest_root)
+        } else {
+            // SAFETY: forwarded from the caller's contract.
+            let Ok(dest_rel) = (unsafe { required_str(dest_rel, "dest_rel") }) else {
+                return false;
+            };
+            match VfsPath::new(dest_root, dest_rel) {
+                Ok(dest) => vfs_crate::file_manager::add_file_to(src_path, &dest),
+                Err(e) => {
+                    set_last_error(e);
+                    return false;
+                }
+            }
+        };
+
+        match result {
+            Ok(()) => true,
             Err(e) => {
                 set_last_error(e);
-                return false;
+                false
             }
         }
-    };
-
-    match result {
-        Ok(()) => true,
-        Err(e) => {
-            set_last_error(e);
-            false
-        }
-    }
+    })
 }
 
 /// Builds a fresh scratch path under [`Root::Temp`], unique within
@@ -643,41 +682,73 @@ pub unsafe extern "C" fn ffi_vfs_new_temp_path(
     out_root: *mut u8,
     out_rel: *mut *mut c_char,
 ) -> bool {
-    clear_last_error();
-    if out_root.is_null() || out_rel.is_null() {
-        set_last_error(VfsError::InvalidPath("out_root/out_rel was null".into()));
-        return false;
-    }
-    // SAFETY: forwarded from the caller's contract.
-    let Ok(name_hint) = (unsafe { required_str(name_hint, "name_hint") }) else {
-        return false;
-    };
-    match vfs_crate::file_manager::new_temp_path(name_hint) {
-        Ok(path) => match CString::new(path.rel().as_str()) {
-            Ok(rel) => {
-                // SAFETY: caller guarantees out_root/out_rel are
-                // valid, writable, non-null (checked above).
-                unsafe {
-                    *out_root = path.root().as_u8();
-                    *out_rel = rel.into_raw();
+    guard_vfs(false, || {
+        clear_last_error();
+        if out_root.is_null() || out_rel.is_null() {
+            set_last_error(VfsError::InvalidPath("out_root/out_rel was null".into()));
+            return false;
+        }
+        // SAFETY: forwarded from the caller's contract.
+        let Ok(name_hint) = (unsafe { required_str(name_hint, "name_hint") }) else {
+            return false;
+        };
+        match vfs_crate::file_manager::new_temp_path(name_hint) {
+            Ok(path) => match CString::new(path.rel().as_str()) {
+                Ok(rel) => {
+                    // SAFETY: caller guarantees out_root/out_rel are
+                    // valid, writable, non-null (checked above).
+                    unsafe {
+                        *out_root = path.root().as_u8();
+                        *out_rel = rel.into_raw();
+                    }
+                    true
                 }
-                true
-            }
-            Err(_) => {
-                // process id + name_hint: can't actually contain a NUL
-                // unless name_hint itself smuggled one in past its own
-                // UTF-8 check above, which can't happen either -- kept
-                // for the same reason ffi_build_info_string keeps its
-                // .expect() rather than silently returning garbage.
-                set_last_error(VfsError::InvalidPath(
-                    "temp path contains an interior NUL byte".into(),
-                ));
+                Err(_) => {
+                    // process id + name_hint: can't actually contain a NUL
+                    // unless name_hint itself smuggled one in past its own
+                    // UTF-8 check above, which can't happen either -- kept
+                    // for the same reason ffi_build_info_string keeps its
+                    // .expect() rather than silently returning garbage.
+                    set_last_error(VfsError::InvalidPath(
+                        "temp path contains an interior NUL byte".into(),
+                    ));
+                    false
+                }
+            },
+            Err(e) => {
+                set_last_error(e);
                 false
             }
-        },
-        Err(e) => {
-            set_last_error(e);
-            false
         }
+    })
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    #[test]
+    fn a_panic_is_reported_as_a_failed_call_not_an_abort() {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        clear_last_error();
+        let ok = guard_vfs(true, || -> bool { panic!("simulated failure") });
+        std::panic::set_hook(previous);
+
+        assert!(ok, "the fallback value is returned");
+        assert_eq!(
+            ffi_vfs_last_error_code(),
+            VfsError::InvalidPath(String::new()).code()
+        );
+
+        let message = ffi_vfs_last_error_message();
+        assert!(!message.is_null());
+        // SAFETY: `message` was just produced by `ffi_vfs_last_error_message`.
+        let text = unsafe { CStr::from_ptr(message) }
+            .to_string_lossy()
+            .into_owned();
+        // SAFETY: same pointer, freed exactly once.
+        unsafe { crate::ffi_free_string(message) };
+        assert!(text.contains("simulated failure"), "{text}");
     }
 }

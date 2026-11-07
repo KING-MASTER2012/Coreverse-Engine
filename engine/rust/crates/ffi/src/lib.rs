@@ -109,14 +109,16 @@ use std::os::raw::c_char;
 /// The pointer stays valid until passed to [`ffi_free_string`].
 #[unsafe(no_mangle)]
 pub extern "C" fn ffi_build_info_string() -> *mut c_char {
-    let info = ccore::build_info!();
-    // BuildInfo::Display is a fixed format string over four
-    // &'static str fields that all come from `env!`/`option_env!` at
-    // compile time — none of them can contain an interior NUL, so
-    // this can never actually fail.
-    CString::new(info.to_string())
-        .expect("BuildInfo::Display never produces an interior NUL byte")
-        .into_raw()
+    guard(std::ptr::null_mut(), || {
+        let info = ccore::build_info!();
+        // BuildInfo::Display is a fixed format string over four
+        // &'static str fields that all come from `env!`/`option_env!` at
+        // compile time — none of them can contain an interior NUL, so
+        // this can never actually fail.
+        CString::new(info.to_string())
+            .expect("BuildInfo::Display never produces an interior NUL byte")
+            .into_raw()
+    })
 }
 
 /// Frees a string previously returned by [`ffi_build_info_string`]
@@ -130,18 +132,46 @@ pub extern "C" fn ffi_build_info_string() -> *mut c_char {
 /// one obtained from `malloc`/`new`), is undefined behavior.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_free_string(ptr: *mut c_char) {
-    if ptr.is_null() {
-        return;
-    }
-    // SAFETY: caller upholds the contract documented above — `ptr`
-    // originated from `CString::into_raw` and hasn't been freed yet.
-    drop(unsafe { CString::from_raw(ptr) });
+    guard((), || {
+        if ptr.is_null() {
+            return;
+        }
+        // SAFETY: caller upholds the contract documented above — `ptr`
+        // originated from `CString::into_raw` and hasn't been freed yet.
+        drop(unsafe { CString::from_raw(ptr) });
+    })
+}
+
+/// Runs `body` and returns `fallback` if it panics.
+///
+/// Every `extern "C"` function wraps its body in this (or in
+/// `vfs::guard_vfs` / `platform::guard_platform`, which also record the
+/// failure for the `last_error` functions). A panic must never cross the C
+/// boundary: since Rust 1.81 it aborts the host process, so one poisoned
+/// lock or logic bug in a log call would kill the whole editor. Instead the
+/// call fails with its documented failure value (`false` / null / nothing).
+pub(crate) fn guard<T>(fallback: T, body: impl FnOnce() -> T) -> T {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)).unwrap_or(fallback)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::ffi::CStr;
+
+    #[test]
+    fn guard_turns_a_panic_into_the_fallback() {
+        // Silence the expected panic message in the test output.
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = guard(false, || panic!("boom"));
+        let pointer = guard(std::ptr::null_mut::<u8>(), || panic!("boom"));
+        std::panic::set_hook(previous);
+
+        assert!(!result);
+        assert!(pointer.is_null());
+        assert!(guard(false, || true), "a normal return passes through");
+    }
 
     #[test]
     fn build_info_string_round_trips() {

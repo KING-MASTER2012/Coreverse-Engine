@@ -15,6 +15,8 @@ use std::os::raw::c_char;
 
 use log_sinks::{ConsoleSink, FileSink, NativeLogVfs};
 
+use crate::guard;
+
 /// Opaque FFI handle wrapping [`log_sinks::Logger`]. Defined locally
 /// (rather than re-exporting `log_sinks::Logger` directly) — see the
 /// crate root docs' "Opaque handles" section for why. C++ only ever
@@ -36,10 +38,13 @@ impl Logger {
 /// of [`ffi_logger_destroy`].
 ///
 /// # Safety
-/// Always returns a valid, non-null pointer.
+/// Returns a valid, non-null pointer (null only if constructing the logger
+/// panicked, which the FFI boundary turns into a failure value).
 #[unsafe(no_mangle)]
 pub extern "C" fn ffi_logger_create() -> *mut Logger {
-    Box::into_raw(Box::new(Logger(log_sinks::Logger::new())))
+    guard(std::ptr::null_mut(), || {
+        Box::into_raw(Box::new(Logger(log_sinks::Logger::new())))
+    })
 }
 
 /// Destroys a [`Logger`] previously returned by [`ffi_logger_create`],
@@ -53,11 +58,13 @@ pub extern "C" fn ffi_logger_create() -> *mut Logger {
 /// obtained from [`ffi_logger_create`], is undefined behavior.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_logger_destroy(logger: *mut Logger) {
-    if logger.is_null() {
-        return;
-    }
-    // SAFETY: caller upholds the contract documented above.
-    drop(unsafe { Box::from_raw(logger) });
+    guard((), || {
+        if logger.is_null() {
+            return;
+        }
+        // SAFETY: caller upholds the contract documented above.
+        drop(unsafe { Box::from_raw(logger) });
+    })
 }
 
 /// Flushes every sink attached to `logger` (deletes any of its log
@@ -69,8 +76,10 @@ pub unsafe extern "C" fn ffi_logger_destroy(logger: *mut Logger) {
 /// [`ffi_logger_create`] and not yet passed to [`ffi_logger_destroy`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_logger_shutdown(logger: *mut Logger) {
-    // SAFETY: caller guarantees `logger` is a live Logger.
-    unsafe { &*logger }.inner().shutdown();
+    guard((), || {
+        // SAFETY: caller guarantees `logger` is a live Logger.
+        unsafe { &*logger }.inner().shutdown();
+    })
 }
 
 /// Attaches a [`ConsoleSink`] with its default configuration to
@@ -84,15 +93,17 @@ pub unsafe extern "C" fn ffi_logger_shutdown(logger: *mut Logger) {
 /// [`ffi_logger_create`] and not yet passed to [`ffi_logger_destroy`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_logger_add_console_sink(logger: *mut Logger) -> bool {
-    // `ConsoleSink::new()` and `ConsoleSink::default()` are identical
-    // (see log-sinks/src/console.rs) -- `Box::<ConsoleSink>::default()`
-    // over `Box::new(ConsoleSink::new())` is what clippy::box_default
-    // wants here; same sink either way.
-    // SAFETY: caller guarantees `logger` is a live Logger.
-    unsafe { &*logger }
-        .inner()
-        .add_sink(Box::<ConsoleSink>::default());
-    true
+    guard(false, || {
+        // `ConsoleSink::new()` and `ConsoleSink::default()` are identical
+        // (see log-sinks/src/console.rs) -- `Box::<ConsoleSink>::default()`
+        // over `Box::new(ConsoleSink::new())` is what clippy::box_default
+        // wants here; same sink either way.
+        // SAFETY: caller guarantees `logger` is a live Logger.
+        unsafe { &*logger }
+            .inner()
+            .add_sink(Box::<ConsoleSink>::default());
+        true
+    })
 }
 
 /// Attaches a [`FileSink`] rooted at `<project_root>/Logs` (via
@@ -111,23 +122,25 @@ pub unsafe extern "C" fn ffi_logger_add_file_sink(
     logger: *mut Logger,
     project_root: *const c_char,
 ) -> bool {
-    if project_root.is_null() {
-        return false;
-    }
-    // SAFETY: caller guarantees `project_root` is a valid,
-    // NUL-terminated C string.
-    let Ok(project_root) = unsafe { CStr::from_ptr(project_root) }.to_str() else {
-        return false;
-    };
-    let Ok(vfs) = NativeLogVfs::new(project_root) else {
-        return false;
-    };
-    let Ok(sink) = FileSink::new(vfs) else {
-        return false;
-    };
-    // SAFETY: caller guarantees `logger` is a live Logger.
-    unsafe { &*logger }.inner().add_sink(Box::new(sink));
-    true
+    guard(false, || {
+        if project_root.is_null() {
+            return false;
+        }
+        // SAFETY: caller guarantees `project_root` is a valid,
+        // NUL-terminated C string.
+        let Ok(project_root) = unsafe { CStr::from_ptr(project_root) }.to_str() else {
+            return false;
+        };
+        let Ok(vfs) = NativeLogVfs::new(project_root) else {
+            return false;
+        };
+        let Ok(sink) = FileSink::new(vfs) else {
+            return false;
+        };
+        // SAFETY: caller guarantees `logger` is a live Logger.
+        unsafe { &*logger }.inner().add_sink(Box::new(sink));
+        true
+    })
 }
 
 /// Sets the minimum severity `logger` accepts before fanning a
@@ -141,10 +154,12 @@ pub unsafe extern "C" fn ffi_logger_add_file_sink(
 /// [`ffi_logger_create`] and not yet passed to [`ffi_logger_destroy`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_logger_set_min_severity(logger: *mut Logger, severity: u8) -> bool {
-    let Some(severity) = log_core::Severity::from_u8(severity) else {
-        return false;
-    };
-    // SAFETY: caller guarantees `logger` is a live Logger.
-    unsafe { &*logger }.inner().set_min_severity(severity);
-    true
+    guard(false, || {
+        let Some(severity) = log_core::Severity::from_u8(severity) else {
+            return false;
+        };
+        // SAFETY: caller guarantees `logger` is a live Logger.
+        unsafe { &*logger }.inner().set_min_severity(severity);
+        true
+    })
 }

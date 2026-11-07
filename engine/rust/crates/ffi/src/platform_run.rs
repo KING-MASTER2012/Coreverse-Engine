@@ -1033,7 +1033,7 @@ fn run_headless(
     run_backend(HeadlessBackend::new(headless), callbacks)
 }
 
-fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     let text = payload
         .downcast_ref::<&str>()
         .map(|text| (*text).to_owned())
