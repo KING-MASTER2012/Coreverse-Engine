@@ -197,7 +197,7 @@ impl Backend for LooseBackend {
         // the path passed in (i.e. joined onto `self.base`) - translate them
         // back to paths relative to this backend's root, like the rest of
         // the VFS API expects.
-        Ok(entries
+        let mut out: Vec<Utf8PathBuf> = entries
             .into_iter()
             .filter_map(|full_child| {
                 full_child
@@ -205,6 +205,10 @@ impl Backend for LooseBackend {
                     .ok()
                     .map(|p| p.to_path_buf())
             })
-            .collect())
+            .collect();
+        // The OS returns directory entries in arbitrary order; sorted like
+        // the packed backend so listings are deterministic.
+        out.sort();
+        Ok(out)
     }
 }

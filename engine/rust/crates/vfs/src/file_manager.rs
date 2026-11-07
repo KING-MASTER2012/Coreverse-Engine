@@ -77,15 +77,20 @@ pub fn remove(path: &VfsPath) -> Result<(), VfsError> {
 }
 
 /// Lists the direct children of the directory at `path`, as full `VfsPath`s
-/// on the same root.
+/// on the same root, sorted.
+///
+/// Entries whose name is not a valid VFS path (for example a file called
+/// `a:b` on Linux, or a packed entry with `..` in it) are left out: they
+/// could not be addressed through the VFS anyway, and one such entry must
+/// not make the whole directory unlistable.
 pub fn list_dir(path: &VfsPath) -> Result<Vec<VfsPath>, VfsError> {
     let entries = VfsContext::global()?
         .backend(path.root())?
         .list_dir(path.rel())?;
-    entries
+    Ok(entries
         .into_iter()
-        .map(|rel| VfsPath::new(path.root(), rel))
-        .collect()
+        .filter_map(|rel| VfsPath::new(path.root(), rel).ok())
+        .collect())
 }
 
 /// Size and file/directory status for `path`.

@@ -56,6 +56,18 @@ pub enum VfsError {
 }
 
 impl VfsError {
+    /// Whether this error means "there is nothing at that path" - either
+    /// [`VfsError::NotFound`] or an I/O error of kind
+    /// [`std::io::ErrorKind::NotFound`] - as opposed to a real failure
+    /// (permissions, corruption, ...) that must not be swallowed.
+    pub fn is_not_found(&self) -> bool {
+        match self {
+            VfsError::NotFound { .. } => true,
+            VfsError::Io { source, .. } => source.kind() == std::io::ErrorKind::NotFound,
+            _ => false,
+        }
+    }
+
     /// Stable numeric code for this error variant, for callers (like the
     /// `ffi` crate) that need to hand the failure reason across an ABI
     /// boundary without cloning/matching the full error. Payload fields

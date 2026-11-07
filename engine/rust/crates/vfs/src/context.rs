@@ -5,7 +5,12 @@ use std::sync::{Arc, OnceLock};
 use fs::{FileSystem, OsFileSystem};
 use root::Root;
 
-use crate::backend::{Backend, hybrid::HybridBackend, loose::LooseBackend, packed::PackedBackend};
+use crate::backend::{
+    Backend,
+    hybrid::HybridBackend,
+    loose::LooseBackend,
+    packed::{PackedArchive, PackedBackend},
+};
 use crate::error::VfsError;
 use crate::root_registry::RootDescriptor;
 
@@ -109,7 +114,16 @@ impl VfsContext {
 
         let mut backends: HashMap<Root, Box<dyn Backend>> = HashMap::new();
 
-        for (root, desc) in &descriptors {
+        // Stable order (HashMap iteration is random), so with several broken
+        // roots the *same* error is reported on every run.
+        let mut ordered: Vec<(&Root, &RootDescriptor)> = descriptors.iter().collect();
+        ordered.sort_by_key(|(root, _)| root.as_u8());
+
+        // Every packed root lives in the same archive: open (read the index,
+        // map the file) once, on first use, and share it between the roots.
+        let mut shared_archive: Option<Arc<PackedArchive>> = None;
+
+        for (root, desc) in ordered {
             let overlay_base = project_root.join(desc.dev_path);
             let backend: Box<dyn Backend> = match (mode, desc.packed) {
                 (VfsMode::Development, _) | (VfsMode::Release, false) => {
@@ -121,7 +135,15 @@ impl VfsContext {
                             "release mode with packed roots requires an archive_path".into(),
                         )
                     })?;
-                    let packed = PackedBackend::open(*root, archive_path, Arc::clone(&fs))?;
+                    let archive = match &shared_archive {
+                        Some(archive) => Arc::clone(archive),
+                        None => {
+                            let opened = Arc::new(PackedArchive::open(*root, archive_path, &*fs)?);
+                            shared_archive = Some(Arc::clone(&opened));
+                            opened
+                        }
+                    };
+                    let packed = PackedBackend::from_archive(*root, archive);
                     let overlay = LooseBackend::new(*root, overlay_base, Arc::clone(&fs));
                     Box::new(HybridBackend::new(packed, overlay))
                 }

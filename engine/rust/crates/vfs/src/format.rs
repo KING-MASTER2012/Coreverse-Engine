@@ -71,7 +71,51 @@ fn io_err(path: &Utf8Path, source: std::io::Error) -> VfsError {
 /// Goes through `fs` (not `std::fs` directly) like everything else that
 /// touches disk in this engine - this is the export-time tool, not
 /// something the running game calls.
+///
+/// # Errors
+/// Fails with [`VfsError::InvalidPath`] - before writing anything - if there
+/// are more than `u32::MAX` entries or an entry path is longer than
+/// `u16::MAX` bytes (the on-disk header cannot represent them; truncating
+/// the numbers would silently corrupt the archive).
+///
+/// The archive is written to `<out_path>.tmp` and renamed over `out_path`
+/// only once complete, so an interrupted export never leaves a truncated
+/// archive behind (and never damages an existing one).
 pub fn write_archive(
+    fs: &dyn FileSystem,
+    entries: &[PackedEntry],
+    out_path: &Utf8Path,
+) -> Result<(), VfsError> {
+    if u32::try_from(entries.len()).is_err() {
+        return Err(VfsError::InvalidPath(format!(
+            "an archive holds at most {} entries, got {}",
+            u32::MAX,
+            entries.len()
+        )));
+    }
+    if let Some(entry) = entries
+        .iter()
+        .find(|entry| u16::try_from(entry.rel.as_str().len()).is_err())
+    {
+        return Err(VfsError::InvalidPath(format!(
+            "path is {} bytes long, the archive format allows at most {}: '{}...'",
+            entry.rel.as_str().len(),
+            u16::MAX,
+            entry.rel.as_str().chars().take(64).collect::<String>()
+        )));
+    }
+
+    let temp = Utf8PathBuf::from(format!("{out_path}.tmp"));
+    let result = write_archive_file(fs, entries, &temp)
+        .and_then(|()| fs.rename(&temp, out_path).map_err(|e| io_err(out_path, e)));
+    if result.is_err() {
+        let _ = fs.remove_file(&temp);
+    }
+    result
+}
+
+/// Streams the archive to `out_path` (the caller has validated `entries`).
+fn write_archive_file(
     fs: &dyn FileSystem,
     entries: &[PackedEntry],
     out_path: &Utf8Path,

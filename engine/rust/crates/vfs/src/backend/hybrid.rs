@@ -1,4 +1,5 @@
 use camino::{Utf8Path, Utf8PathBuf};
+use std::collections::BTreeSet;
 
 use fs::FsMetadata;
 use root::Root;
@@ -13,6 +14,11 @@ use super::{Backend, loose::LooseBackend, packed::PackedBackend};
 /// Reads check the overlay first (so dev overrides / downloaded patches /
 /// mod replacements win), then fall back to the packed archive. Writes
 /// always go to the overlay - the packed half is never mutated at runtime.
+///
+/// There are no "whiteouts": removing a file only removes the overlay copy,
+/// so if the archive holds a file at the same path, that original becomes
+/// visible again ("reset to default"). A file that exists *only* in the
+/// archive cannot be removed ([`VfsError::ReadOnlyBackend`]).
 pub struct HybridBackend {
     packed: PackedBackend,
     overlay: LooseBackend,
@@ -65,16 +71,28 @@ impl Backend for HybridBackend {
     }
 
     fn list_dir(&self, rel: &Utf8Path) -> Result<Vec<Utf8PathBuf>, VfsError> {
-        let mut out = self.packed.list_dir(rel).unwrap_or_default();
-        if let Ok(loose_entries) = self.overlay.list_dir(rel) {
-            for entry in loose_entries {
-                if !out.contains(&entry) {
-                    out.push(entry);
+        // "Not there" in one layer is normal (a directory may exist only in
+        // the archive or only in the overlay); any other error is real and
+        // is reported instead of silently yielding a partial listing.
+        let mut layers = Vec::new();
+        let mut first_not_found = None;
+        for result in [self.packed.list_dir(rel), self.overlay.list_dir(rel)] {
+            match result {
+                Ok(entries) => layers.push(entries),
+                Err(e) if e.is_not_found() => {
+                    first_not_found.get_or_insert(e);
                 }
+                Err(e) => return Err(e),
             }
         }
-        out.sort();
-        out.dedup();
-        Ok(out)
+        if layers.is_empty() {
+            return Err(first_not_found.unwrap_or_else(|| VfsError::NotFound {
+                root: self.root(),
+                path: rel.to_path_buf(),
+            }));
+        }
+
+        let merged: BTreeSet<Utf8PathBuf> = layers.into_iter().flatten().collect();
+        Ok(merged.into_iter().collect())
     }
 }
