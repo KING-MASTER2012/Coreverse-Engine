@@ -1,6 +1,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use std::fs::{self, File};
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::{FileSystem, FsMetadata, MmapHandle, ReadSeek};
 
@@ -9,6 +10,18 @@ use crate::{FileSystem, FsMetadata, MmapHandle, ReadSeek};
 /// directly, making them swappable (see [`crate::MemoryFileSystem`]) and
 /// testable without touching a real disk.
 pub struct OsFileSystem;
+
+/// A not-yet-existing sibling of `path` for write-then-rename.
+fn temp_sibling(path: &Utf8Path) -> Utf8PathBuf {
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let name = path.file_name().unwrap_or("file");
+    let unique = format!(
+        ".{name}.{}.{}.tmp",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    path.with_file_name(unique)
+}
 
 impl FileSystem for OsFileSystem {
     fn open_read(&self, path: &Utf8Path) -> io::Result<Box<dyn ReadSeek + Send>> {
@@ -50,11 +63,46 @@ impl FileSystem for OsFileSystem {
         let mut out = Vec::new();
         for entry in fs::read_dir(path)? {
             let entry = entry?;
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            out.push(path.join(name.as_ref()));
+            // A name that is not valid UTF-8 cannot be represented by
+            // `Utf8Path`. Converting it lossily would list a path (with
+            // U+FFFD in it) that does not exist and make distinct files
+            // collide, so such entries are skipped instead.
+            if let Ok(name) = entry.file_name().into_string() {
+                out.push(path.join(name));
+            }
         }
         Ok(out)
+    }
+
+    fn rename(&self, from: &Utf8Path, to: &Utf8Path) -> io::Result<()> {
+        fs::rename(from, to)
+    }
+
+    /// Crash-safe: the data goes to a temporary file in the same directory
+    /// that is flushed to disk and then renamed over `path`, so a crash or
+    /// full disk leaves either the old file or the new one - never a
+    /// truncated mix. (Writing *through* a symlink keeps the plain
+    /// in-place behaviour so the link itself is not replaced.)
+    fn write_bytes(&self, path: &Utf8Path, data: &[u8]) -> io::Result<()> {
+        if self.is_symlink(path) {
+            return self.open_write(path)?.write_all(data);
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let temp = temp_sibling(path);
+        let written = File::create(&temp).and_then(|mut file| {
+            file.write_all(data)?;
+            file.sync_all()
+        });
+        match written.and_then(|()| fs::rename(&temp, path)) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let _ = fs::remove_file(&temp);
+                Err(e)
+            }
+        }
     }
 
     fn canonicalize(&self, path: &Utf8Path) -> io::Result<Utf8PathBuf> {

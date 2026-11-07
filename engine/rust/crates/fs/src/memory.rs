@@ -78,6 +78,20 @@ impl FileSystem for MemoryFileSystem {
         Ok(())
     }
 
+    fn rename(&self, from: &Utf8Path, to: &Utf8Path) -> io::Result<()> {
+        let data = self
+            .files
+            .write()
+            .unwrap()
+            .remove(from)
+            .ok_or_else(|| Self::not_found(from))?;
+        if let Some(parent) = to.parent() {
+            self.mark_dir(parent);
+        }
+        self.files.write().unwrap().insert(to.to_path_buf(), data);
+        Ok(())
+    }
+
     fn remove_file(&self, path: &Utf8Path) -> io::Result<()> {
         self.files
             .write()

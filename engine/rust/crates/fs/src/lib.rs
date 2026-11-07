@@ -73,6 +73,19 @@ pub trait FileSystem: Send + Sync {
         false
     }
 
+    /// Moves `from` to `to`, replacing `to` if it exists.
+    ///
+    /// Implementations backed by a real filesystem make this atomic, which
+    /// is what lets callers write a file under a temporary name and publish
+    /// it in one step (no reader ever sees a half-written file). The
+    /// default is a non-atomic copy + remove for filesystems that cannot
+    /// do better.
+    fn rename(&self, from: &Utf8Path, to: &Utf8Path) -> io::Result<()> {
+        let data = self.read_bytes(from)?;
+        self.write_bytes(to, &data)?;
+        self.remove_file(from)
+    }
+
     // --- Convenience defaults built on the primitives above ---
     // Most callers just want whole-file bytes/strings and shouldn't have
     // to write a manual stream loop for that.
