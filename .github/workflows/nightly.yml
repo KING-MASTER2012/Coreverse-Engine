@@ -1,16 +1,18 @@
 name: Nightly
 
 on:
-  schedule:
-    - cron: "0 2 * * *"
+    schedule:
+        - cron: "0 2 * * *"
 
 jobs:
-  nightly:
-    runs-on: ubuntu-latest
+    nightly:
+        runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v7
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: dtolnay/rust-toolchain@stable
+            - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+              with:
+                  toolchain: stable
 
-      - run: cargo test --workspace
+            - run: cargo test --workspace

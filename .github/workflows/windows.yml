@@ -1,21 +1,21 @@
 name: Windows
 
 on:
-  workflow_call:
+    workflow_call:
 
 permissions:
-  contents: read
+    contents: read
 
 jobs:
-  setup:
-    name: Windows Setup
-    runs-on: windows-latest
+    setup:
+        name: Windows Setup
+        runs-on: windows-latest
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Setup Windows environment
-        shell: pwsh
-        run: |
-          devkit/scripts/setup/powershell/bootstrap.ps1
+            - name: Setup Windows environment
+              shell: pwsh
+              run: |
+                  devkit/scripts/setup/powershell/bootstrap.ps1

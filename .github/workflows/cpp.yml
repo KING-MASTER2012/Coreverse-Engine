@@ -34,7 +34,7 @@ jobs:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         steps:
-            - uses: actions/checkout@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
             # Qt's "xcb" platform plugin is only built when the xcb/xkbcommon
             # DEVELOPMENT packages are present at the moment vcpkg compiles
@@ -206,7 +206,7 @@ jobs:
         runs-on: windows-latest
 
         steps:
-            - uses: actions/checkout@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
             - name: Bootstrap
               shell: pwsh
@@ -251,7 +251,7 @@ jobs:
         runs-on: macos-latest
 
         steps:
-            - uses: actions/checkout@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
             # The default developer dir on the runner can pair a newer
             # Command Line Tools SDK (MacOSX27.0.sdk) with an older linker, so

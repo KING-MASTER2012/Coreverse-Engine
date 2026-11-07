@@ -1,28 +1,30 @@
 name: Release
 
 on:
-  release:
-    types:
-      - published
+    release:
+        types:
+            - published
 
 permissions:
-  contents: write
+    contents: write
 
 jobs:
-  release:
-    strategy:
-      matrix:
-        os:
-          - windows-latest
-          - ubuntu-latest
-          - macos-latest
+    release:
+        strategy:
+            matrix:
+                os:
+                    - windows-latest
+                    - ubuntu-latest
+                    - macos-latest
 
-    runs-on: ${{ matrix.os }}
+        runs-on: ${{ matrix.os }}
 
-    steps:
-      - uses: actions/checkout@v7
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: dtolnay/rust-toolchain@stable
+            - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+              with:
+                  toolchain: stable
 
-      - name: Build
-        run: cargo build --release
+            - name: Build
+              run: cargo build --release

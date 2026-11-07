@@ -1,19 +1,19 @@
 name: Deploy
 
 on:
-  workflow_dispatch:
+    workflow_dispatch:
 
 permissions:
-  contents: read
+    contents: read
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+    deploy:
+        runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v7
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Deployment Placeholder
-        run: |
-          echo "Deploy workflow is configured."
-          echo "Replace this step with your deployment process."
+            - name: Deployment Placeholder
+              run: |
+                  echo "Deploy workflow is configured."
+                  echo "Replace this step with your deployment process."
