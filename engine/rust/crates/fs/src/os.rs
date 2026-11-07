@@ -57,6 +57,20 @@ impl FileSystem for OsFileSystem {
         Ok(out)
     }
 
+    fn canonicalize(&self, path: &Utf8Path) -> io::Result<Utf8PathBuf> {
+        let resolved = fs::canonicalize(path)?;
+        Utf8PathBuf::from_path_buf(resolved).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "canonical path is not valid UTF-8",
+            )
+        })
+    }
+
+    fn is_symlink(&self, path: &Utf8Path) -> bool {
+        fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+    }
+
     #[allow(
         unsafe_code,
         reason = "memmap2::Mmap::map is an unsafe fn with no safe equivalent; \

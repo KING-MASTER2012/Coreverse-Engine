@@ -54,6 +54,25 @@ pub trait FileSystem: Send + Sync {
     /// into a `Vec<u8>` up front would be wasteful.
     fn mmap_read(&self, path: &Utf8Path) -> io::Result<MmapHandle>;
 
+    /// Resolves `path` to an absolute, symlink-free form, like
+    /// [`std::fs::canonicalize`]. Fails with [`io::ErrorKind::NotFound`] if
+    /// the path (or a dangling symlink target) does not exist.
+    ///
+    /// Containment checks (see `vfs`'s `LooseBackend`) rely on this to
+    /// detect symlinks that lead out of a root. The default implementation
+    /// returns the path unchanged, which is correct for filesystems that
+    /// cannot contain symlinks (such as [`MemoryFileSystem`]).
+    fn canonicalize(&self, path: &Utf8Path) -> io::Result<Utf8PathBuf> {
+        Ok(path.to_path_buf())
+    }
+
+    /// Whether `path` itself (not its target) is a symbolic link. Returns
+    /// `false` if it does not exist or cannot be inspected. Filesystems
+    /// without symlinks keep the default `false`.
+    fn is_symlink(&self, _path: &Utf8Path) -> bool {
+        false
+    }
+
     // --- Convenience defaults built on the primitives above ---
     // Most callers just want whole-file bytes/strings and shouldn't have
     // to write a manual stream loop for that.

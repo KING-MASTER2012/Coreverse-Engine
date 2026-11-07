@@ -54,6 +54,7 @@ pub fn read_bytes(path: &VfsPath) -> Result<Vec<u8>, VfsError> {
 /// Writes `data` to `path`, creating or truncating it. Fails if `path`'s
 /// root is backed by a read-only backend.
 pub fn write_bytes(path: &VfsPath, data: &[u8]) -> Result<(), VfsError> {
+    reject_root(path, "written to")?;
     VfsContext::global()?
         .backend(path.root())?
         .write_bytes(path.rel(), data)
@@ -69,6 +70,7 @@ pub fn exists(path: &VfsPath) -> Result<bool, VfsError> {
 /// Deletes the file at `path`. Fails if `path`'s root is backed by a
 /// read-only backend.
 pub fn remove(path: &VfsPath) -> Result<(), VfsError> {
+    reject_root(path, "removed")?;
     VfsContext::global()?
         .backend(path.root())?
         .remove(path.rel())
@@ -107,4 +109,17 @@ pub fn new_temp_path(name_hint: &str) -> Result<VfsPath, VfsError> {
 
     let unique = format!("{}_{}_{}", std::process::id(), seq, name_hint);
     VfsPath::new(Root::Temp, unique)
+}
+
+/// Refuses destructive operations on a root directory itself. An empty (or
+/// `.`) relative path is valid for listing a root, but `remove` on it would
+/// otherwise delete everything the root contains.
+fn reject_root(path: &VfsPath, action: &str) -> Result<(), VfsError> {
+    if path.is_root() {
+        return Err(VfsError::InvalidPath(format!(
+            "the root of {:?} cannot be {action}; address a path inside it",
+            path.root()
+        )));
+    }
+    Ok(())
 }

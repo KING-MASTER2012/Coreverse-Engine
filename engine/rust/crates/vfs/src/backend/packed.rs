@@ -54,11 +54,22 @@ impl PackedBackend {
                 root: self.root,
                 path: rel.to_path_buf(),
             })?;
-        let start = (self.index.data_start + entry.offset) as usize;
-        let end = start + entry.len as usize;
-        self.mmap.get(start..end).ok_or_else(|| {
-            VfsError::CorruptArchive(format!("entry '{rel}' points outside archive bounds"))
-        })
+        // Offsets come from the archive (untrusted), so every step is checked:
+        // plain `+`/`as` would wrap in release builds and could point an
+        // entry at the header or at another entry's data.
+        let out_of_bounds =
+            || VfsError::CorruptArchive(format!("entry '{rel}' points outside archive bounds"));
+        let start = self
+            .index
+            .data_start
+            .checked_add(entry.offset)
+            .and_then(|start| usize::try_from(start).ok())
+            .ok_or_else(out_of_bounds)?;
+        let end = usize::try_from(entry.len)
+            .ok()
+            .and_then(|len| start.checked_add(len))
+            .ok_or_else(out_of_bounds)?;
+        self.mmap.get(start..end).ok_or_else(out_of_bounds)
     }
 }
 

@@ -136,10 +136,24 @@ pub struct PackedIndex {
     pub data_start: u64,
 }
 
+/// Smallest possible index entry on disk: root id (1) + path length (2) +
+/// empty path (0) + data offset (8) + data length (8).
+const MIN_ENTRY_BYTES: u64 = 1 + 2 + 8 + 8;
+
+/// Most index entries reserved up front while reading, regardless of what
+/// the header claims.
+const MAX_PREALLOCATED_ENTRIES: usize = 4096;
+
 /// Reads and parses just the header/index of a `.coreproject` file - does
 /// not touch the (potentially large) data section. [`crate::backend::packed::PackedBackend`]
 /// maps that separately via `fs.mmap_read`.
+///
+/// The archive is untrusted input (mods), so the header is validated
+/// against the real file size: the entry count cannot demand more bytes than
+/// the file holds (no giant up-front allocation), and every entry's data
+/// range must lie inside the data section (no overflowing offsets).
 pub fn read_index(fs: &dyn FileSystem, path: &Utf8Path) -> Result<PackedIndex, VfsError> {
+    let file_len = fs.metadata(path).map_err(|e| io_err(path, e))?.len;
     let mut file = fs.open_read(path).map_err(|e| io_err(path, e))?;
 
     let mut magic = [0u8; 4];
@@ -161,7 +175,18 @@ pub fn read_index(fs: &dyn FileSystem, path: &Utf8Path) -> Result<PackedIndex, V
     file.read_exact(&mut u32_buf).map_err(|e| io_err(path, e))?;
     let count = u32::from_le_bytes(u32_buf);
 
-    let mut entries = HashMap::with_capacity(count as usize);
+    // Every index entry takes at least MIN_ENTRY_BYTES, so a count the file
+    // cannot possibly hold is corrupt (or hostile) - reject it before
+    // allocating anything sized by it.
+    if u64::from(count).saturating_mul(MIN_ENTRY_BYTES) > file_len {
+        return Err(VfsError::CorruptArchive(format!(
+            "'{path}' claims {count} entries but is only {file_len} bytes long"
+        )));
+    }
+
+    // Capacity is capped: `count` is only trusted as far as the entries
+    // actually parsed, the map grows from there.
+    let mut entries = HashMap::with_capacity((count as usize).min(MAX_PREALLOCATED_ENTRIES));
     let mut u16_buf = [0u8; 2];
     let mut u64_buf = [0u8; 8];
 
@@ -192,6 +217,21 @@ pub fn read_index(fs: &dyn FileSystem, path: &Utf8Path) -> Result<PackedIndex, V
     }
 
     let data_start = file.stream_position().map_err(|e| io_err(path, e))?;
+
+    let data_len = file_len
+        .checked_sub(data_start)
+        .ok_or_else(|| VfsError::CorruptArchive(format!("'{path}' ends inside its index")))?;
+    for ((_, rel), entry) in &entries {
+        let in_bounds = entry
+            .offset
+            .checked_add(entry.len)
+            .is_some_and(|end| end <= data_len);
+        if !in_bounds {
+            return Err(VfsError::CorruptArchive(format!(
+                "entry '{rel}' in '{path}' extends past the end of the file"
+            )));
+        }
+    }
 
     Ok(PackedIndex {
         entries,
