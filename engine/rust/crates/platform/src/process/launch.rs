@@ -63,7 +63,62 @@ pub(crate) fn validate_url(url: &str) -> Result<()> {
             "URL contains whitespace or control characters".to_owned(),
         ));
     }
+
+    if scheme.eq_ignore_ascii_case("mailto") {
+        if mailto_requests_attachment(rest) {
+            return Err(invalid_input(
+                "mailto: URLs may not attach files (attach/attachment parameter)".to_owned(),
+            ));
+        }
+    } else {
+        // http(s) needs `//` and a host. Without it (`http:C:\x`,
+        // `http:/path`) the shell may read the rest as a local path, and a
+        // backslash is treated like `/` by Windows URL handling.
+        let host = rest.strip_prefix("//").unwrap_or("");
+        if host.is_empty() || host.starts_with(['/', '?', '#']) || rest.contains('\\') {
+            return Err(invalid_input(format!(
+                "{url:?} is not a valid {scheme} URL: expected '{scheme}://<host>...'"
+            )));
+        }
+    }
     Ok(())
+}
+
+/// Whether a `mailto:` target (everything after the scheme) asks the mail
+/// client to attach a file. Several clients honour a non-standard
+/// `attach=<local path>` parameter, which would let a link send local files.
+fn mailto_requests_attachment(target: &str) -> bool {
+    let Some((_, query)) = target.split_once('?') else {
+        return false;
+    };
+    query.split(['&', ';']).any(|pair| {
+        let name = pair.split_once('=').map_or(pair, |(name, _)| name);
+        let name = percent_decode_lossy(name).to_ascii_lowercase();
+        name == "attach" || name == "attachment"
+    })
+}
+
+/// Decodes `%XX` escapes (invalid ones are kept as they are).
+fn percent_decode_lossy(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let hex = |byte: u8| char::from(byte).to_digit(16);
+        if bytes[index] == b'%'
+            && let (Some(high), Some(low)) = (
+                bytes.get(index + 1).copied().and_then(hex),
+                bytes.get(index + 2).copied().and_then(hex),
+            )
+        {
+            out.push((high * 16 + low) as u8);
+            index += 3;
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// A program and its arguments.
@@ -141,6 +196,8 @@ mod tests {
             "http://localhost:8080/",
             "HTTPS://EXAMPLE.COM",
             "mailto:team@example.com?subject=Hello%20there",
+            "mailto:team@example.com?subject=a&body=b",
+            "https://user@example.com:8443/a?b=c",
         ] {
             validate_url(url).unwrap_or_else(|e| panic!("{url}: {e}"));
         }
@@ -171,6 +228,35 @@ mod tests {
                 "{url:?}: {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn web_urls_need_a_host() {
+        for url in [
+            "http:C:\\Windows\\notepad.exe",
+            "https:/only-one-slash.example",
+            "http:relative",
+            "https:///no-host",
+            "http://?query",
+            "https://example.com\\evil",
+        ] {
+            assert!(validate_url(url).is_err(), "{url:?}");
+        }
+    }
+
+    #[test]
+    fn mailto_cannot_attach_local_files() {
+        for url in [
+            "mailto:a@b.c?attach=C:/secret.txt",
+            "mailto:a@b.c?subject=x&ATTACH=/etc/passwd",
+            "mailto:a@b.c?attachment=/etc/passwd",
+            "mailto:a@b.c?%61ttach=/etc/passwd",
+            "mailto:a@b.c?subject=x;attach=/etc/passwd",
+        ] {
+            assert!(validate_url(url).is_err(), "{url:?}");
+        }
+        // A value that merely mentions the word is fine.
+        validate_url("mailto:a@b.c?subject=please%20attach%20the%20report").unwrap();
     }
 
     #[test]
