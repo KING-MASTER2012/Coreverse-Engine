@@ -61,7 +61,7 @@ fn windows(kind: DirKind, app: &str, s: &Sources<'_>) -> Result<Utf8PathBuf> {
             ORGANIZATION,
             app,
         )
-            .join(sub))
+        .join(sub))
     };
     match kind {
         DirKind::Home => (s.home)(),
@@ -72,7 +72,7 @@ fn windows(kind: DirKind, app: &str, s: &Sources<'_>) -> Result<Utf8PathBuf> {
             ORGANIZATION,
             app,
         )
-            .join("config")),
+        .join("config")),
         DirKind::Data => local("data"),
         DirKind::Cache => local("cache"),
         DirKind::Log => local("log"),

@@ -545,7 +545,7 @@ mod tests {
             Key::Unidentified,
             ButtonState::Pressed,
         )
-            .with_text("é");
+        .with_text("é");
         s.handle_input(&InputEvent::Key(event));
         assert_eq!(s.pressed_keys().count(), 0);
         assert_eq!(s.text(), "é");

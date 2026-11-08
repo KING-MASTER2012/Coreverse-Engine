@@ -241,10 +241,10 @@ fn is_windows_device_name(name: &str) -> bool {
     let upper = stem.to_ascii_uppercase();
     matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
         || ["COM", "LPT"].iter().any(|prefix| {
-        upper
-            .strip_prefix(prefix)
-            .is_some_and(|digit| matches!(digit.as_bytes(), [b'1'..=b'9']))
-    })
+            upper
+                .strip_prefix(prefix)
+                .is_some_and(|digit| matches!(digit.as_bytes(), [b'1'..=b'9']))
+        })
 }
 
 fn create(path: Utf8PathBuf) -> Result<Utf8PathBuf> {

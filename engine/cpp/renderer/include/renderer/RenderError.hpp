@@ -15,6 +15,9 @@ enum class RenderErrorCode {
     NoSuitableDevice,     ///< No physical device met minimum requirements.
     OutOfMemory,
     DeviceLost,
+    SurfaceLost, ///< The presentation surface is gone (VK_ERROR_SURFACE_LOST_KHR: Android pause/resume, a monitor
+                 ///< change, a window re-created by the OS). The device is fine: destroy the swapchain and surface
+                 ///< and create them again from the window.
     ZeroExtent, ///< The surface currently has a 0x0 extent (e.g. a minimized window): nothing can be presented until it
                 ///< has a size again — not a failure of the device or the surface.
     Unsupported, ///< The device/driver lacks a required feature (e.g. Vulkan 1.3 dynamic rendering.md for the graphics

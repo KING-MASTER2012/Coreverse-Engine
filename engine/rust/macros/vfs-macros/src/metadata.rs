@@ -25,7 +25,7 @@ pub fn metadata_impl(input: TokenStream) -> TokenStream {
                 &path,
                 "CARGO_MANIFEST_DIR is not set; cannot resolve VFS path at compile time.",
             )
-                .to_compile_error();
+            .to_compile_error();
         }
     };
     let full_path: Utf8PathBuf = Utf8PathBuf::from(manifest_dir).join(&relative);
@@ -36,7 +36,7 @@ pub fn metadata_impl(input: TokenStream) -> TokenStream {
                 &path,
                 format!("Failed to read metadata for '{full_path}': {err}"),
             )
-                .to_compile_error();
+            .to_compile_error();
         }
     };
     let size = meta.len();

@@ -26,6 +26,12 @@ constexpr const char* kValidationLayerName = "VK_LAYER_KHRONOS_validation";
 /// images back.
 constexpr std::uint64_t kFrameAcquireTimeoutNs = 100'000'000; // 100 ms
 
+/// How long the CPU waits for the GPU to finish a frame's work (a fence) before it gives up. A frame
+/// that does not finish within this is a hung GPU, not a slow one (an OS driver watchdog resets the GPU
+/// after a couple of seconds anyway); waiting forever (UINT64_MAX) would freeze the application with no
+/// way to recover, whereas reporting DeviceLost lets the render loop rebuild the device.
+constexpr std::uint64_t kFenceWaitTimeoutNs = 10'000'000'000; // 10 s
+
 /// Turns a failed Vulkan call into a RenderError. Device loss and memory
 /// exhaustion get their own codes (a render loop reacts to them very
 /// differently from anything else); everything else keeps `fallback`, and
@@ -37,6 +43,9 @@ RenderError MakeVkError(RenderErrorCode fallback, const char* call, VkResult res
         case VK_ERROR_DEVICE_LOST:
             code = RenderErrorCode::DeviceLost;
             break;
+        case VK_ERROR_SURFACE_LOST_KHR:
+            code = RenderErrorCode::SurfaceLost;
+            break;
         case VK_ERROR_OUT_OF_HOST_MEMORY:
         case VK_ERROR_OUT_OF_DEVICE_MEMORY:
             code = RenderErrorCode::OutOfMemory;
@@ -45,6 +54,24 @@ RenderError MakeVkError(RenderErrorCode fallback, const char* call, VkResult res
             break;
     }
     return RenderError{code, std::string(call) + " failed (VkResult=" + std::to_string(result) + ")"};
+}
+
+/// vkWaitForFences with kFenceWaitTimeoutNs; a timeout is reported as DeviceLost.
+std::expected<void, RenderError> WaitForFence(VkDevice device, VkFence fence)
+{
+    const VkResult result = vkWaitForFences(device, 1, &fence, VK_TRUE, kFenceWaitTimeoutNs);
+    if (result == VK_SUCCESS) {
+        return {};
+    }
+    if (result == VK_TIMEOUT) {
+        return std::unexpected(
+            RenderError{
+                RenderErrorCode::DeviceLost,
+                "vkWaitForFences timed out after 10 s: the GPU is not finishing its work (hung?)"
+            }
+        );
+    }
+    return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vkWaitForFences", result));
 }
 
 /// Pairs the two handles VMA needs to free a buffer. Buffer.hpp only
@@ -58,6 +85,10 @@ struct VulkanBufferHandle {
     /// an integrated GPU, so Buffer::Write() goes by what was asked for, not by what the driver
     /// happened to hand out - the same code behaves the same on every device.
     bool hostAccess;
+    /// The buffer's memory, mapped for as long as the buffer lives (VMA_ALLOCATION_CREATE_MAPPED_BIT),
+    /// so a Write() is a memcpy instead of a map/unmap pair. Null if the driver gave no mapping; Write()
+    /// then maps on demand.
+    void* mapped = nullptr;
 };
 
 /// Everything Phase 5.4's swapchain owns beyond the VkSwapchainKHR handle
@@ -951,17 +982,19 @@ std::expected<Buffer, RenderError> VulkanRenderDevice::CreateBuffer(const Buffer
             break;
         case BufferMemoryUsage::CpuToGpu:
             allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
             break;
         case BufferMemoryUsage::GpuToCpu:
             allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
             break;
     }
 
     VkBuffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
-    if (const VkResult result = vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
+    VmaAllocationInfo allocationInfo{};
+    if (const VkResult result =
+            vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer, &allocation, &allocationInfo);
         result != VK_SUCCESS) {
         return std::unexpected(
             RenderError{
@@ -973,7 +1006,9 @@ std::expected<Buffer, RenderError> VulkanRenderDevice::CreateBuffer(const Buffer
     // Buffer only stores a backend-agnostic void*; this heap-allocated
     // pair is what the Vulkan backend puts behind it so ReleaseBuffer()
     // can hand both handles back to VMA later.
-    auto* handle = new VulkanBufferHandle{buffer, allocation, desc.memoryUsage != BufferMemoryUsage::GpuOnly};
+    auto* handle = new VulkanBufferHandle{
+        buffer, allocation, desc.memoryUsage != BufferMemoryUsage::GpuOnly, allocationInfo.pMappedData
+    };
     return RenderDevice::MakeBuffer(this, handle, desc.size);
 }
 
@@ -1190,7 +1225,7 @@ VulkanRenderDevice::AcquireSwapchainImage(void* nativeHandle, void* signalSemaph
 
     if (fence != VK_NULL_HANDLE) {
         if (acquireResult == VK_SUCCESS || acquireResult == VK_SUBOPTIMAL_KHR) {
-            vkWaitForFences(m_device, 1, &fence, VK_TRUE, UINT64_MAX);
+            vkWaitForFences(m_device, 1, &fence, VK_TRUE, kFenceWaitTimeoutNs);
         }
         vkDestroyFence(m_device, fence, nullptr);
     }
@@ -1543,9 +1578,8 @@ VulkanRenderDevice::BeginFrameSync(void* frameSyncHandle, Swapchain& swapchain) 
 
     // The GPU is done with this slot's previous frame — and so with its
     // acquire semaphore and its command buffer — once its fence passed.
-    if (const VkResult result = vkWaitForFences(m_device, 1, &slot.inFlight, VK_TRUE, UINT64_MAX);
-        result != VK_SUCCESS) {
-        return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vkWaitForFences", result));
+    if (auto waited = WaitForFence(m_device, slot.inFlight); !waited) {
+        return std::unexpected(std::move(waited.error()));
     }
 
     // Nothing is modified until the acquire succeeded: OutOfDate/NotReady
@@ -1583,9 +1617,8 @@ VulkanRenderDevice::BeginFrameSync(void* frameSyncHandle, Swapchain& swapchain) 
     // a frame of another slot.
     if (const VkFence previous = fs->imageInFlight[imageIndex];
         previous != VK_NULL_HANDLE && previous != slot.inFlight) {
-        if (const VkResult result = vkWaitForFences(m_device, 1, &previous, VK_TRUE, UINT64_MAX);
-            result != VK_SUCCESS) {
-            return failFrame(MakeVkError(RenderErrorCode::Unknown, "vkWaitForFences", result));
+        if (auto waited = WaitForFence(m_device, previous); !waited) {
+            return failFrame(std::move(waited.error()));
         }
     }
     fs->imageInFlight[imageIndex] = slot.inFlight;
@@ -1800,15 +1833,20 @@ VulkanRenderDevice::WriteBufferData(void* bufferHandle, const void* data, std::s
             RenderError{RenderErrorCode::Unsupported, "Buffer::Write needs a host-visible buffer (not GpuOnly)"}
         );
     }
-    void* mapped = nullptr;
-    if (const VkResult result = vmaMapMemory(m_allocator, handle->allocation, &mapped); result != VK_SUCCESS) {
-        return std::unexpected(
-            RenderError{RenderErrorCode::Unsupported, "Buffer::Write needs a host-visible buffer (not GpuOnly)"}
-        );
+    // Persistently mapped at creation; only a driver that gave no mapping needs the map/unmap pair.
+    void* mapped = handle->mapped;
+    const bool mappedHere = mapped == nullptr;
+    if (mappedHere) {
+        if (const VkResult result = vmaMapMemory(m_allocator, handle->allocation, &mapped); result != VK_SUCCESS) {
+            // Out of memory and device loss keep their codes; the call itself names what failed.
+            return std::unexpected(MakeVkError(RenderErrorCode::Unknown, "vmaMapMemory", result));
+        }
     }
     std::memcpy(static_cast<char*>(mapped) + offset, data, size);
     vmaFlushAllocation(m_allocator, handle->allocation, offset, size); // no-op on coherent memory
-    vmaUnmapMemory(m_allocator, handle->allocation);
+    if (mappedHere) {
+        vmaUnmapMemory(m_allocator, handle->allocation);
+    }
     return {};
 }
 
