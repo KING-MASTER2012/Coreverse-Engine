@@ -213,9 +213,10 @@ impl<S: Scalar, const N: usize> ArcLengthTable<S, N> {
 
     /// The distance travelled along the curve when the parameter is `t`.
     /// `t` is clamped to the table's domain, so this is `0` at or before `t0`
-    /// and [`ArcLengthTable::total_length`] at or after `t1`.
+    /// and [`ArcLengthTable::total_length`] at or after `t1`. A `NaN` `t` is
+    /// treated as the start (`0`) rather than propagated.
     pub fn length_at(&self, t: S) -> S {
-        if t <= self.t0 {
+        if t.is_nan() || t <= self.t0 {
             return S::ZERO;
         }
         if t >= self.t1 {
@@ -240,12 +241,13 @@ impl<S: Scalar, const N: usize> ArcLengthTable<S, N> {
 
     /// The parameter `t` at which the curve has travelled the distance
     /// `length`: the inverse of [`ArcLengthTable::length_at`]. `length` is
-    /// clamped to `0..=total_length()`. If the curve has no length at all
+    /// clamped to `0..=total_length()`; a `NaN` `length` is treated as `0`
+    /// (it used to index out of bounds). If the curve has no length at all
     /// (every point equal) the result is `t0`.
     pub fn t_at_length(&self, length: S) -> S {
         let total = self.total_length();
         if total > S::ZERO {
-            if length <= S::ZERO {
+            if length.is_nan() || length <= S::ZERO {
                 return self.t0;
             }
         } else {

@@ -22,6 +22,11 @@ pub struct Handle<T> {
 
 impl<T> Handle<T> {
     /// Function that creates new Handle<T>
+    ///
+    /// Anyone may construct a handle, so a `Handle` is **not** proof that
+    /// anything is alive: the storage that owns the slots must compare the
+    /// generation on every access and reject mismatches. A forged or stale
+    /// handle is then just an invalid handle, never undefined behaviour.
     pub const fn new(index: u32, generation: u32) -> Self {
         Self {
             id: GenerationId::new(index, generation),
@@ -113,12 +118,18 @@ impl<T> WeakHandle<T> {
     pub const fn id(&self) -> GenerationId {
         self.id
     }
-    /// Function that upgrades self
-    pub const fn upgrade(&self) -> Handle<T> {
-        Handle {
+    /// Turns the weak handle back into a [`Handle`] if the slot it points at
+    /// still holds the same generation.
+    ///
+    /// A weak handle by itself cannot know whether its target is alive - only
+    /// the storage can - so the storage supplies that answer as `is_alive`
+    /// (typically "the slot's current generation equals `id`"). Returns
+    /// `None` when the target was freed or its slot recycled.
+    pub fn upgrade(&self, is_alive: impl FnOnce(GenerationId) -> bool) -> Option<Handle<T>> {
+        is_alive(self.id).then_some(Handle {
             id: self.id,
             _marker: PhantomData,
-        }
+        })
     }
 }
 
@@ -165,6 +176,16 @@ mod tests {
     fn downgrade_upgrade_roundtrips() {
         let handle: Handle<Texture> = Handle::new(3, 2);
         let weak = handle.downgrade();
-        assert_eq!(weak.upgrade(), handle);
+        assert_eq!(weak.upgrade(|_| true), Some(handle));
+    }
+
+    #[test]
+    fn upgrade_fails_once_the_slot_was_recycled() {
+        let handle: Handle<Texture> = Handle::new(3, 2);
+        let weak = handle.downgrade();
+        // The storage now holds generation 3 in slot 3.
+        let current = GenerationId::new(3, 3);
+        assert_eq!(weak.upgrade(|id| id == current), None);
+        assert!(weak.upgrade(|id| id == handle.id()).is_some());
     }
 }

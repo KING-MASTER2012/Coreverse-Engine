@@ -72,6 +72,9 @@ pub(super) fn perlin_3d_raw<S: NoiseScalar>(x: S, y: S, z: S, seed: u32) -> S {
 /// ```
 #[inline]
 pub fn perlin_2d<S: NoiseScalar>(x: S, y: S, seed: u32) -> S {
+    if !(x.is_finite() && y.is_finite()) {
+        return S::NAN;
+    }
     perlin_2d_raw(x, y, seed) * lit::<S>(PERLIN_2D_SCALE)
 }
 
@@ -87,5 +90,8 @@ pub fn perlin_2d<S: NoiseScalar>(x: S, y: S, seed: u32) -> S {
 /// ```
 #[inline]
 pub fn perlin_3d<S: NoiseScalar>(x: S, y: S, z: S, seed: u32) -> S {
+    if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+        return S::NAN;
+    }
     perlin_3d_raw(x, y, z, seed) * lit::<S>(PERLIN_3D_SCALE)
 }

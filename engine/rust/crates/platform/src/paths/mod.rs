@@ -127,8 +127,19 @@ impl AppDirs {
     ///
     /// Everything [`dir`](Self::dir) reports, and [`PlatformError::Io`] when
     /// the directory cannot be created.
+    ///
+    /// On Unix [`DirKind::Temp`] is created private to the user (mode
+    /// `0700`) and an existing directory is only accepted if it is a real
+    /// directory (not a symlink) owned by the current user and closed to
+    /// everyone else; otherwise this fails instead of handing out a place
+    /// another user could have prepared.
     pub fn ensure(&self, kind: DirKind) -> Result<Utf8PathBuf> {
-        create(self.dir(kind)?)
+        let path = self.dir(kind)?;
+        if kind == DirKind::Temp {
+            create_private(path)
+        } else {
+            create(path)
+        }
     }
 
     /// [`DirKind::Config`].
@@ -202,6 +213,8 @@ fn validate_app_name(app: &str) -> Result<()> {
         Some("is a relative directory name")
     } else if app.ends_with([' ', '.']) {
         Some("ends in a space or a dot")
+    } else if is_windows_device_name(app) {
+        Some("is a reserved Windows device name (CON, NUL, COM1, ...)")
     } else if app.chars().any(|c| {
         c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
     }) {
@@ -218,9 +231,93 @@ fn validate_app_name(app: &str) -> Result<()> {
     }
 }
 
+/// Whether `name` is one of the DOS device names Windows reserves in every
+/// directory (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`),
+/// with or without an extension and in any case: a directory called that
+/// cannot be created or opened there. Rejected on every platform so an
+/// application name is portable.
+fn is_windows_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).trim_end();
+    let upper = stem.to_ascii_uppercase();
+    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|prefix| {
+        upper
+            .strip_prefix(prefix)
+            .is_some_and(|digit| matches!(digit.as_bytes(), [b'1'..=b'9']))
+    })
+}
+
 fn create(path: Utf8PathBuf) -> Result<Utf8PathBuf> {
     std::fs::create_dir_all(&path)?;
     Ok(path)
+}
+
+/// Creates `path` for the current user alone and checks that it really is
+/// theirs. Where there are no Unix permissions this is [`create`].
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "ios"
+))]
+fn create_private(path: Utf8PathBuf) -> Result<Utf8PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&path)?;
+
+    // `symlink_metadata`: a symlink planted at this name must not pass.
+    let meta = std::fs::symlink_metadata(&path)?;
+    let unsafe_reason = if !meta.is_dir() {
+        Some("is not a directory (or is a symlink)")
+    } else if meta.uid() != crate::sys::effective_uid() {
+        Some("is owned by another user")
+    } else if meta.mode() & 0o077 != 0 {
+        Some("is accessible to other users")
+    } else {
+        None
+    };
+    match unsafe_reason {
+        None => Ok(path),
+        Some(reason) => Err(PlatformError::unusable(
+            "temp directory",
+            format!("{path} {reason}; refusing to use it"),
+        )),
+    }
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "ios"
+)))]
+fn create_private(path: Utf8PathBuf) -> Result<Utf8PathBuf> {
+    create(path)
+}
+
+/// The id of the current user, on platforms that have one.
+fn user_id() -> Option<u32> {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    ))]
+    {
+        Some(crate::sys::effective_uid())
+    }
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    )))]
+    {
+        None
+    }
 }
 
 pub(crate) fn utf8(path: std::path::PathBuf) -> Result<Utf8PathBuf> {
@@ -266,6 +363,7 @@ fn system_sources() -> Sources<'static> {
         temp: &|| utf8(std::env::temp_dir()),
         executable_dir: &executable_dir,
         known_folder: &known_folder,
+        user_id: &user_id,
     }
 }
 
@@ -344,6 +442,42 @@ mod tests {
         assert!(dirs.home().unwrap().is_absolute());
         let exe_dir = dirs.executable_dir().unwrap();
         assert!(exe_dir.is_dir(), "{exe_dir}");
+    }
+
+    #[test]
+    fn rejects_windows_device_names_on_every_platform() {
+        for name in [
+            "CON", "con", "Nul", "aux.txt", "PRN", "COM1", "lpt9", "com3.log",
+        ] {
+            assert!(AppDirs::new(name).is_err(), "{name:?} must be rejected");
+        }
+        // Lookalikes that are fine.
+        for name in ["CONSOLE", "COM0", "COM10", "LPT", "com", "nulled", "my.con"] {
+            assert!(AppDirs::new(name).is_ok(), "{name:?} must be accepted");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_temp_is_private_and_refuses_foreign_or_open_directories() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !desktop() {
+            return;
+        }
+        let app = format!("paths-private-test-{}", std::process::id());
+        let dirs = AppDirs::new(app.as_str()).unwrap();
+        let made = dirs.ensure(DirKind::Temp).unwrap();
+        let mode = std::fs::metadata(&made).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "mode {mode:o}: others must have no access");
+
+        // A directory someone left open is refused, not silently reused.
+        std::fs::set_permissions(&made, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(dirs.ensure(DirKind::Temp).is_err());
+
+        std::fs::remove_dir_all(&made).unwrap();
+        // Clean up the per-user parent too if we created it empty.
+        let _ = std::fs::remove_dir(made.parent().unwrap());
     }
 
     #[test]

@@ -282,6 +282,30 @@ fn coordinates_can_be_negative_or_huge_without_failing() {
 }
 
 #[test]
+fn non_finite_input_is_nan_for_every_function() {
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(perlin_2d(bad, 0.5, 1).is_nan());
+        assert!(perlin_3d(0.5, bad, 0.5, 1).is_nan());
+        assert!(simplex_2d(0.5, bad, 1).is_nan());
+        assert!(simplex_3d(0.5, 0.5, bad, 1).is_nan());
+    }
+}
+
+#[test]
+fn noise_keeps_varying_beyond_the_i32_range() {
+    // The cell index used to saturate at 2^31, freezing the noise (and
+    // giving the same value for every larger coordinate).
+    let values: [f64; 16] = core::array::from_fn(|i| perlin_2d(3.0e9 + i as f64 * 1.37, 0.5, 5));
+    let distinct = values
+        .iter()
+        .filter(|v| (**v - values[0]).abs() > 1e-9)
+        .count();
+    assert!(distinct > 8, "noise is frozen: {values:?}");
+    // The saturated value beyond 2^31 must not equal the one beyond 2^32.
+    assert_ne!(perlin_2d(3.0e9, 0.5, 5), perlin_2d(9.0e9, 0.5, 5));
+}
+
+#[test]
 fn f32_and_f64_agree() {
     let mut rng = Pcg32::new(7);
     for case in cases() {

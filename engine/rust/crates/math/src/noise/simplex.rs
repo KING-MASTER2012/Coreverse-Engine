@@ -104,7 +104,11 @@ pub(super) fn simplex_3d_raw<S: NoiseScalar>(x: S, y: S, z: S, seed: u32) -> S {
     };
     /// A 0/1 corner offset as the scalar.
     fn step<S: NoiseScalar>(bit: i32) -> S {
-        if bit == 0 { S::ZERO } else { S::ONE }
+        if bit == 0 {
+            S::ZERO
+        } else {
+            S::ONE
+        }
     }
     let two = unskew + unskew;
     let three = two + unskew;
@@ -125,32 +129,32 @@ pub(super) fn simplex_3d_raw<S: NoiseScalar>(x: S, y: S, z: S, seed: u32) -> S {
     );
     corner_3d(seed, i, j, k, x0, y0, z0)
         + corner_3d(
-            seed,
-            i.wrapping_add(i1),
-            j.wrapping_add(j1),
-            k.wrapping_add(k1),
-            x1,
-            y1,
-            z1,
-        )
+        seed,
+        i.wrapping_add(i1),
+        j.wrapping_add(j1),
+        k.wrapping_add(k1),
+        x1,
+        y1,
+        z1,
+    )
         + corner_3d(
-            seed,
-            i.wrapping_add(i2),
-            j.wrapping_add(j2),
-            k.wrapping_add(k2),
-            x2,
-            y2,
-            z2,
-        )
+        seed,
+        i.wrapping_add(i2),
+        j.wrapping_add(j2),
+        k.wrapping_add(k2),
+        x2,
+        y2,
+        z2,
+    )
         + corner_3d(
-            seed,
-            i.wrapping_add(1),
-            j.wrapping_add(1),
-            k.wrapping_add(1),
-            x3,
-            y3,
-            z3,
-        )
+        seed,
+        i.wrapping_add(1),
+        j.wrapping_add(1),
+        k.wrapping_add(1),
+        x3,
+        y3,
+        z3,
+    )
 }
 
 /// 2D simplex noise at `(x, y)`, in `-1..=1`.
@@ -170,6 +174,9 @@ pub(super) fn simplex_3d_raw<S: NoiseScalar>(x: S, y: S, z: S, seed: u32) -> S {
 /// ```
 #[inline]
 pub fn simplex_2d<S: NoiseScalar>(x: S, y: S, seed: u32) -> S {
+    if !(x.is_finite() && y.is_finite()) {
+        return S::NAN;
+    }
     simplex_2d_raw(x, y, seed) * lit::<S>(SIMPLEX_2D_SCALE)
 }
 
@@ -183,5 +190,8 @@ pub fn simplex_2d<S: NoiseScalar>(x: S, y: S, seed: u32) -> S {
 /// ```
 #[inline]
 pub fn simplex_3d<S: NoiseScalar>(x: S, y: S, z: S, seed: u32) -> S {
+    if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+        return S::NAN;
+    }
     simplex_3d_raw(x, y, z, seed) * lit::<S>(SIMPLEX_3D_SCALE)
 }

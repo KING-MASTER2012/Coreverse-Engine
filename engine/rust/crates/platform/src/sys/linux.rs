@@ -167,3 +167,11 @@ pub(crate) fn set_thread_priority(priority: ThreadPriority) -> Result<()> {
         _ => Err(PlatformError::last_os_error("setpriority")),
     }
 }
+
+/// The effective user id of this process (used to keep per-user directories
+/// in shared locations apart).
+pub(crate) fn effective_uid() -> u32 {
+    // SAFETY: `geteuid` takes no arguments, has no preconditions and cannot
+    // fail.
+    unsafe { libc::geteuid() }
+}

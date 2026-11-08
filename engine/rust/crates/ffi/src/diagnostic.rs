@@ -119,7 +119,7 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_set_module(
     module: *const c_char,
 ) -> bool {
     guard(false, || {
-        if module.is_null() {
+        if builder.is_null() || module.is_null() {
             return false;
         }
         // SAFETY: just checked non-null; caller guarantees a valid,
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_set_file(
     file: *const c_char,
 ) -> bool {
     guard(false, || {
-        if file.is_null() {
+        if builder.is_null() || file.is_null() {
             return false;
         }
         // SAFETY: just checked non-null; caller guarantees a valid,
@@ -184,6 +184,9 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_set_line(
     line: *const u32,
 ) -> bool {
     guard(false, || {
+        if builder.is_null() {
+            return false;
+        }
         // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
         let wrapper = unsafe { &mut *builder };
         let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
@@ -210,6 +213,9 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_set_persistent(
     persistent: bool,
 ) {
     guard((), || {
+        if builder.is_null() {
+            return;
+        }
         // SAFETY: caller guarantees `builder` is a live DiagnosticBuilder.
         let wrapper = unsafe { &mut *builder };
         let inner = wrapper.0.take().expect(CONSUMED_BUILDER);
@@ -239,7 +245,9 @@ pub unsafe extern "C" fn ffi_diagnostic_builder_emit(
     builder: *mut DiagnosticBuilder,
 ) -> bool {
     guard(false, || {
-        if builder.is_null() {
+        // A null `logger` fails *before* the builder is consumed, so the
+        // caller still owns it and must destroy it.
+        if logger.is_null() || builder.is_null() {
             return false;
         }
         // SAFETY: caller upholds the contract documented above — `builder`

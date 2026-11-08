@@ -58,7 +58,7 @@ pub(crate) fn os_version() -> Result<OsVersion> {
         } else {
             "macOS"
         }
-        .to_owned(),
+            .to_owned(),
         version: sysctl_string(c"kern.osproductversion")?,
         kernel: sysctl_string(c"kern.osrelease").ok(),
     })
@@ -128,4 +128,12 @@ pub(crate) fn set_thread_priority(priority: ThreadPriority) -> Result<()> {
             rc,
         ))
     }
+}
+
+/// The effective user id of this process (used to keep per-user directories
+/// in shared locations apart).
+pub(crate) fn effective_uid() -> u32 {
+    // SAFETY: `geteuid` takes no arguments, has no preconditions and cannot
+    // fail.
+    unsafe { libc::geteuid() }
 }

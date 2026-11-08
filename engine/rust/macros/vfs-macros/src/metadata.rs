@@ -25,7 +25,7 @@ pub fn metadata_impl(input: TokenStream) -> TokenStream {
                 &path,
                 "CARGO_MANIFEST_DIR is not set; cannot resolve VFS path at compile time.",
             )
-            .to_compile_error();
+                .to_compile_error();
         }
     };
     let full_path: Utf8PathBuf = Utf8PathBuf::from(manifest_dir).join(&relative);
@@ -36,7 +36,7 @@ pub fn metadata_impl(input: TokenStream) -> TokenStream {
                 &path,
                 format!("Failed to read metadata for '{full_path}': {err}"),
             )
-            .to_compile_error();
+                .to_compile_error();
         }
     };
     let size = meta.len();
@@ -51,10 +51,27 @@ pub fn metadata_impl(input: TokenStream) -> TokenStream {
             0
         }
     };
+    // Reproducible builds: a file's mtime differs between checkouts, which
+    // would make the binary differ too. When SOURCE_DATE_EPOCH is set (the
+    // convention for reproducible builds) no timestamp may be later than it.
+    let modified_unix = match env::var("SOURCE_DATE_EPOCH")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+    {
+        Some(epoch) => modified_unix.min(epoch),
+        None => modified_unix,
+    };
+    let tracked_path = full_path.as_str();
     let readonly = meta.permissions().readonly();
 
     quote! {
         {
+            // The values above are read while the macro runs, so Cargo must
+            // know to run it again when the file changes. Only `include_*!`
+            // registers a dependency on stable Rust; as an unused constant
+            // this adds nothing to the binary.
+            const _: &[u8] = include_bytes!(#tracked_path);
+
             #[derive(Debug, Clone, Copy)]
             #[allow(dead_code)]
             struct VfsFileMetadata {

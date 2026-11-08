@@ -77,6 +77,9 @@ pub unsafe extern "C" fn ffi_logger_destroy(logger: *mut Logger) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_logger_shutdown(logger: *mut Logger) {
     guard((), || {
+        if logger.is_null() {
+            return;
+        }
         // SAFETY: caller guarantees `logger` is a live Logger.
         unsafe { &*logger }.inner().shutdown();
     })
@@ -94,6 +97,9 @@ pub unsafe extern "C" fn ffi_logger_shutdown(logger: *mut Logger) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_logger_add_console_sink(logger: *mut Logger) -> bool {
     guard(false, || {
+        if logger.is_null() {
+            return false;
+        }
         // `ConsoleSink::new()` and `ConsoleSink::default()` are identical
         // (see log-sinks/src/console.rs) -- `Box::<ConsoleSink>::default()`
         // over `Box::new(ConsoleSink::new())` is what clippy::box_default
@@ -123,7 +129,7 @@ pub unsafe extern "C" fn ffi_logger_add_file_sink(
     project_root: *const c_char,
 ) -> bool {
     guard(false, || {
-        if project_root.is_null() {
+        if logger.is_null() || project_root.is_null() {
             return false;
         }
         // SAFETY: caller guarantees `project_root` is a valid,
@@ -155,6 +161,9 @@ pub unsafe extern "C" fn ffi_logger_add_file_sink(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_logger_set_min_severity(logger: *mut Logger, severity: u8) -> bool {
     guard(false, || {
+        if logger.is_null() {
+            return false;
+        }
         let Some(severity) = log_core::Severity::from_u8(severity) else {
             return false;
         };

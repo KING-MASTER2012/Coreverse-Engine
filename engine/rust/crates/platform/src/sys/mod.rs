@@ -11,14 +11,16 @@
 mod linux;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub(crate) use linux::{
-    os_version, physical_cores, set_thread_name, set_thread_priority, total_memory_bytes,
+    effective_uid, os_version, physical_cores, set_thread_name, set_thread_priority,
+    total_memory_bytes,
 };
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod apple;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub(crate) use apple::{
-    os_version, physical_cores, set_thread_name, set_thread_priority, total_memory_bytes,
+    effective_uid, os_version, physical_cores, set_thread_name, set_thread_priority,
+    total_memory_bytes,
 };
 
 #[cfg(all(feature = "winit", any(target_os = "macos", target_os = "ios")))]

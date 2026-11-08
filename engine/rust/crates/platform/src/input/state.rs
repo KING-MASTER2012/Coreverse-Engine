@@ -9,6 +9,23 @@ use super::key::{Key, KeyCode, KeyEvent, Modifiers};
 use super::pointer::{PointerPosition, ScrollDelta, TouchPhase, TouchPoint};
 use crate::window::WindowEvent;
 
+/// Most entries each per-frame list (`just pressed` keys, started touches,
+/// ...) keeps. The lists are emptied by [`InputState::end_frame`]; an
+/// application that never calls it (a headless tool, a paused loop) must not
+/// grow them without bound while events keep arriving.
+const MAX_PER_FRAME_ENTRIES: usize = 1024;
+
+/// Most bytes of typed text kept between two calls of
+/// [`InputState::end_frame`].
+const MAX_PER_FRAME_TEXT_BYTES: usize = 64 * 1024;
+
+/// Appends to a per-frame list unless it is full (the newest are dropped).
+fn push_capped<T>(list: &mut Vec<T>, item: T) {
+    if list.len() < MAX_PER_FRAME_ENTRIES {
+        list.push(item);
+    }
+}
+
 /// What is held, and what changed this frame, built from input events.
 ///
 /// Events say *what happened*; a game loop asks *what is the state now*. Feed
@@ -136,7 +153,9 @@ impl InputState {
                     };
                 }
                 ImeEvent::Commit(text) => {
-                    self.text.push_str(text);
+                    if self.text.len() < MAX_PER_FRAME_TEXT_BYTES {
+                        self.text.push_str(text);
+                    }
                     self.preedit = None;
                 }
             },
@@ -152,16 +171,18 @@ impl InputState {
                 if code != KeyCode::Unidentified && !self.keys.contains_key(&code) {
                     self.keys.insert(code, event.logical_key.clone());
                     self.keys_pressed.insert(code);
-                    self.logical_pressed.push(event.logical_key.clone());
+                    push_capped(&mut self.logical_pressed, event.logical_key.clone());
                 }
                 if let Some(text) = &event.text {
-                    self.text.extend(text.chars().filter(|c| !c.is_control()));
+                    if self.text.len() < MAX_PER_FRAME_TEXT_BYTES {
+                        self.text.extend(text.chars().filter(|c| !c.is_control()));
+                    }
                 }
             }
             ButtonState::Released => {
                 if let Some(logical) = self.keys.remove(&code) {
                     self.keys_released.insert(code);
-                    self.logical_released.push(logical);
+                    push_capped(&mut self.logical_released, logical);
                 }
             }
         }
@@ -176,7 +197,7 @@ impl InputState {
                     start_position: position,
                 };
                 self.touches.insert(id, point);
-                self.touches_started.push(point);
+                push_capped(&mut self.touches_started, point);
             }
             TouchPhase::Moved => {
                 if let Some(point) = self.touches.get_mut(&id) {
@@ -186,7 +207,7 @@ impl InputState {
             TouchPhase::Ended | TouchPhase::Cancelled => {
                 if let Some(mut point) = self.touches.remove(&id) {
                     point.position = position;
-                    self.touches_ended.push(point);
+                    push_capped(&mut self.touches_ended, point);
                 }
             }
         }
@@ -198,13 +219,14 @@ impl InputState {
     pub fn release_all(&mut self) {
         for (code, logical) in std::mem::take(&mut self.keys) {
             self.keys_released.insert(code);
-            self.logical_released.push(logical);
+            push_capped(&mut self.logical_released, logical);
         }
         for button in std::mem::take(&mut self.buttons) {
             self.buttons_released.insert(button);
         }
-        self.touches_ended
-            .extend(std::mem::take(&mut self.touches).into_values());
+        for point in std::mem::take(&mut self.touches).into_values() {
+            push_capped(&mut self.touches_ended, point);
+        }
         self.modifiers = Modifiers::NONE;
         self.preedit = None;
     }
@@ -439,6 +461,28 @@ mod tests {
     }
 
     #[test]
+    fn per_frame_lists_stay_bounded_when_end_frame_is_never_called() {
+        let mut s = InputState::new();
+        for id in 0..(MAX_PER_FRAME_ENTRIES as u64 * 3) {
+            s.handle_input(&touch(id, TouchPhase::Started, 1.0, 1.0));
+            s.handle_input(&touch(id, TouchPhase::Ended, 1.0, 1.0));
+        }
+        assert_eq!(s.touches_started.len(), MAX_PER_FRAME_ENTRIES);
+        assert_eq!(s.touches_ended.len(), MAX_PER_FRAME_ENTRIES);
+
+        let chunk = "x".repeat(1024);
+        for _ in 0..200 {
+            s.handle_input(&InputEvent::Ime(ImeEvent::Commit(chunk.clone())));
+        }
+        assert!(s.text().len() <= MAX_PER_FRAME_TEXT_BYTES + chunk.len());
+
+        // A frame boundary makes room again.
+        s.end_frame();
+        s.handle_input(&InputEvent::Ime(ImeEvent::Commit("again".to_owned())));
+        assert_eq!(s.text(), "again");
+    }
+
+    #[test]
     fn a_key_is_held_just_pressed_then_just_released() {
         let mut s = InputState::new();
         s.handle_input(&down(KeyCode::KeyW));
@@ -501,7 +545,7 @@ mod tests {
             Key::Unidentified,
             ButtonState::Pressed,
         )
-        .with_text("é");
+            .with_text("é");
         s.handle_input(&InputEvent::Key(event));
         assert_eq!(s.pressed_keys().count(), 0);
         assert_eq!(s.text(), "é");

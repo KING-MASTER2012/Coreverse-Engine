@@ -40,7 +40,8 @@
 //!   `f32`, keep them below about `10^5`).
 //! - **Generic over `f32` and `f64`** through [`NoiseScalar`].
 //! - **`no_std` and allocation-free**; no function panics, and a `NaN` or
-//!   infinite coordinate yields a finite or `NaN` value, never a crash.
+//!   infinite coordinate yields `NaN` (for every function, Perlin and
+//!   simplex alike), never a crash or a silent `0`.
 //!
 //! # Perlin or simplex?
 //!
@@ -67,22 +68,37 @@ pub use simplex::{simplex_2d, simplex_3d};
 /// a lattice index. Implemented for `f32` and `f64`.
 pub trait NoiseScalar: Scalar {
     /// The integer part of `self` rounded down, as the index of a lattice
-    /// cell. Values beyond the `i32` range saturate and `NaN` gives `0`, so
-    /// the noise functions never panic on bad input.
+    /// cell, wrapped into the `i32` range (so cells repeat every `2^32`
+    /// units instead of the noise freezing past `2^31`, as it did when the
+    /// conversion saturated). Beyond `2^63` the value saturates - there a
+    /// float has no fractional bits left anyway - and `NaN` gives `0`, so the
+    /// noise functions never panic on bad input.
     fn floor_to_i32(self) -> i32;
 }
 
 impl NoiseScalar for f32 {
     #[inline]
     fn floor_to_i32(self) -> i32 {
-        Scalar::floor(self) as i32
+        cell_index(Scalar::floor(self) as i64)
     }
 }
 
 impl NoiseScalar for f64 {
     #[inline]
     fn floor_to_i32(self) -> i32 {
-        Scalar::floor(self) as i32
+        cell_index(Scalar::floor(self) as i64)
+    }
+}
+
+/// Wraps a floored coordinate (already saturated to `i64` by the float cast,
+/// with `NaN` as `0`) into a lattice index: in range it keeps the low 32
+/// bits; the saturated extremes (beyond `+-2^63`, infinity) stay saturated.
+#[inline]
+fn cell_index(wide: i64) -> i32 {
+    match wide {
+        i64::MAX => i32::MAX,
+        i64::MIN => i32::MIN,
+        _ => wide as i32,
     }
 }
 

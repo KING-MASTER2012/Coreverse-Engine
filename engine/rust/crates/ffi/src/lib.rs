@@ -160,6 +160,51 @@ mod tests {
     use std::ffi::CStr;
 
     #[test]
+    fn logger_and_diagnostic_functions_reject_null_pointers() {
+        use crate::diagnostic::*;
+        use crate::logger::*;
+
+        let text = c"text";
+        // SAFETY: every pointer is either null (rejected up front) or a valid
+        // C string; no function dereferences a null pointer.
+        unsafe {
+            ffi_logger_shutdown(std::ptr::null_mut());
+            assert!(!ffi_logger_add_console_sink(std::ptr::null_mut()));
+            assert!(!ffi_logger_add_file_sink(
+                std::ptr::null_mut(),
+                text.as_ptr()
+            ));
+            assert!(!ffi_logger_set_min_severity(std::ptr::null_mut(), 0));
+
+            assert!(!ffi_diagnostic_builder_set_module(
+                std::ptr::null_mut(),
+                text.as_ptr()
+            ));
+            assert!(!ffi_diagnostic_builder_set_file(
+                std::ptr::null_mut(),
+                text.as_ptr()
+            ));
+            assert!(!ffi_diagnostic_builder_set_line(
+                std::ptr::null_mut(),
+                std::ptr::null()
+            ));
+            ffi_diagnostic_builder_set_persistent(std::ptr::null_mut(), true);
+
+            // A null logger fails without consuming the builder.
+            let builder = ffi_diagnostic_builder_create(
+                c"CV".as_ptr(),
+                c"TEST".as_ptr(),
+                1,
+                2,
+                text.as_ptr(),
+            );
+            assert!(!builder.is_null());
+            assert!(!ffi_diagnostic_builder_emit(std::ptr::null_mut(), builder));
+            ffi_diagnostic_builder_destroy(builder);
+        }
+    }
+
+    #[test]
     fn guard_turns_a_panic_into_the_fallback() {
         // Silence the expected panic message in the test output.
         let previous = std::panic::take_hook();

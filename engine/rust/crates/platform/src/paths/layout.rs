@@ -29,6 +29,10 @@ pub(crate) struct Sources<'a> {
     pub(crate) temp: &'a dyn Fn() -> Result<Utf8PathBuf>,
     pub(crate) executable_dir: &'a dyn Fn() -> Result<Utf8PathBuf>,
     pub(crate) known_folder: &'a dyn Fn(KnownFolder) -> Result<Utf8PathBuf>,
+    /// The id of the current user, where the platform has one. Used to give
+    /// each user their own directory when a shared location (`/tmp`) is the
+    /// only choice.
+    pub(crate) user_id: &'a dyn Fn() -> Option<u32>,
 }
 
 /// The path of `kind` for `app` on `platform`.
@@ -57,7 +61,7 @@ fn windows(kind: DirKind, app: &str, s: &Sources<'_>) -> Result<Utf8PathBuf> {
             ORGANIZATION,
             app,
         )
-        .join(sub))
+            .join(sub))
     };
     match kind {
         DirKind::Home => (s.home)(),
@@ -68,7 +72,7 @@ fn windows(kind: DirKind, app: &str, s: &Sources<'_>) -> Result<Utf8PathBuf> {
             ORGANIZATION,
             app,
         )
-        .join("config")),
+            .join("config")),
         DirKind::Data => local("data"),
         DirKind::Cache => local("cache"),
         DirKind::Log => local("log"),
@@ -113,11 +117,18 @@ fn linux(kind: DirKind, app: &str, s: &Sources<'_>) -> Result<Utf8PathBuf> {
             app,
         )),
         DirKind::Temp => {
-            let base = match absolute_env(s, "XDG_RUNTIME_DIR")? {
-                Some(runtime) => runtime,
-                None => (s.temp)()?,
-            };
-            Ok(org_app(base, &org, app))
+            // `XDG_RUNTIME_DIR` is private to the user. Without it the only
+            // choice is the shared temp directory, where a fixed
+            // `/tmp/coreverse/<app>` would be a path anyone can pre-create
+            // (or point at a symlink) and where a second user could not
+            // create theirs: so the user id is part of the name.
+            match absolute_env(s, "XDG_RUNTIME_DIR")? {
+                Some(runtime) => Ok(org_app(runtime, &org, app)),
+                None => match (s.user_id)() {
+                    Some(uid) => Ok(org_app((s.temp)()?, &format!("{org}-{uid}"), app)),
+                    None => Ok(org_app((s.temp)()?, &org, app)),
+                },
+            }
         }
     }
 }
@@ -184,6 +195,7 @@ mod tests {
             let home = || Ok(abs("home"));
             let temp = || Ok(abs("tmp"));
             let exe = || Ok(abs("bin"));
+            let uid = || Some(1000);
             let known = |folder: KnownFolder| match folder {
                 KnownFolder::RoamingAppData => Ok(abs("roaming")),
                 KnownFolder::LocalAppData => Ok(abs("local")),
@@ -198,6 +210,7 @@ mod tests {
                     temp: &temp,
                     executable_dir: &exe,
                     known_folder: &known,
+                    user_id: &uid,
                 },
             )
         }
@@ -273,7 +286,11 @@ mod tests {
             run(DirKind::Log),
             expect("home", &[".local", "state", "coreverse", "game"])
         );
-        assert_eq!(run(DirKind::Temp), expect("tmp", &["coreverse", "game"]));
+        // No XDG_RUNTIME_DIR: the shared temp dir, with a per-user name.
+        assert_eq!(
+            run(DirKind::Temp),
+            expect("tmp", &["coreverse-1000", "game"])
+        );
     }
 
     #[test]
@@ -307,7 +324,11 @@ mod tests {
             run(DirKind::Data),
             expect("home", &[".local", "share", "coreverse", "game"])
         );
-        assert_eq!(run(DirKind::Temp), expect("tmp", &["coreverse", "game"]));
+        // No XDG_RUNTIME_DIR: the shared temp dir, with a per-user name.
+        assert_eq!(
+            run(DirKind::Temp),
+            expect("tmp", &["coreverse-1000", "game"])
+        );
     }
 
     #[cfg(unix)]
@@ -346,12 +367,14 @@ mod tests {
         let temp = || Ok(abs("tmp"));
         let exe = || Ok(abs("bin"));
         let known = |_: KnownFolder| Err(PlatformError::unusable("SHGetKnownFolderPath", "boom"));
+        let uid = || None;
         let sources = Sources {
             env: &env,
             home: &home,
             temp: &temp,
             executable_dir: &exe,
             known_folder: &known,
+            user_id: &uid,
         };
         for platform in [Platform::Linux, Platform::MacOS] {
             let err = resolve(platform, DirKind::Data, "g", &sources).unwrap_err();

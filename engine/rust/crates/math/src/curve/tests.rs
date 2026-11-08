@@ -749,6 +749,10 @@ macro_rules! curve_tests {
                 assert_eq!(table.length_at(0.0), 0.0);
                 assert_eq!(table.length_at(1.0), table.total_length());
                 assert_eq!(table.length_at(2.0), table.total_length());
+                // A NaN distance used to index out of bounds in `t_at_length`.
+                assert_eq!(table.length_at(<$s>::NAN), 0.0);
+                assert_eq!(table.t_at_length(<$s>::NAN), 0.0);
+                assert_eq!(table.t_at_fraction(<$s>::NAN), 0.0);
                 assert_eq!(table.t_at_length(-1.0), 0.0);
                 assert_eq!(table.t_at_length(0.0), 0.0);
                 assert_eq!(table.t_at_length(table.total_length()), 1.0);
