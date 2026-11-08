@@ -14,6 +14,8 @@ namespace runtime {
 namespace {
 
 constexpr std::uint32_t kFramesInFlight = 2;
+/// How many times in a row DrawFrame() rebuilds after a lost device/surface before giving up.
+constexpr std::uint32_t kMaxConsecutiveRecoveries = 3;
 constexpr double kColorCycleSeconds = 8.0;
 
 std::string Describe(const renderer::RenderError& error)
@@ -138,7 +140,8 @@ std::expected<void, std::string> RendererBridge::OnSurfaceCreated(
     }
 
     // A second SurfaceCreated without a SurfaceLost in between would leak the first.
-    OnSurfaceLost();
+    ReleaseSurface();
+    m_handle.reset();
 
     m_width = width;
     m_height = height;
@@ -151,21 +154,28 @@ std::expected<void, std::string> RendererBridge::OnSurfaceCreated(
 
     auto swapchain = m_device->CreateSwapchain(m_surface, MakeSwapchainDesc());
     if (!swapchain) {
-        OnSurfaceLost();
+        ReleaseSurface();
         return std::unexpected("swapchain: " + Describe(swapchain.error()));
     }
     m_swapchain = std::move(*swapchain);
 
     auto frameSync = m_device->CreateFrameSync(m_swapchain, renderer::FrameSyncDesc{kFramesInFlight});
     if (!frameSync) {
-        OnSurfaceLost();
+        ReleaseSurface();
         return std::unexpected("frame sync: " + Describe(frameSync.error()));
     }
     m_frameSync = std::move(*frameSync);
+    m_handle = handle;
     return {};
 }
 
 void RendererBridge::OnSurfaceLost() noexcept
+{
+    ReleaseSurface();
+    m_handle.reset();
+}
+
+void RendererBridge::ReleaseSurface() noexcept
 {
     if (m_device != nullptr) {
         // The GPU must be done with the swapchain images before they go away.
@@ -192,6 +202,36 @@ std::expected<void, std::string> RendererBridge::Resize(std::uint32_t width, std
     return {};
 }
 
+std::expected<bool, std::string> RendererBridge::FrameFailed(std::string_view stage, const renderer::RenderError& error)
+{
+    if (error.code == renderer::RenderErrorCode::DeviceLost || error.code == renderer::RenderErrorCode::SurfaceLost) {
+        return Recover(stage, error);
+    }
+    return std::unexpected(std::string(stage) + ": " + Describe(error));
+}
+
+std::expected<bool, std::string> RendererBridge::Recover(std::string_view stage, const renderer::RenderError& error)
+{
+    if (!m_handle.has_value() || m_recoveries >= kMaxConsecutiveRecoveries) {
+        return std::unexpected(std::string(stage) + ": " + Describe(error));
+    }
+    ++m_recoveries;
+
+    // Copy first: Shutdown()/OnSurfaceLost() forget m_handle, OnSurfaceCreated() sets it again.
+    const cv_ffi::window::NativeWindowHandle handle = *m_handle;
+    if (error.code == renderer::RenderErrorCode::DeviceLost) {
+        Shutdown(); // every resource belongs to the dead device
+    } else {
+        OnSurfaceLost();
+    }
+    if (auto created = OnSurfaceCreated(handle, m_width, m_height); !created) {
+        return std::unexpected(
+            std::string(stage) + " (recovery after '" + Describe(error) + "' failed): " + created.error()
+        );
+    }
+    return false; // this frame is skipped; the next one draws on the rebuilt objects
+}
+
 std::expected<bool, std::string> RendererBridge::DrawFrame(double seconds)
 {
     if (!HasSurface() || !m_frameSync.IsValid()) {
@@ -200,7 +240,7 @@ std::expected<bool, std::string> RendererBridge::DrawFrame(double seconds)
 
     auto begin = m_frameSync.BeginFrame(m_swapchain);
     if (!begin) {
-        return std::unexpected("begin frame: " + Describe(begin.error()));
+        return FrameFailed("begin frame", begin.error());
     }
     switch (begin->status) {
         case renderer::FrameStatus::OutOfDate:
@@ -217,24 +257,25 @@ std::expected<bool, std::string> RendererBridge::DrawFrame(double seconds)
     renderer::Frame& frame = begin->frame;
     renderer::CommandBuffer& commands = frame.commandBuffer;
     if (auto r = commands.Begin(); !r) {
-        return std::unexpected("record begin: " + Describe(r.error()));
+        return FrameFailed("record begin", r.error());
     }
     if (auto r = commands.ClearColor(frame.imageHandle, ClearColorAt(seconds)); !r) {
-        return std::unexpected("record clear: " + Describe(r.error()));
+        return FrameFailed("record clear", r.error());
     }
     if (auto r = commands.End(); !r) {
-        return std::unexpected("record end: " + Describe(r.error()));
+        return FrameFailed("record end", r.error());
     }
 
     auto end = m_frameSync.EndFrame(m_swapchain, frame);
     if (!end) {
-        return std::unexpected("end frame: " + Describe(end.error()));
+        return FrameFailed("end frame", end.error());
     }
     if (*end == renderer::SwapchainStatus::OutOfDate) {
         if (auto resized = Resize(m_width, m_height); !resized) {
             return std::unexpected(resized.error());
         }
     }
+    m_recoveries = 0; // a frame went all the way through: the device is working
     return true;
 }
 

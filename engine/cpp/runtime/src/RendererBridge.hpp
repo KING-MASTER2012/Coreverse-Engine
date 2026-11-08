@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 
 #include "cv-ffi/Window.hpp"
 #include "renderer/FrameSync.hpp"
@@ -42,8 +44,8 @@ public:
     [[nodiscard]] std::expected<void, std::string>
     OnSurfaceCreated(const cv_ffi::window::NativeWindowHandle& handle, std::uint32_t width, std::uint32_t height);
 
-    /// Destroys the swapchain and the surface. Must run before the handler of
-    /// `SurfaceLost` returns: the native window behind them is going away.
+    /// Destroys the swapchain and the surface and forgets the window handle. Must run before the handler
+    /// of `SurfaceLost` returns: the native window behind them is going away.
     void OnSurfaceLost() noexcept;
 
     /// Rebuilds the swapchain for a new size. A zero size (minimised) keeps the old one.
@@ -64,12 +66,30 @@ public:
 private:
     [[nodiscard]] renderer::SwapchainDesc MakeSwapchainDesc() const noexcept;
 
+    /// Destroys the swapchain and the surface but keeps the handle (Recover() builds them again from it).
+    void ReleaseSurface() noexcept;
+
+    /// What DrawFrame() returns when a renderer call fails: DeviceLost and SurfaceLost are recovered from
+    /// (see Recover()), anything else is a real error.
+    [[nodiscard]] std::expected<bool, std::string>
+    FrameFailed(std::string_view stage, const renderer::RenderError& error);
+
+    /// Rebuilds what the failure took away - the whole device after DeviceLost, only the swapchain and
+    /// the surface after SurfaceLost - from the remembered window handle. Returns `false`: the frame in
+    /// progress is skipped, drawing resumes on the next one. Gives up with an error after
+    /// kMaxConsecutiveRecoveries failures in a row (a device that is lost again every frame).
+    [[nodiscard]] std::expected<bool, std::string> Recover(std::string_view stage, const renderer::RenderError& error);
+
     std::unique_ptr<renderer::RenderDevice> m_device;
     renderer::Surface m_surface;
     renderer::Swapchain m_swapchain;
     renderer::FrameSync m_frameSync;
     std::uint32_t m_width = 0;
     std::uint32_t m_height = 0;
+    /// The handle of the live surface (a copy: the pointers inside stay valid until `SurfaceLost`).
+    std::optional<cv_ffi::window::NativeWindowHandle> m_handle;
+    /// Recoveries since the last frame that was presented.
+    std::uint32_t m_recoveries = 0;
 };
 
 } // namespace runtime
