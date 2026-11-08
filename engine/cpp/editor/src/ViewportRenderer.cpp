@@ -507,6 +507,17 @@ void ViewportRenderer::recoverFromDeviceLoss(const QString& reason)
     emit deviceRecovered();
 }
 
+namespace {
+
+/// Failures that rebuilding everything fixes: the device was lost, or only the presentation surface (a
+/// lost surface needs a new native window binding, which recoverFromDeviceLoss() creates anyway).
+bool isRecoverable(renderer::RenderErrorCode code) noexcept
+{
+    return code == renderer::RenderErrorCode::DeviceLost || code == renderer::RenderErrorCode::SurfaceLost;
+}
+
+} // namespace
+
 void ViewportRenderer::renderFrame()
 {
     if (!isInitialized() || !m_frameSync.IsValid() || m_renderingFailed) {
@@ -515,7 +526,7 @@ void ViewportRenderer::renderFrame()
 
     auto begin = m_frameSync.BeginFrame(m_swapchain);
     if (!begin) {
-        if (begin.error().code == renderer::RenderErrorCode::DeviceLost) {
+        if (isRecoverable(begin.error().code)) {
             recoverFromDeviceLoss(ToQString(begin.error()));
             return;
         }
@@ -544,7 +555,7 @@ void ViewportRenderer::renderFrame()
 
     auto end = m_frameSync.EndFrame(m_swapchain, frame);
     if (!end) {
-        if (end.error().code == renderer::RenderErrorCode::DeviceLost) {
+        if (isRecoverable(end.error().code)) {
             recoverFromDeviceLoss(ToQString(end.error()));
             return;
         }

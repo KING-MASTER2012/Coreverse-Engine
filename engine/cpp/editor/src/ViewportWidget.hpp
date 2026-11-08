@@ -3,6 +3,7 @@
 #include <QSize>
 #include <QWidget>
 
+class QEvent;
 class QHideEvent;
 class QPaintEngine;
 class QResizeEvent;
@@ -48,9 +49,17 @@ signals:
     void visibleChanged(bool visible);
 
 protected:
+    /// Re-announces the pixel size when the device pixel ratio changed (the window was dragged to a
+    /// monitor with another scale, or the system scale setting changed): the widget's size in logical
+    /// units is the same then, so no resize event comes, yet the size in pixels - which the swapchain
+    /// has to match - is not.
+    bool event(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
+
+private:
+    qreal m_lastDevicePixelRatio = 0.0; ///< As of the last event; 0 until the first one.
 };
 
 } // namespace editor
