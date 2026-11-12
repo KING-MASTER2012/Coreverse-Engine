@@ -108,15 +108,47 @@ fn read_dir_skips_names_that_are_not_utf8() {
         dir.0.as_std_path().join(OsStr::from_bytes(b"bad\xff.txt")),
         "x",
     )
-    .unwrap();
+        .unwrap();
     std::fs::write(
         dir.0.as_std_path().join(OsStr::from_bytes(b"bad\xfe.txt")),
         "x",
     )
-    .unwrap();
+        .unwrap();
 
     let listed = OsFileSystem.read_dir(&dir.0).unwrap();
     // Neither a lossy U+FFFD name (a path that does not exist) nor a
     // collision between the two bad names.
     assert_eq!(listed, [dir.0.join("good.txt")]);
+}
+
+#[cfg(unix)]
+#[test]
+fn an_opened_archive_survives_being_replaced_on_disk() {
+    use std::sync::Arc;
+    use vfs::backend::packed::PackedBackend;
+    use vfs::backend::Backend;
+
+    let dir = TempDir::new("replace_archive");
+    let path = dir.0.join("game.cvpk");
+    let fs: Arc<dyn FileSystem> = Arc::new(OsFileSystem);
+    let entry = |data: &[u8]| PackedEntry {
+        root: Root::Assets,
+        rel: "a.bin".into(),
+        data: data.to_vec(),
+    };
+
+    format::write_archive(&*fs, &[entry(b"first")], &path).unwrap();
+    let open = PackedBackend::open(Root::Assets, &path, Arc::clone(&fs)).unwrap();
+
+    // Re-exporting while the game has the archive open: the exporter writes
+    // `<path>.tmp` and renames it over the archive, so the open one is not
+    // truncated underneath its mapping.
+    format::write_archive(&*fs, &[entry(b"second")], &path).unwrap();
+    assert_eq!(open.read_bytes(Utf8Path::new("a.bin")).unwrap(), b"first");
+
+    let reopened = PackedBackend::open(Root::Assets, &path, fs).unwrap();
+    assert_eq!(
+        reopened.read_bytes(Utf8Path::new("a.bin")).unwrap(),
+        b"second"
+    );
 }

@@ -23,9 +23,12 @@ pub struct PackedArchive {
 }
 
 impl PackedArchive {
-    /// Opens the archive at `archive_path`, reads its index (validated, see
-    /// [`format::read_index`]) and memory-maps its data through `fs`. Fails
-    /// if the file is missing, unreadable, or its index is corrupt.
+    /// Memory-maps the archive at `archive_path` through `fs` and reads its
+    /// index (validated, see [`format::parse_index`]) from the mapping. The
+    /// file stays locked against writers for as long as the archive lives
+    /// (see `fs::MappedFile`), so it cannot change under the mapping. Fails
+    /// if the file is missing, unreadable, locked by a writer, or its index
+    /// is corrupt.
     ///
     /// `root` is only used to label I/O errors: the root on whose behalf the
     /// archive is being opened (the archive itself spans every packed root).
@@ -34,12 +37,19 @@ impl PackedArchive {
         archive_path: &Utf8Path,
         fs: &dyn FileSystem,
     ) -> Result<Self, VfsError> {
-        let index = format::read_index(fs, archive_path)?;
+        // Map first, then read the index out of the mapped bytes: index and
+        // data are then guaranteed to come from the same file contents, and
+        // the mapping's lock (see `fs::MappedFile`) keeps them unchanged.
         let mmap = fs.mmap_read(archive_path).map_err(|e| VfsError::Io {
             root,
             path: archive_path.to_path_buf(),
             source: e,
         })?;
+        let index = format::parse_index(
+            &mut std::io::Cursor::new(&mmap[..]),
+            mmap.len() as u64,
+            archive_path,
+        )?;
         Ok(Self { mmap, index })
     }
 }
