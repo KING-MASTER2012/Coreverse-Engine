@@ -96,7 +96,9 @@ fn rename_moves_a_file_on_both_filesystems() {
     assert_eq!(memory.read_bytes(Utf8Path::new("b/to.txt")).unwrap(), b"y");
 }
 
-#[cfg(unix)]
+// macOS (APFS/HFS+) rejects file names that are not valid UTF-8 with EILSEQ
+// ("Illegal byte sequence"), so such a name can never exist there to be skipped.
+#[cfg(all(unix, not(target_vendor = "apple")))]
 #[test]
 fn read_dir_skips_names_that_are_not_utf8() {
     use std::ffi::OsStr;

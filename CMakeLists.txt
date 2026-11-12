@@ -124,6 +124,30 @@ if(APPLE)
     unset(_cv_rust_target)
 endif()
 
+# The Rust staticlib only records the libraries Cargo knows about; the system
+# libraries that winit / objc2 / core-foundation use are NOT passed on to a
+# C++ consumer, so every executable linking `ffi` failed with unresolved
+# externals. They are declared once here on the imported target so each
+# consumer inherits them.
+if(TARGET ffi)
+    if(WIN32)
+        # winit: IME (Imm*), window blur / theme (Dwm*, SetWindowTheme)
+        target_link_libraries(ffi INTERFACE imm32 dwmapi uxtheme)
+    elseif(APPLE)
+        # winit + objc2 + core-foundation + raw-window-metal
+        target_link_libraries(ffi INTERFACE
+                "-framework AppKit"
+                "-framework Foundation"
+                "-framework CoreFoundation"
+                "-framework CoreGraphics"
+                "-framework CoreVideo"
+                "-framework QuartzCore"
+                "-framework Carbon"
+                "-framework Metal"
+                "-lobjc")
+    endif()
+endif()
+
 include(FfiHeader)
 generate_ffi_header()
 
