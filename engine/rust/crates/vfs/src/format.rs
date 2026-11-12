@@ -1,6 +1,6 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use std::collections::HashMap;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Read, Seek, Write};
 
 use fs::FileSystem;
 use root::Root;
@@ -199,7 +199,21 @@ const MAX_PREALLOCATED_ENTRIES: usize = 4096;
 pub fn read_index(fs: &dyn FileSystem, path: &Utf8Path) -> Result<PackedIndex, VfsError> {
     let file_len = fs.metadata(path).map_err(|e| io_err(path, e))?.len;
     let mut file = fs.open_read(path).map_err(|e| io_err(path, e))?;
+    parse_index(&mut file, file_len, path)
+}
 
+/// Parses the header/index from `file`, which is `file_len` bytes long.
+///
+/// This is [`read_index`] without the filesystem: [`PackedArchive`](crate::backend::packed::PackedArchive)
+/// feeds it the bytes of the memory map it is about to serve, so the index
+/// and the data come from the *same* file contents (opening the path twice,
+/// once for the index and once for the map, would let the file be replaced
+/// in between). `path` is only used in error messages.
+pub fn parse_index<R: Read + Seek + ?Sized>(
+    file: &mut R,
+    file_len: u64,
+    path: &Utf8Path,
+) -> Result<PackedIndex, VfsError> {
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic).map_err(|e| io_err(path, e))?;
     if &magic != MAGIC {
