@@ -1,15 +1,23 @@
 use camino::{Utf8Path, Utf8PathBuf};
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{FileSystem, FsMetadata, MmapHandle, ReadSeek};
+use crate::{FileSystem, FsMetadata, MappedFile, MmapHandle, ReadSeek};
 
 /// The real OS filesystem - a thin wrapper over `std::fs`. Exists purely
 /// so callers depend on the [`FileSystem`] trait instead of `std::fs`
 /// directly, making them swappable (see [`crate::MemoryFileSystem`]) and
 /// testable without touching a real disk.
 pub struct OsFileSystem;
+
+/// The error for a file another reader/writer holds locked.
+fn busy(path: &Utf8Path) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::ResourceBusy,
+        format!("'{path}' is memory-mapped or being written by someone else"),
+    )
+}
 
 /// A not-yet-existing sibling of `path` for write-then-rename.
 fn temp_sibling(path: &Utf8Path) -> Utf8PathBuf {
@@ -28,11 +36,30 @@ impl FileSystem for OsFileSystem {
         Ok(Box::new(File::open(path)?))
     }
 
+    /// Takes an exclusive lock *before* truncating, and keeps it until the
+    /// writer is dropped. A file that is memory-mapped (see
+    /// [`FileSystem::mmap_read`]) holds a shared lock, so this fails with
+    /// [`io::ErrorKind::ResourceBusy`] instead of truncating the file under
+    /// the mapping, and an archive being written cannot be mapped half done.
     fn open_write(&self, path: &Utf8Path) -> io::Result<Box<dyn Write + Send>> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        Ok(Box::new(File::create(path)?))
+        // No `truncate(true)`: that would empty the file before the lock is
+        // known to be ours.
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+        match file.try_lock() {
+            Ok(()) => {}
+            Err(TryLockError::WouldBlock) => return Err(busy(path)),
+            // A filesystem without lock support: write as before.
+            Err(TryLockError::Error(_)) => {}
+        }
+        file.set_len(0)?;
+        Ok(Box::new(file))
     }
 
     fn create_dir_all(&self, path: &Utf8Path) -> io::Result<()> {
@@ -125,11 +152,38 @@ impl FileSystem for OsFileSystem {
                   see the Safety comment below for why this call upholds its contract"
     )]
     fn mmap_read(&self, path: &Utf8Path) -> io::Result<MmapHandle> {
-        let file = File::open(path)?;
-        // Safety: the engine treats mapped files (packed archives) as
-        // immutable for the duration they stay mapped - nothing else in
-        // this process writes to them while mapped.
-        let mmap = unsafe { memmap2::Mmap::map(&file) }?;
-        Ok(MmapHandle::Mapped(mmap))
+        let mut options = OpenOptions::new();
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // FILE_SHARE_READ only: while the mapping lives, no process can
+            // open the file for writing or delete it.
+            options.share_mode(0x0000_0001);
+        }
+        let file = options.open(path)?;
+
+        // A shared lock for as long as the mapping lives: writers that take
+        // the exclusive lock (`open_write`) wait out - here: refuse - a
+        // mapped file, and we refuse to map a file mid-write.
+        let locked = match file.try_lock_shared() {
+            Ok(()) => true,
+            Err(TryLockError::WouldBlock) => return Err(busy(path)),
+            // A filesystem without lock support: map anyway, unprotected
+            // (`MappedFile::is_locked` reports it).
+            Err(TryLockError::Error(_)) => false,
+        };
+
+        // Safety: the contract of `Mmap::map` is that the file is not
+        // modified while mapped. The mapping keeps `file` - and with it the
+        // shared lock above - alive, so every writer that honours the lock
+        // (all of this engine's: `open_write`, and `write_bytes` replaces the
+        // file by renaming, which leaves the mapped file untouched) is kept
+        // out; on Windows the share mode makes that binding for everyone.
+        // What remains is a foreign Unix process that ignores the advisory
+        // lock and truncates the file in place; that is outside what this
+        // function can prevent, and is documented on `MappedFile`.
+        let map = unsafe { memmap2::Mmap::map(&file) }?;
+        Ok(MmapHandle::Mapped(MappedFile::new(map, file, locked)))
     }
 }

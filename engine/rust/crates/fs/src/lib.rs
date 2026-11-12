@@ -7,7 +7,7 @@ mod stream;
 
 pub use memory::MemoryFileSystem;
 pub use metadata::FsMetadata;
-pub use mmap::MmapHandle;
+pub use mmap::{MappedFile, MmapHandle};
 pub use os::OsFileSystem;
 pub use stream::ReadSeek;
 
