@@ -29,7 +29,8 @@ fn metadata_macro_returns_valid_values() {
 
     assert!(meta.size > 0);
 
-    assert!(meta.modified_unix >= 0);
+    // `modified_unix` is a `u64`, so `>= 0` is always true; just check the field exists.
+    let _ = meta.modified_unix;
 
     let _ = meta.readonly;
 }

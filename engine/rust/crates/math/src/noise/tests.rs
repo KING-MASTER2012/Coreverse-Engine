@@ -8,9 +8,6 @@
 
 use core::cell::Cell;
 
-use super::fractal::*;
-use super::perlin::*;
-use super::simplex::*;
 use super::*;
 use crate::{Pcg32, Rng};
 

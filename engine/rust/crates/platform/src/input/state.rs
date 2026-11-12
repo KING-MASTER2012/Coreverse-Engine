@@ -173,10 +173,10 @@ impl InputState {
                     self.keys_pressed.insert(code);
                     push_capped(&mut self.logical_pressed, event.logical_key.clone());
                 }
-                if let Some(text) = &event.text {
-                    if self.text.len() < MAX_PER_FRAME_TEXT_BYTES {
-                        self.text.extend(text.chars().filter(|c| !c.is_control()));
-                    }
+                if let Some(text) = &event.text
+                    && self.text.len() < MAX_PER_FRAME_TEXT_BYTES
+                {
+                    self.text.extend(text.chars().filter(|c| !c.is_control()));
                 }
             }
             ButtonState::Released => {

@@ -113,7 +113,12 @@ fn generate() -> String {
         q1,
         Vec3::new(1.0, -2.0, 3.0),
     );
-    let proj = Mat4::perspective_rh(Radians::new(1.047_197_6), 16.0 / 9.0, 0.1, 100.0);
+    let proj = Mat4::perspective_rh(
+        Radians::new(std::f32::consts::FRAC_PI_3),
+        16.0 / 9.0,
+        0.1,
+        100.0,
+    );
     let view = Mat4::look_at_rh(
         Vec3::new(3.0, 4.0, 5.0),
         Vec3::new(0.5, -0.25, 1.0),

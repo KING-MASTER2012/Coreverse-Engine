@@ -19,6 +19,20 @@ fn busy(path: &Utf8Path) -> io::Error {
     )
 }
 
+/// Turns the Windows sharing/lock violation raised when opening a file that
+/// is mapped or being written (`ERROR_SHARING_VIOLATION` = 32,
+/// `ERROR_LOCK_VIOLATION` = 33) into the same `ResourceBusy` error the
+/// advisory locks give on Unix. `std` reports these codes as `Uncategorized`.
+fn map_open_error(path: &Utf8Path, error: io::Error) -> io::Error {
+    #[cfg(windows)]
+    if matches!(error.raw_os_error(), Some(32 | 33)) {
+        return busy(path);
+    }
+    #[cfg(not(windows))]
+    let _ = path;
+    error
+}
+
 /// A not-yet-existing sibling of `path` for write-then-rename.
 fn temp_sibling(path: &Utf8Path) -> Utf8PathBuf {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -51,7 +65,8 @@ impl FileSystem for OsFileSystem {
             .write(true)
             .create(true)
             .truncate(false)
-            .open(path)?;
+            .open(path)
+            .map_err(|error| map_open_error(path, error))?;
         match file.try_lock() {
             Ok(()) => {}
             Err(TryLockError::WouldBlock) => return Err(busy(path)),
@@ -161,7 +176,9 @@ impl FileSystem for OsFileSystem {
             // open the file for writing or delete it.
             options.share_mode(0x0000_0001);
         }
-        let file = options.open(path)?;
+        let file = options
+            .open(path)
+            .map_err(|error| map_open_error(path, error))?;
 
         // A shared lock for as long as the mapping lives: writers that take
         // the exclusive lock (`open_write`) wait out - here: refuse - a

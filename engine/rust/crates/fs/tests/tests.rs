@@ -178,5 +178,9 @@ fn mmap_read() {
 
     assert_eq!(&mmap[..], b"MemoryMapped");
 
+    // A mapped file cannot be deleted on Windows while the mapping lives, so
+    // release it before the directory is removed.
+    drop(mmap);
+
     std::fs::remove_dir_all(root).unwrap();
 }

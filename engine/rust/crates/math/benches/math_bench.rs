@@ -37,7 +37,12 @@ fn matrices(c: &mut Criterion) {
         Vec3::new(1.0, -2.0, 3.0),
     );
     let view = Mat4::look_at_rh(Vec3::new(3.0, 4.0, 5.0), Vec3::ZERO, Vec3::Y);
-    let proj = Mat4::perspective_rh(Radians::new(1.047_197_6), 16.0 / 9.0, 0.1, 100.0);
+    let proj = Mat4::perspective_rh(
+        Radians::new(std::f32::consts::FRAC_PI_3),
+        16.0 / 9.0,
+        0.1,
+        100.0,
+    );
 
     c.bench_function("mat4/mul", |bench| {
         bench.iter(|| black_box(proj) * black_box(view))
@@ -57,7 +62,7 @@ fn matrices(c: &mut Criterion) {
     c.bench_function("mat4/perspective_rh", |bench| {
         bench.iter(|| {
             Mat4::perspective_rh(
-                black_box(Radians::new(1.047_197_6)),
+                black_box(Radians::new(std::f32::consts::FRAC_PI_3)),
                 black_box(1.777),
                 0.1,
                 100.0,

@@ -24,7 +24,7 @@ macro_rules! transform_tests {
             fn random_rotation(rng: &mut Rng) -> $quat {
                 $quat::from_axis_angle(
                     random_vector(rng, 1.0).normalize(),
-                    Radians::new(rng.range(0.0, 6.28) as $scalar),
+                    Radians::new(rng.range(0.0, core::f64::consts::TAU) as $scalar),
                 )
             }
 

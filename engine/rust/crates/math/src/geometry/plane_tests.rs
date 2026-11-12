@@ -154,7 +154,10 @@ macro_rules! plane_tests {
                             rng.range(0.3, 3.0) as $scalar,
                             rng.range(0.3, 3.0) as $scalar,
                         ),
-                        $quat::from_axis_angle(axis, Radians::new(rng.range(0.0, 6.28) as $scalar)),
+                        $quat::from_axis_angle(
+                            axis,
+                            Radians::new(rng.range(0.0, core::f64::consts::TAU) as $scalar),
+                        ),
                         random_point(&mut rng),
                     );
                     let moved = plane.transformed(matrix).unwrap();
