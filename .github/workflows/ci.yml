@@ -7,6 +7,7 @@ on:
 
 permissions:
     contents: read
+    packages: read
 
 # A new push to a pull request cancels that PR's still-running CI. Pushes to
 # main/develop are never cancelled (the group includes the commit SHA, so
@@ -19,8 +20,20 @@ jobs:
     build:
         uses: ./.github/workflows/rust.yml
 
+    # Makes sure the Linux toolchain image for this revision exists (a lookup,
+    # unless the Dockerfile or the minimum tool versions changed) and passes its
+    # reference on. Needs write access to publish a new one.
+    image:
+        uses: ./.github/workflows/image.yml
+        permissions:
+            contents: read
+            packages: write
+
     cpp:
+        needs: image
         uses: ./.github/workflows/cpp.yml
+        with:
+            image: ${{ needs.image.outputs.ref }}
 
     lint:
         uses: ./.github/workflows/lint.yml

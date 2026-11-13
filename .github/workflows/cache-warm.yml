@@ -17,11 +17,21 @@ on:
 
 permissions:
     contents: read
+    packages: read
 
 concurrency:
     group: cache-warm
     cancel-in-progress: false
 
 jobs:
+    image:
+        uses: ./.github/workflows/image.yml
+        permissions:
+            contents: read
+            packages: write
+
     cpp:
+        needs: image
         uses: ./.github/workflows/cpp.yml
+        with:
+            image: ${{ needs.image.outputs.ref }}

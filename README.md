@@ -353,15 +353,16 @@ The pipeline in [`.github/workflows/`](.github/workflows/) (entry point `ci.yml`
 
 | Workflow                                                                                     | What it does                                                                                                                                       |
 |:---------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------|
-| `rust.yml`                                                                                   | Cargo test for the whole workspace on Linux (bootstrap toolchain, including the `no_std` math backend) and `cargo test` on Windows and macOS       |
-| `cpp.yml`                                                                                    | C++/Qt builds and tests: Linux (GCC, Vulkan validation layers, Xvfb editor smoke test, Wayland test), Windows (MSVC), macOS (Apple Clang)          |
+| `rust.yml`                                                                                   | Cargo test for the whole workspace on Linux (including the `no_std` math backend) and `cargo test` on Windows and macOS                            |
+| `cpp.yml`                                                                                    | C++/Qt builds and tests: Linux (CI image: GCC, Vulkan validation, Xvfb editor smoke test, Wayland test), Windows (MSVC), macOS (Clang)             |
+| `image.yml`                                                                                  | Builds and publishes the Linux CI toolchain image when its Dockerfile or minimum tool versions changed                                             |
 | `lint.yml`                                                                                   | Clippy with `-D warnings` and Rustdoc for `math`                                                                                                   |
 | `formatting.yml`                                                                             | `cargo fmt --check` and `clang-format` over C++ **and** Objective-C++ (`*.mm`) sources                                                             |
 | `cache-warm.yml`                                                                             | Nightly run of `cpp.yml` on the default branch: keeps the vcpkg binary cache (Qt) from expiring                                                    |
-| `codeql.yml`, `dependency-review.yml`                                                        | Security analysis and dependency review                                                                                                            |
+| `codeql.yml`, `dependency-review.yml`                                                        | Security analysis (C++ on pushes and weekly) and dependency review                                                                                 |
 | `nightly.yml`, `release.yml`, `deploy.yml`, `deploy-docs.yml`, `benchmarks.yml`, `stale.yml` | Scheduled/manual/release automation (benchmarks: manual `cargo bench`; documentation: mdBook to GitHub Pages)                                      |
 
-The vcpkg version is the commit of the `third_party/vcpkg` submodule, and the C++ jobs restore a vcpkg binary cache so Qt is not rebuilt on every run (details in [`docs/src/ci.md`](docs/src/ci.md)).
+The vcpkg version is the commit of the `third_party/vcpkg` submodule, the C++ jobs restore a vcpkg binary cache so Qt is not rebuilt on every run, and the Linux C++ jobs run in a prebuilt toolchain image (`devkit/ci/image/Dockerfile`). The bootstrap scripts are for developers; the CI does not run them on Linux (details in [`docs/src/ci.md`](docs/src/ci.md)).
 
 CI pipelines are used to verify:
 
