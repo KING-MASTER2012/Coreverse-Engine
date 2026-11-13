@@ -1,0 +1,27 @@
+name: Cache warm
+
+# Runs the C++ pipeline on the default branch every night so that
+#   - the vcpkg binary cache (Qt!) never expires: GitHub deletes cache entries
+#     that were not used for 7 days,
+#   - it is rebuilt right after a runner image update changed the compiler (the
+#     cache key contains the compiler), before the next pull request needs it.
+# Pull requests only restore these caches (see .github/actions/vcpkg-cache).
+# It is the same workflow as in ci.yml, so there is nothing to keep in sync.
+# Remove the schedule if the nightly run is not wanted; the cache then only
+# lives as long as pushes to the default branch keep refreshing it.
+
+on:
+    schedule:
+        - cron: "23 3 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: cache-warm
+    cancel-in-progress: false
+
+jobs:
+    cpp:
+        uses: ./.github/workflows/cpp.yml

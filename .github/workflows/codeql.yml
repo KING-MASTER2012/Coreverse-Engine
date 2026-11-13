@@ -92,6 +92,12 @@ jobs:
                       libxkbcommon-dev \
                       libxkbcommon-x11-dev
 
+            # Restore only: cpp.yml (and the nightly cache-warm run) save this
+            # cache. Same OS, compiler and triplet, so the packages are shared.
+            - name: vcpkg binary cache
+              if: matrix.language == 'cpp'
+              uses: ./.github/actions/vcpkg-cache
+
             # Installs Rust/cbindgen AND vcpkg's C++ deps (VulkanHeaders, volk,
             # VulkanMemoryAllocator, ...), then configures CMake with the vcpkg
             # toolchain file (build/). Without this, "cmake -B build" below can't

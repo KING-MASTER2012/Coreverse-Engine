@@ -1,0 +1,77 @@
+name: vcpkg binary cache
+description: >-
+    Restores the vcpkg binary cache (one archive per built package, Qt being by
+    far the biggest) and points vcpkg at it for the rest of the job. This action
+    only RESTORES. Saving is a separate `actions/cache/save` step in the calling
+    job, placed right after the step that installs the packages and limited to
+    the default branch, so pull requests read the cache but never write it.
+
+inputs:
+    revision:
+        description: Bump it to throw away every existing cache entry.
+        default: "1"
+
+outputs:
+    key:
+        description: The exact cache key (pass it to `actions/cache/save`).
+        value: ${{ steps.key.outputs.key }}
+    hit:
+        description: "'true' when the exact key was restored (nothing new to save)."
+        value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+    using: composite
+    steps:
+        # The key has to change whenever vcpkg would build different binaries.
+        # With an exact-key-only cache that is the only safe rule: a "hit" on a
+        # stale key would never be re-saved and every later run would rebuild Qt.
+        #   - OS/arch and the compiler (vcpkg's ABI hash includes the compiler),
+        #   - the vcpkg commit (the repository's gitlink for third_party/vcpkg:
+        #     it decides the helper scripts, which are part of the ABI hash),
+        #   - the dependency part of vcpkg.json (+ vcpkg-configuration.json),
+        #   - the target triplets used by the CMake presets.
+        - name: Compute the cache key
+          id: key
+          shell: bash
+          env:
+              REVISION: ${{ inputs.revision }}
+          run: |
+              set -euo pipefail
+              case "$RUNNER_OS" in
+                Linux)   compiler="$(gcc --version | sed -n 1p)" ;;
+                macOS)   compiler="$(xcrun clang --version | sed -n 1p) / SDK $(xcrun --show-sdk-version)" ;;
+                Windows) compiler="msvc $(pwsh -NoProfile -Command '$vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath; (Get-ChildItem (Join-Path $vs "VC\Tools\MSVC") -Directory | Sort-Object Name | Select-Object -Last 1).Name')" ;;
+                *)       compiler="unknown" ;;
+              esac
+              pin="$(git rev-parse HEAD:third_party/vcpkg 2>/dev/null || echo no-pin)"
+              triplets="$(grep -o '"VCPKG_TARGET_TRIPLET": *"[^"]*"' CMakePresets.json | sort -u || true)"
+              manifest="$(jq -cS '{baseline: ."builtin-baseline", dependencies, features, overrides}' vcpkg.json 2>/dev/null || cat vcpkg.json)"
+              registries="$(cat vcpkg-configuration.json 2>/dev/null || true)"
+              fingerprint="$(printf '%s\n' "$compiler" "$pin" "$triplets" "$manifest" "$registries" | git hash-object --stdin)"
+              key="vcpkg-bin-v${REVISION}-${RUNNER_OS}-${RUNNER_ARCH}-${fingerprint}"
+              echo "key=$key" >> "$GITHUB_OUTPUT"
+              {
+                echo "### vcpkg binary cache"
+                echo "- key: \`$key\`"
+                echo "- compiler: $compiler"
+                echo "- vcpkg commit (gitlink): $pin"
+              } >> "$GITHUB_STEP_SUMMARY"
+
+        - name: Restore the vcpkg binary cache
+          id: restore
+          uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+          with:
+              path: ${{ runner.temp }}/vcpkg-binary-cache
+              key: ${{ steps.key.outputs.key }}
+
+        # `clear;` drops vcpkg's default per-user cache so the job only ever sees
+        # this directory. readwrite: packages built in this job land here too, and
+        # the save step (default branch only) uploads the directory.
+        - name: Point vcpkg at the cache directory
+          shell: bash
+          env:
+              CACHE_DIR: ${{ runner.temp }}/vcpkg-binary-cache
+          run: |
+              mkdir -p "$CACHE_DIR"
+              echo "VCPKG_BINARY_SOURCES=clear;files,$CACHE_DIR,readwrite" >> "$GITHUB_ENV"
+              echo "- exact hit: ${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"

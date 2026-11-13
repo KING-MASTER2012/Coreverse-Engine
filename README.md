@@ -357,8 +357,11 @@ The pipeline in [`.github/workflows/`](.github/workflows/) (entry point `ci.yml`
 | `cpp.yml`                                                                                    | C++/Qt builds and tests: Linux (GCC, Vulkan validation layers, Xvfb editor smoke test, Wayland test), Windows (MSVC), macOS (Apple Clang)          |
 | `lint.yml`                                                                                   | Clippy with `-D warnings` and Rustdoc for `math`                                                                                                   |
 | `formatting.yml`                                                                             | `cargo fmt --check` and `clang-format` over C++ **and** Objective-C++ (`*.mm`) sources                                                             |
+| `cache-warm.yml`                                                                             | Nightly run of `cpp.yml` on the default branch: keeps the vcpkg binary cache (Qt) from expiring                                                    |
 | `codeql.yml`, `dependency-review.yml`                                                        | Security analysis and dependency review                                                                                                            |
 | `nightly.yml`, `release.yml`, `deploy.yml`, `deploy-docs.yml`, `benchmarks.yml`, `stale.yml` | Scheduled/manual/release automation (benchmarks: manual `cargo bench`; documentation: mdBook to GitHub Pages)                                      |
+
+The vcpkg version is the commit of the `third_party/vcpkg` submodule, and the C++ jobs restore a vcpkg binary cache so Qt is not rebuilt on every run (details in [`docs/src/ci.md`](docs/src/ci.md)).
 
 CI pipelines are used to verify:
 
