@@ -353,7 +353,7 @@ The pipeline in [`.github/workflows/`](.github/workflows/) (entry point `ci.yml`
 
 | Workflow                                                                                     | What it does                                                                                                                                       |
 |:---------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------|
-| `rust.yml`                                                                                   | Cargo check/test for the whole workspace on Linux (bootstrap toolchain, including the `no_std` math backend) and `cargo test` on Windows and macOS |
+| `rust.yml`                                                                                   | Cargo test for the whole workspace on Linux (bootstrap toolchain, including the `no_std` math backend) and `cargo test` on Windows and macOS       |
 | `cpp.yml`                                                                                    | C++/Qt builds and tests: Linux (GCC, Vulkan validation layers, Xvfb editor smoke test, Wayland test), Windows (MSVC), macOS (Apple Clang)          |
 | `lint.yml`                                                                                   | Clippy with `-D warnings` and Rustdoc for `math`                                                                                                   |
 | `formatting.yml`                                                                             | `cargo fmt --check` and `clang-format` over C++ **and** Objective-C++ (`*.mm`) sources                                                             |
@@ -501,7 +501,7 @@ The exact minimum versions are pinned in [`devkit/scripts/setup/config/tool-vers
 ### Clone
 
 ```bash
-git clone https://github.com/Coreverse-Game-Engine/Coreverse-Engine.git
+git clone https://github.com/KING-MASTER2012/Coreverse-Engine.git
 cd Coreverse-Engine
 ```
 

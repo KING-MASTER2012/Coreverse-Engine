@@ -24,7 +24,7 @@ jobs:
     # Safety net: without a book.toml at the repository root there is nothing to
     # build, so skip build and deploy instead of failing on `mdbook build`.
     check:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         outputs:
             has_book: ${{ steps.detect.outputs.has_book }}
 
@@ -45,7 +45,7 @@ jobs:
     build:
         needs: check
         if: needs.check.outputs.has_book == 'true'
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
 
         steps:
             - name: Checkout
@@ -67,7 +67,7 @@ jobs:
     deploy:
         needs: build
 
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
 
         environment:
             name: github-pages

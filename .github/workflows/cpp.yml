@@ -28,7 +28,7 @@ permissions:
 
 jobs:
     linux:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
 
         env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -203,7 +203,7 @@ jobs:
                       ctest --preset linux-gcc-release -L editor
 
     windows:
-        runs-on: windows-latest
+        runs-on: windows-2025
 
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -248,7 +248,7 @@ jobs:
     # corresponding to Ninja Multi-Config" is only a side effect when the
     # toolchain file fails, even with Ninja installed.
     macos:
-        runs-on: macos-latest
+        runs-on: macos-15
 
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

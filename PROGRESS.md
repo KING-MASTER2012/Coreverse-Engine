@@ -1,5 +1,14 @@
 # PROGRESS.md
-Last changed 01.11.2026 by KING-MASTER2012.
+Last changed 13.11.2026 by KING-MASTER2012.
+
+## What happened compared to the previous commit? (CI speed-up, step 1: housekeeping)
+- decision: the CI speed-up roadmap is applied in steps; Bootstrap becomes a developer-only tool. This is step 1; vcpkg binary cache and the vcpkg pin (step 2), the prebuilt Linux toolchain image and removing Bootstrap from CI (step 3), ccache/sccache and Cargo cache for the C++ job (step 4), path filters with a single `ci-ok` check (step 5) and the `ci` Rust profile (step 6) follow. Nothing in Bootstrap itself changed.
+- changed (CI): `ci.yml` and `codeql.yml` got a `concurrency` group: a new push to a pull request cancels that PR's still-running run; pushes to `main`/`develop` (and the weekly CodeQL schedule) are never cancelled, because their group includes the commit SHA.
+- changed (CI): runner labels are pinned in every workflow (`ubuntu-latest` -> `ubuntu-24.04`, `windows-latest` -> `windows-2025`, `macos-latest` -> `macos-15`, Apple Silicon). These are the images the `-latest` labels pointed to; the compiler/SDK version no longer moves on its own, which would invalidate the future vcpkg binary cache. Moving to a newer image is now a deliberate edit.
+- changed (CI): `rust.yml` no longer runs `cargo check --workspace --all-features` before `cargo test` (it compiled the workspace twice). The `no_std` `cargo check` for `math` stays on purpose: a test build links `std`, so only that check compiles the library itself as `no_std`.
+- removed (CI): `linux.yml`, `macos.yml`, `windows.yml` (nothing called them). The P0 entry below says they were removed; they were still in the tree.
+- docs: README and `docs/src/ci.md` describe `rust.yml` as "Cargo test" on Linux.
+- not verified: none of the workflows was run (no GitHub in the sandbox); only the YAML syntax was parsed. After merging, update the branch protection / ruleset if it lists the removed workflows' checks (it should not: they never ran).
 
 ## What happened compared to the previous commit? (fix: immutable file mapping)
 - decision: memory-mapped archives are held immutable while mapped (the alternative, reading archives into memory, was rejected). Bootstrap download verification is postponed: the packaging/dependency installation moves to a new, faster system outside Bootstrap.

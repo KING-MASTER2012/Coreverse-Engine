@@ -1,22 +1,29 @@
 name: Continuous Integration
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
+    push:
+        branches: [main, develop]
+    pull_request:
 
 permissions:
-  contents: read
+    contents: read
+
+# A new push to a pull request cancels that PR's still-running CI. Pushes to
+# main/develop are never cancelled (the group includes the commit SHA, so
+# every pushed commit keeps its own result).
+concurrency:
+    group: ci-${{ github.event.pull_request.number || github.sha }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
-    uses: ./.github/workflows/rust.yml
+    build:
+        uses: ./.github/workflows/rust.yml
 
-  cpp:
-    uses: ./.github/workflows/cpp.yml
+    cpp:
+        uses: ./.github/workflows/cpp.yml
 
-  lint:
-    uses: ./.github/workflows/lint.yml
+    lint:
+        uses: ./.github/workflows/lint.yml
 
-  format:
-    uses: ./.github/workflows/formatting.yml
+    format:
+        uses: ./.github/workflows/formatting.yml
