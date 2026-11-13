@@ -501,7 +501,7 @@ The exact minimum versions are pinned in [`devkit/scripts/setup/config/tool-vers
 ### Clone
 
 ```bash
-git clone https://github.com/KING-MASTER2012/Coreverse-Engine.git
+git clone https://github.com/Coreverse-Game-Engine/Coreverse-Engine.git
 cd Coreverse-Engine
 ```
 

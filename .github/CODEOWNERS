@@ -1,23 +1,23 @@
 # Default owner
-* @KING-MASTER2012
+* @Coreverse-Game-Engine/maintainers
 
 # Documentation
-/docs/ @KING-MASTER2012
+/docs/ @Coreverse-Game-Engine/maintainers
 
 # Engine Core
-/crates/core/ @KING-MASTER2012
+/crates/core/ @Coreverse-Game-Engine/maintainers
 
 # Renderer
-/crates/renderer/ @KING-MASTER2012
+/crates/renderer/ @Coreverse-Game-Engine/maintainers
 
 # Physics
-/crates/physics/ @KING-MASTER2012
+/crates/physics/ @Coreverse-Game-Engine/maintainers
 
 # Audio
-/crates/audio/ @KING-MASTER2012
+/crates/audio/ @Coreverse-Game-Engine/maintainers
 
 # Editor
-/editor/ @KING-MASTER2012
+/editor/ @Coreverse-Game-Engine/maintainers
 
 # CI
-/.github/ @KING-MASTER2012
+/.github/ @Coreverse-Game-Engine/maintainers
