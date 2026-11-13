@@ -11,6 +11,6 @@ build-dir = "book"
 create-missing = false
 
 [output.html]
-git-repository-url = "https://github.com/KING-MASTER2012/Coreverse-Engine"
+git-repository-url = "https://github.com/Coreverse-Game-Engine/Coreverse-Engine"
 default-theme = "navy"
 preferred-dark-theme = "navy"

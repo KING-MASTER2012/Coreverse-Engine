@@ -4,7 +4,7 @@ Coreverse is a hybrid game engine: **Rust** for the core systems, **C++23** for 
 renderer, joined by a small C ABI (the `ffi` crate and its C++ wrappers).
 
 This book describes what is **implemented today**. Planned work is tracked in
-[`PROGRESS.md`](https://github.com/KING-MASTER2012/Coreverse-Engine/blob/main/PROGRESS.md) and the roadmap in the
+[`PROGRESS.md`](https://github.com/Coreverse-Game-Engine/Coreverse-Engine/blob/main/PROGRESS.md) and the roadmap in the
 repository `README.md`.
 
 ## Status
