@@ -19,10 +19,16 @@ permissions:
     contents: read
     security-events: write
 
+# Same rule as ci.yml: a new push to a pull request cancels its running
+# analysis; pushes to main/develop and the weekly schedule are never cancelled.
+concurrency:
+    group: codeql-${{ github.event.pull_request.number || github.sha }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
     analyze:
         name: Analyze (${{ matrix.language }})
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
 
         strategy:
             fail-fast: false
@@ -85,6 +91,12 @@ jobs:
                       libxcb-xkb-dev \
                       libxkbcommon-dev \
                       libxkbcommon-x11-dev
+
+            # Restore only: cpp.yml (and the nightly cache-warm run) save this
+            # cache. Same OS, compiler and triplet, so the packages are shared.
+            - name: vcpkg binary cache
+              if: matrix.language == 'cpp'
+              uses: ./.github/actions/vcpkg-cache
 
             # Installs Rust/cbindgen AND vcpkg's C++ deps (VulkanHeaders, volk,
             # VulkanMemoryAllocator, ...), then configures CMake with the vcpkg

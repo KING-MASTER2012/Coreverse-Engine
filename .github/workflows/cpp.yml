@@ -9,8 +9,12 @@ permissions:
 # The Linux and Windows jobs follow the same shape (macOS provisions its
 # tools by hand, see the comment on that job):
 #
+#   0. vcpkg cache      - restores the vcpkg binary cache before anything
+#                         builds a vcpkg package, and (default branch only)
+#                         saves it afterwards. The cache key contains the
+#                         compiler, the pinned vcpkg commit and the manifest, see
+#                         .github/actions/vcpkg-cache. Pull requests only read.
 #   1. Bootstrap        - installs the toolchain and the vcpkg dependencies
-#                         (into ./vcpkg_installed). Its own trailing plain
 #                         `cmake -B build` configure only smoke-tests the
 #                         bootstrap flow itself; nothing below uses that
 #                         build/ directory.
@@ -28,7 +32,7 @@ permissions:
 
 jobs:
     linux:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
 
         env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,11 +84,22 @@ jobs:
                       libxkbcommon-dev \
                       libxkbcommon-x11-dev
 
+            - name: vcpkg binary cache
+              id: vcpkg-cache
+              uses: ./.github/actions/vcpkg-cache
+
             - name: Bootstrap
               shell: bash
               run: |
                   chmod +x devkit/scripts/setup/shell/bootstrap.sh
                   devkit/scripts/setup/shell/bootstrap.sh
+
+            - name: Save vcpkg binary cache
+              if: steps.vcpkg-cache.outputs.hit != 'true' && github.ref_name == github.event.repository.default_branch
+              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+              with:
+                  path: ${{ runner.temp }}/vcpkg-binary-cache
+                  key: ${{ steps.vcpkg-cache.outputs.key }}
 
             # X11 and Wayland dev libraries are deliberately NOT part of
             # bootstrap.sh - an end user building Coreverse on their own
@@ -203,15 +218,26 @@ jobs:
                       ctest --preset linux-gcc-release -L editor
 
     windows:
-        runs-on: windows-latest
+        runs-on: windows-2025
 
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+            - name: vcpkg binary cache
+              id: vcpkg-cache
+              uses: ./.github/actions/vcpkg-cache
 
             - name: Bootstrap
               shell: pwsh
               run: |
                   devkit/scripts/setup/powershell/bootstrap.ps1
+
+            - name: Save vcpkg binary cache
+              if: steps.vcpkg-cache.outputs.hit != 'true' && github.ref_name == github.event.repository.default_branch
+              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+              with:
+                  path: ${{ runner.temp }}/vcpkg-binary-cache
+                  key: ${{ steps.vcpkg-cache.outputs.key }}
 
             # One step on purpose: the Windows presets use
             # `architecture.strategy = external`, i.e. they take the
@@ -248,7 +274,7 @@ jobs:
     # corresponding to Ninja Multi-Config" is only a side effect when the
     # toolchain file fails, even with Ninja installed.
     macos:
-        runs-on: macos-latest
+        runs-on: macos-15
 
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -326,19 +352,37 @@ jobs:
                       fi
                   fi
 
-            # The whole history is needed (vcpkg.json pins a builtin-baseline),
-            # so this is deliberately not a shallow clone.
+            # vcpkg is a git submodule: the commit this repository points to is
+            # the pinned vcpkg version on every OS (the Linux and Windows
+            # bootstrap use the same rule). The whole history is needed
+            # (vcpkg.json pins a builtin-baseline, which vcpkg reads from this
+            # clone), so the submodule is deliberately not fetched shallow, and
+            # actions/checkout's `submodules:` option (which is shallow) is not
+            # used.
             - name: Set up vcpkg
               shell: bash
               run: |
-                  rm -rf third_party/vcpkg
-                  git clone https://github.com/microsoft/vcpkg.git third_party/vcpkg
+                  git submodule update --init -- third_party/vcpkg
                   ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
                   test -f third_party/vcpkg/scripts/buildsystems/vcpkg.cmake
 
+            # Placed after the Xcode selection on purpose: the compiler is part
+            # of the key.
+            - name: vcpkg binary cache
+              id: vcpkg-cache
+              uses: ./.github/actions/vcpkg-cache
+
+            # The vcpkg packages are installed by this configure step.
             - name: Configure (macos-arm64-clang)
               shell: bash
               run: cmake --preset macos-arm64-clang
+
+            - name: Save vcpkg binary cache
+              if: steps.vcpkg-cache.outputs.hit != 'true' && github.ref_name == github.event.repository.default_branch
+              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+              with:
+                  path: ${{ runner.temp }}/vcpkg-binary-cache
+                  key: ${{ steps.vcpkg-cache.outputs.key }}
 
             - name: Build (Release)
               shell: bash

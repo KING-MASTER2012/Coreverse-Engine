@@ -8,7 +8,7 @@ permissions:
 
 jobs:
     rust:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
 
         env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -24,14 +24,17 @@ jobs:
 
             - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
-            - name: Cargo Check
-              run: cargo check --workspace --all-features
-
+            # No separate `cargo check --workspace`: `cargo test` already compiles
+            # every crate and its tests, and `lint.yml` type-checks the regular
+            # (non-test) build of every crate through Clippy with the same
+            # features, so a check pass only compiled everything a third time.
             - name: Cargo Test
               run: cargo test --workspace --all-features
 
             # `--all-features` enables `std` and `no_std` together and `std`
             # wins, so the `libm` backend needs its own build and test run.
+            # Kept on purpose: a test build links `std`, so only this check
+            # compiles the library itself as `no_std`.
             - name: Cargo Check (math, no_std backend)
               run: cargo check -p math --no-default-features --features no_std
 
@@ -48,7 +51,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                os: [windows-latest, macos-latest]
+                os: [windows-2025, macos-15]
 
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -73,10 +76,10 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    - os: ubuntu-latest
+                    - os: ubuntu-24.04
                       target: aarch64-linux-android
                       features: android-native-activity
-                    - os: macos-latest
+                    - os: macos-15
                       target: aarch64-apple-ios
                       features: winit
 
@@ -124,7 +127,7 @@ jobs:
     # skips itself there.
     platform-window-xvfb:
         name: platform (winit on Xvfb)
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
 
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

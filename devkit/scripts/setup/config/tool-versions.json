@@ -37,7 +37,7 @@
     },
     "vcpkg": {
         "minVersion": "26.06.24",
-        "displayName": "vcpkg (project-local, always fetches latest commit)",
+        "displayName": "vcpkg (project-local git submodule, pinned by the repository)",
         "docsUrl": "https://learn.microsoft.com/vcpkg/get_started/overview",
         "pkg": {}
     },

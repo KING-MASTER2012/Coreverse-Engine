@@ -1,5 +1,24 @@
 # PROGRESS.md
-Last changed 01.11.2026 by KING-MASTER2012.
+Last changed 13.11.2026 by KING-MASTER2012.
+
+## What happened compared to the previous commit? (CI speed-up, step 2: vcpkg pin and binary cache)
+- decision: the vcpkg version is the commit of the `third_party/vcpkg` submodule (the Windows bootstrap already did this; Linux/macOS bootstrap and the macOS CI job cloned and pulled the latest vcpkg, so the three platforms ran three different vcpkg scripts). `builtin-baseline` stays as the separate pin of the port versions. vcpkg is not fetched shallow (its baseline resolution needs the history).
+- changed (bootstrap): `check-vcpkg.sh` syncs the submodule to the pinned commit instead of `git clone` + `git pull`. It warns before moving a checkout that differs from the pinned commit. Outside a git checkout (source archive) it clones and checks out the `builtin-baseline` commit. `tool-versions.json` describes vcpkg as pinned. The PowerShell script already worked this way and is unchanged.
+- added (CI): `.github/actions/vcpkg-cache` (restore + `VCPKG_BINARY_SOURCES`, files provider on top of `actions/cache`, pinned to v5.0.5). The key contains OS/arch, compiler, vcpkg commit, the dependency part of `vcpkg.json`, `vcpkg-configuration.json` and the preset triplets. `cpp.yml` (Linux, Windows, macOS) restores it before the packages are installed and saves it right after, on the default branch only; pull requests only read. `codeql.yml` restores it for the C++ analysis.
+- changed (CI): the macOS job syncs the pinned submodule instead of cloning the latest vcpkg.
+- added (CI): `cache-warm.yml` runs `cpp.yml` every night on the default branch (the cache would be deleted after 7 days unused; the key changes with the compiler).
+- docs: `docs/src/ci.md` has a section on the pin, the cache, who writes it and how to reset it; README mentions both.
+- not verified: no workflow was run (no GitHub in the sandbox). Run locally: `check-vcpkg.sh` against a fake vcpkg submodule (fresh checkout, checkout moved by hand, dry run, source archive), the cache-key script on Linux (the `jq` branch could not be run, `jq` is not installed in the sandbox; the runners have it), YAML syntax. Not run: a real vcpkg install, the Windows/macOS parts of the key script.
+- known limit: the cache key contains the exact compiler version, so a runner image update that changes it makes the next run rebuild the packages once (the nightly run normally does that first). `vcpkg` builds Debug and Release by default; the CI only needs Release (a Release-only triplet would roughly halve build time and cache size, not done here).
+
+## What happened compared to the previous commit? (CI speed-up, step 1: housekeeping)
+- decision: the CI speed-up roadmap is applied in steps; Bootstrap becomes a developer-only tool. This is step 1; vcpkg binary cache and the vcpkg pin (step 2), the prebuilt Linux toolchain image and removing Bootstrap from CI (step 3), ccache/sccache and Cargo cache for the C++ job (step 4), path filters with a single `ci-ok` check (step 5) and the `ci` Rust profile (step 6) follow. Nothing in Bootstrap itself changed.
+- changed (CI): `ci.yml` and `codeql.yml` got a `concurrency` group: a new push to a pull request cancels that PR's still-running run; pushes to `main`/`develop` (and the weekly CodeQL schedule) are never cancelled, because their group includes the commit SHA.
+- changed (CI): runner labels are pinned in every workflow (`ubuntu-latest` -> `ubuntu-24.04`, `windows-latest` -> `windows-2025`, `macos-latest` -> `macos-15`, Apple Silicon). These are the images the `-latest` labels pointed to; the compiler/SDK version no longer moves on its own, which would invalidate the future vcpkg binary cache. Moving to a newer image is now a deliberate edit.
+- changed (CI): `rust.yml` no longer runs `cargo check --workspace --all-features` before `cargo test` (it compiled the workspace twice). The `no_std` `cargo check` for `math` stays on purpose: a test build links `std`, so only that check compiles the library itself as `no_std`.
+- removed (CI): `linux.yml`, `macos.yml`, `windows.yml` (nothing called them). The P0 entry below says they were removed; they were still in the tree.
+- docs: README and `docs/src/ci.md` describe `rust.yml` as "Cargo test" on Linux.
+- not verified: none of the workflows was run (no GitHub in the sandbox); only the YAML syntax was parsed. After merging, update the branch protection / ruleset if it lists the removed workflows' checks (it should not: they never ran).
 
 ## What happened compared to the previous commit? (fix: immutable file mapping)
 - decision: memory-mapped archives are held immutable while mapped (the alternative, reading archives into memory, was rejected). Bootstrap download verification is postponed: the packaging/dependency installation moves to a new, faster system outside Bootstrap.
