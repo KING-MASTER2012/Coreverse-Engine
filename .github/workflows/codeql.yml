@@ -17,6 +17,7 @@ on:
 permissions:
     actions: read
     contents: read
+    packages: read
     security-events: write
 
 # Same rule as ci.yml: a new push to a pull request cancels its running
@@ -26,114 +27,75 @@ concurrency:
     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-    analyze:
-        name: Analyze (${{ matrix.language }})
+    # The C++ analysis builds the whole engine (and traces it), so it runs on
+    # pushes to main/develop and on the weekly schedule, not on pull requests.
+    # The Rust analysis is cheap and stays on pull requests.
+    image:
+        if: github.event_name != 'pull_request'
+        uses: ./.github/workflows/image.yml
+        permissions:
+            contents: read
+            packages: write
+
+    analyze-cpp:
+        name: Analyze (cpp)
+        needs: image
         runs-on: ubuntu-24.04
 
-        strategy:
-            fail-fast: false
-            matrix:
-                language:
-                    - cpp
-                    - rust
-
-        env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The same toolchain image as cpp.yml: no Bootstrap, no apt.
+        container:
+            image: ${{ needs.image.outputs.ref }}
+            credentials:
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
 
         steps:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-            - name: Set up Rust
-              if: matrix.language == 'cpp'
-              uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-              with:
-                  toolchain: stable
-
-            # vcpkg.json enables qtbase's `xcb` feature on Linux, and vcpkg only
-            # builds Qt's xcb platform plugin if the xcb/xkbcommon DEV packages
-            # exist on the system when bootstrap.sh runs `vcpkg install`. So they
-            # must be installed BEFORE Bootstrap (same list as cpp.yml).
-            - name: Install Qt xcb build dependencies
-              if: matrix.language == 'cpp'
-              shell: bash
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y --no-install-recommends \
-                      libfontconfig1-dev \
-                      libfreetype-dev \
-                      pkg-config \
-                      libx11-dev \
-                      libx11-xcb-dev \
-                      libxext-dev \
-                      libxfixes-dev \
-                      libxi-dev \
-                      libxrender-dev \
-                      libgl1-mesa-dev \
-                      libglu1-mesa-dev \
-                      libegl1-mesa-dev \
-                      libxcb1-dev \
-                      libxcb-cursor-dev \
-                      libxcb-xinput-dev \
-                      libxcb-glx0-dev \
-                      libxcb-icccm4-dev \
-                      libxcb-image0-dev \
-                      libxcb-keysyms1-dev \
-                      libxcb-randr0-dev \
-                      libxcb-render0-dev \
-                      libxcb-render-util0-dev \
-                      libxcb-shape0-dev \
-                      libxcb-shm0-dev \
-                      libxcb-sync-dev \
-                      libxcb-util-dev \
-                      libxcb-xfixes0-dev \
-                      libxcb-xinerama0-dev \
-                      libxcb-xkb-dev \
-                      libxkbcommon-dev \
-                      libxkbcommon-x11-dev
-
             # Restore only: cpp.yml (and the nightly cache-warm run) save this
-            # cache. Same OS, compiler and triplet, so the packages are shared.
+            # cache. Same image, compiler and triplet, so the packages are shared.
             - name: vcpkg binary cache
-              if: matrix.language == 'cpp'
               uses: ./.github/actions/vcpkg-cache
 
-            # Installs Rust/cbindgen AND vcpkg's C++ deps (VulkanHeaders, volk,
-            # VulkanMemoryAllocator, ...), then configures CMake with the vcpkg
-            # toolchain file (build/). Without this, "cmake -B build" below can't
-            # find any vcpkg package - this replaces the old cbindgen-only setup,
-            # which never touched vcpkg at all.
-            - name: Bootstrap (Rust/cbindgen + vcpkg deps + CMake configure)
-              if: matrix.language == 'cpp'
+            - name: Set up vcpkg
               shell: bash
               run: |
-                  chmod +x devkit/scripts/setup/shell/bootstrap.sh
-                  devkit/scripts/setup/shell/bootstrap.sh
+                  bash devkit/scripts/setup/shell/scripts/toolchain/check-vcpkg.sh
+                  test -f third_party/vcpkg/scripts/buildsystems/vcpkg.cmake
 
-            # See the identical step in cpp.yml for why these aren't part
-            # of bootstrap.sh itself: libx11-dev/libwayland-dev are the
-            # Xlib and Wayland WSI backends renderer needs to compile on
-            # Linux, weston gives wayland_render_loop_test a headless
-            # compositor to run against.
-            - name: Install X11 & Wayland dev libraries
-              if: matrix.language == 'cpp'
+            # Configure BEFORE initializing CodeQL: this is where the vcpkg
+            # packages (Qt!) are installed if the cache has no copy, and that
+            # build does not belong in the analysis. The preset is the one a
+            # developer and cpp.yml use.
+            - name: Configure (linux-x64-gcc)
               shell: bash
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y --no-install-recommends \
-                      libx11-dev \
-                      libwayland-dev \
-                      pkg-config \
-                      weston
+              run: cmake --preset linux-x64-gcc
 
             - name: Initialize CodeQL
               uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
               with:
-                  languages: ${{ matrix.language }}
+                  languages: cpp
 
             - name: Build C++
-              if: matrix.language == 'cpp'
-              run: cmake --build build --config Release
+              shell: bash
+              run: cmake --build --preset linux-gcc-release
+
+            - name: Perform CodeQL Analysis
+              uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+
+    analyze-rust:
+        name: Analyze (rust)
+        runs-on: ubuntu-24.04
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+            - name: Initialize CodeQL
+              uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+              with:
+                  languages: rust
 
             - name: Perform CodeQL Analysis
               uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4

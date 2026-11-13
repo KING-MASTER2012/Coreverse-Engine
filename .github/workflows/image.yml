@@ -1,0 +1,102 @@
+name: CI image
+
+# Makes sure the toolchain image for the Linux C++ jobs exists and hands its
+# reference to the caller. The tag is a hash of devkit/ci/image/Dockerfile and
+# the minimum tool versions, so the image always matches the checked-out
+# sources: if it is already published this is a ~20 second lookup, otherwise it
+# is built and pushed first (a toolchain change builds its own image inside its
+# own pull request).
+#
+# A run that cannot publish (a pull request from a fork, or from Dependabot: the
+# token is read-only there) and finds no image for its revision stops with a
+# message; that only happens to a pull request that changes the Dockerfile or
+# the minimum versions.
+#
+# The package must be public (Packages -> coreverse-ci -> Package settings) so
+# fork pull requests can pull it. It is named after the repository OWNER, so
+# after a transfer to another account the first run publishes it under the new
+# owner by itself.
+
+on:
+    workflow_call:
+        outputs:
+            ref:
+                description: Full reference of the image, e.g. ghcr.io/<owner>/coreverse-ci:<hash>
+                value: ${{ jobs.image.outputs.ref }}
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    packages: write
+
+jobs:
+    image:
+        runs-on: ubuntu-24.04
+
+        outputs:
+            ref: ${{ steps.ref.outputs.ref }}
+
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+            - name: Work out the image reference
+              id: ref
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+                  mins="$(jq -r '[.cargo.minVersion, .cmake.minVersion, .ninja.minVersion, .cbindgen.minVersion, .gcc.minVersion] | join(" ")' devkit/scripts/setup/config/tool-versions.json)"
+                  hash="$(printf '%s\n' "$(cat devkit/ci/image/Dockerfile)" "$mins" | git hash-object --stdin | cut -c1-16)"
+                  echo "ref=ghcr.io/${owner}/coreverse-ci:${hash}" >> "$GITHUB_OUTPUT"
+                  echo "mins=$mins" >> "$GITHUB_OUTPUT"
+
+            - name: Log in to the container registry
+              shell: bash
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin \
+                      || echo "::warning::registry login failed; only a private image would be unreadable"
+
+            - name: Is the image already published?
+              id: exists
+              shell: bash
+              env:
+                  REF: ${{ steps.ref.outputs.ref }}
+              run: |
+                  if docker manifest inspect "$REF" > /dev/null 2>&1; then
+                      echo "exists=true" >> "$GITHUB_OUTPUT"
+                      echo "Found $REF"
+                  else
+                      echo "exists=false" >> "$GITHUB_OUTPUT"
+                      echo "$REF is not published yet"
+                  fi
+
+            - name: Build and publish the image
+              if: steps.exists.outputs.exists != 'true'
+              shell: bash
+              env:
+                  REF: ${{ steps.ref.outputs.ref }}
+                  MINS: ${{ steps.ref.outputs.mins }}
+                  CAN_PUSH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+              run: |
+                  set -euo pipefail
+                  if [ "$CAN_PUSH" != "true" ]; then
+                      echo "::error::The CI image $REF is not published and this run (a pull request from a fork or from Dependabot) cannot publish it. Push the branch to the main repository, or let a maintainer run it, so the 'CI image' step can build it."
+                      exit 1
+                  fi
+                  read -r cargo_min cmake_min ninja_min cbindgen_min gcc_min <<< "$MINS"
+                  docker build --pull \
+                      --build-arg "REPO_URL=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+                      --build-arg "CARGO_MIN=$cargo_min" \
+                      --build-arg "CMAKE_MIN=$cmake_min" \
+                      --build-arg "NINJA_MIN=$ninja_min" \
+                      --build-arg "CBINDGEN_MIN=$cbindgen_min" \
+                      --build-arg "GCC_MIN=$gcc_min" \
+                      -t "$REF" devkit/ci/image
+                  docker push "$REF"
+                  {
+                      echo "### CI image"
+                      echo "Published \`$REF\`"
+                      docker run --rm "$REF" cat /opt/ci-image-versions.txt | sed 's/^/- /'
+                  } >> "$GITHUB_STEP_SUMMARY"

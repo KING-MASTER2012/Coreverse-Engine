@@ -10,17 +10,15 @@ jobs:
     rust:
         runs-on: ubuntu-24.04
 
-        env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-            - name: Bootstrap
-              shell: bash
-              run: |
-                  chmod +x devkit/scripts/setup/shell/bootstrap.sh
-                  devkit/scripts/setup/shell/bootstrap.sh --rust-only
+            # Bootstrap (--rust-only) only checked that this toolchain exists;
+            # the setup action installs it (and the same one every other Rust job
+            # uses).
+            - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+              with:
+                  toolchain: stable
 
             - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
@@ -41,8 +39,7 @@ jobs:
             - name: Cargo Test (math, no_std backend)
               run: cargo test -p math --no-default-features --features no_std
 
-    # The Linux job above is the full gate (bootstrap toolchain, no_std
-    # backend). The Rust crates also contain platform-specific code (memory
+    # The Linux job above is the full gate (the no_std backend as well). The Rust crates also contain platform-specific code (memory
     # mapping and path handling in `fs`/`vfs`), so the workspace tests run on
     # Windows and macOS too, with the runners' own stable toolchain.
     rust-cross-platform:

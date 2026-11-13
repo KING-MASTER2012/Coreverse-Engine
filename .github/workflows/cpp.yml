@@ -2,27 +2,38 @@ name: C++
 
 on:
     workflow_call:
+        inputs:
+            image:
+                description: Toolchain image of the Linux job (output of image.yml)
+                type: string
+                required: true
 
 permissions:
     contents: read
+    packages: read
 
-# The Linux and Windows jobs follow the same shape (macOS provisions its
-# tools by hand, see the comment on that job):
+# The Linux job runs inside the toolchain image built from
+# devkit/ci/image/Dockerfile (compilers, CMake, Ninja, Rust, cbindgen, the Qt xcb
+# build libraries, the X11/Wayland/software-Vulkan test stack), so it installs
+# nothing. Windows provisions its tools with Bootstrap, macOS by hand (see the
+# comment on that job); GitHub-hosted Windows and macOS runners cannot run job
+# containers. All three follow the same shape:
 #
 #   0. vcpkg cache      - restores the vcpkg binary cache before anything
 #                         builds a vcpkg package, and (default branch only)
 #                         saves it afterwards. The cache key contains the
 #                         compiler, the pinned vcpkg commit and the manifest, see
 #                         .github/actions/vcpkg-cache. Pull requests only read.
-#   1. Bootstrap        - installs the toolchain and the vcpkg dependencies
-#                         `cmake -B build` configure only smoke-tests the
-#                         bootstrap flow itself; nothing below uses that
-#                         build/ directory.
+#   1. Tools + vcpkg    - Linux: the image has the tools, vcpkg is the pinned
+#                         submodule. Windows: Bootstrap installs the toolchain
+#                         and the vcpkg dependencies (into ./vcpkg_installed).
+#                         macOS: Homebrew + the pinned submodule.
 #   2. Configure        - `cmake --preset ...` (Ninja Multi-Config, the exact
 #                         presets a developer uses, BUILD_TESTS=ON). The presets
-#                         point VCPKG_INSTALLED_DIR at ./vcpkg_installed, so this
-#                         reuses what Bootstrap installed instead of building
-#                         every vcpkg package (Qt!) a second time.
+#                         point VCPKG_INSTALLED_DIR at ./vcpkg_installed. On
+#                         Linux and macOS this step installs the vcpkg packages
+#                         (manifest mode, from the binary cache when possible);
+#                         on Windows it reuses what Bootstrap installed.
 #   3. Build            - `cmake --build --preset ...`
 #   4. Test             - `ctest --preset ...`. Tests are labelled `ffi` or
 #                         `gpu` (tests/cpp/CMakeLists.txt). Linux runs both
@@ -34,125 +45,42 @@ jobs:
     linux:
         runs-on: ubuntu-24.04
 
-        env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        container:
+            image: ${{ inputs.image }}
+            credentials:
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
 
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-            # Qt's "xcb" platform plugin is only built when the xcb/xkbcommon
-            # DEVELOPMENT packages are present at the moment vcpkg compiles
-            # qtbase - Qt silently drops the plugin otherwise, and the editor
-            # smoke test then dies with "Could not find the Qt platform plugin
-            # xcb". bootstrap.sh runs `vcpkg install` (which builds qtbase), so
-            # these must be installed BEFORE it. List taken from Qt's own
-            # "Qt for Linux/X11 - building" requirements + vcpkg's qtbase hint.
-            - name: Install Qt xcb build dependencies
+            # Which tools this run used (the image is frozen, see its Dockerfile).
+            - name: Toolchain image
               shell: bash
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y --no-install-recommends \
-                      libfontconfig1-dev \
-                      libfreetype-dev \
-                      pkg-config \
-                      libx11-dev \
-                      libx11-xcb-dev \
-                      libxext-dev \
-                      libxfixes-dev \
-                      libxi-dev \
-                      libxrender-dev \
-                      libgl1-mesa-dev \
-                      libglu1-mesa-dev \
-                      libegl1-mesa-dev \
-                      libxcb1-dev \
-                      libxcb-cursor-dev \
-                      libxcb-xinput-dev \
-                      libxcb-glx0-dev \
-                      libxcb-icccm4-dev \
-                      libxcb-image0-dev \
-                      libxcb-keysyms1-dev \
-                      libxcb-randr0-dev \
-                      libxcb-render0-dev \
-                      libxcb-render-util0-dev \
-                      libxcb-shape0-dev \
-                      libxcb-shm0-dev \
-                      libxcb-sync-dev \
-                      libxcb-util-dev \
-                      libxcb-xfixes0-dev \
-                      libxcb-xinerama0-dev \
-                      libxcb-xkb-dev \
-                      libxkbcommon-dev \
-                      libxkbcommon-x11-dev
+              run: cat /opt/ci-image-versions.txt
 
             - name: vcpkg binary cache
               id: vcpkg-cache
               uses: ./.github/actions/vcpkg-cache
 
-            - name: Bootstrap
+            # vcpkg is a git submodule: the commit this repository points to is
+            # the pinned vcpkg version. check-vcpkg.sh is the script developers
+            # run through Bootstrap; it syncs the submodule (not shallow, vcpkg
+            # reads its baseline commit from the history) and bootstraps vcpkg.
+            - name: Set up vcpkg
               shell: bash
               run: |
-                  chmod +x devkit/scripts/setup/shell/bootstrap.sh
-                  devkit/scripts/setup/shell/bootstrap.sh
+                  bash devkit/scripts/setup/shell/scripts/toolchain/check-vcpkg.sh
+                  test -f third_party/vcpkg/scripts/buildsystems/vcpkg.cmake
 
-            - name: Save vcpkg binary cache
-              if: steps.vcpkg-cache.outputs.hit != 'true' && github.ref_name == github.event.repository.default_branch
-              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-              with:
-                  path: ${{ runner.temp }}/vcpkg-binary-cache
-                  key: ${{ steps.vcpkg-cache.outputs.key }}
-
-            # X11 and Wayland dev libraries are deliberately NOT part of
-            # bootstrap.sh - an end user building Coreverse on their own
-            # desktop already has whatever windowing system they're
-            # running under, and bootstrap.sh doesn't try to guess which
-            # one to install for them. A CI runner has neither, so this
-            # workflow installs both itself, right after Bootstrap:
-            # libx11-dev for the Xlib WSI backend (renderer + the
-            # existing surface/swapchain/render_loop tests), libwayland-dev
-            # for the Wayland WSI backend (renderer + wayland_render_loop_test),
-            # and weston to give that Wayland test a compositor to run
-            # against headlessly.
-            #
-            # The GPU-labelled tests additionally need somewhere to run:
-            # mesa-vulkan-drivers ships lavapipe (a CPU Vulkan
-            # implementation) as the ICD, libvulkan1 is the loader volk
-            # dlopen()s at runtime, and xvfb + xauth (xvfb-run needs it) give
-            # the Xlib surface/swapchain/render-loop tests an X server.
-            # vulkan-tools is only here for the diagnostics step below.
-            #
-            # vulkan-validationlayers is VK_LAYER_KHRONOS_validation: with it
-            # (and -DRENDERER_FORCE_VALIDATION=ON below) the Release GPU tests
-            # run under validation, and frame_sync_test / editor_render_smoke
-            # fail on any validation error (renderer/Diagnostics.hpp).
-            #
-            # The libxcb-* / libxkbcommon-x11 packages are what Qt's "xcb"
-            # platform plugin loads at runtime; the editor smoke test (below)
-            # opens a real Qt window on Xvfb through it.
-            - name: Install X11, Wayland and software-Vulkan test dependencies
-              shell: bash
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y --no-install-recommends \
-                      libx11-dev \
-                      libwayland-dev \
-                      pkg-config \
-                      weston \
-                      xvfb \
-                      xauth \
-                      mesa-vulkan-drivers \
-                      libvulkan1 \
-                      vulkan-tools \
-                      vulkan-validationlayers \
-                      libxcb-cursor0 \
-                      libxcb-icccm4 \
-                      libxcb-image0 \
-                      libxcb-keysyms1 \
-                      libxcb-randr0 \
-                      libxcb-render-util0 \
-                      libxcb-shape0 \
-                      libxcb-xinerama0 \
-                      libxcb-xkb1 \
-                      libxkbcommon-x11-0
+            # Qt's xcb plugin needs the xcb/xkbcommon dev packages while vcpkg
+            # compiles qtbase; they are part of the image. X11 and Wayland dev
+            # libraries, weston, Xvfb, lavapipe (the CPU Vulkan ICD) and the
+            # validation layer are in it too: the GPU-labelled tests run on
+            # them, and with -DRENDERER_FORCE_VALIDATION=ON below the Release
+            # GPU tests run under validation (frame_sync_test /
+            # editor_render_smoke fail on any validation error,
+            # renderer/Diagnostics.hpp).
 
             # Non-fatal: it only exists so a red GPU test in the log below
             # can be told apart from "the runner has no Vulkan device at all".
@@ -162,9 +90,17 @@ jobs:
 
             # RENDERER_FORCE_VALIDATION requests the Vulkan validation layers
             # in this Release build too (they are Debug-only by default).
+            # The vcpkg packages (Qt!) are installed by this configure step.
             - name: Configure (linux-x64-gcc)
               shell: bash
               run: cmake --preset linux-x64-gcc -DRENDERER_FORCE_VALIDATION=ON
+
+            - name: Save vcpkg binary cache
+              if: steps.vcpkg-cache.outputs.hit != 'true' && github.ref_name == github.event.repository.default_branch
+              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+              with:
+                  path: ${{ runner.temp }}/vcpkg-binary-cache
+                  key: ${{ steps.vcpkg-cache.outputs.key }}
 
             - name: Build (Release)
               shell: bash
