@@ -34,7 +34,10 @@ permissions:
 #                         Linux and macOS this step installs the vcpkg packages
 #                         (manifest mode, from the binary cache when possible);
 #                         on Windows it reuses what Bootstrap installed.
-#   3. Build            - `cmake --build --preset ...`
+#   3. Build            - `cmake --build --preset ...`, behind a compiler cache
+#                         (ccache; sccache on Windows) and a Cargo cache for
+#                         the Rust `ffi` crate. Same policy as the vcpkg cache:
+#                         restored everywhere, saved by the default branch only.
 #   4. Test             - `ctest --preset ...`. Tests are labelled `ffi` or
 #                         `gpu` (tests/cpp/CMakeLists.txt). Linux runs both
 #                         (software Vulkan + a virtual X server); Windows and
@@ -90,6 +93,22 @@ jobs:
 
             # RENDERER_FORCE_VALIDATION requests the Vulkan validation layers
             # in this Release build too (they are Debug-only by default).
+            # Compiler cache (object files) and Cargo cache (registry and the
+            # target dir that Corrosion builds the Rust `ffi` crate in, inside the
+            # build directory). Both are restored on every run and saved by the
+            # default branch only, like the vcpkg cache.
+            - name: Compiler cache
+              id: compiler-cache
+              uses: ./.github/actions/compiler-cache
+              with:
+                  tool: ccache
+
+            - name: Cargo cache
+              uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+              with:
+                  workspaces: ". -> build/linux-x64-gcc/cargo/build"
+                  save-if: ${{ github.ref_name == github.event.repository.default_branch }}
+
             # The vcpkg packages (Qt!) are installed by this configure step.
             - name: Configure (linux-x64-gcc)
               shell: bash
@@ -105,6 +124,18 @@ jobs:
             - name: Build (Release)
               shell: bash
               run: cmake --build --preset linux-gcc-release
+
+            - name: Compiler cache statistics
+              if: ${{ !cancelled() }}
+              shell: bash
+              run: ccache --show-stats
+
+            - name: Save compiler cache
+              if: ${{ !cancelled() && steps.compiler-cache.outputs.hit != 'true' && github.ref_name == github.event.repository.default_branch }}
+              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+              with:
+                  path: ${{ runner.temp }}/compiler-cache
+                  key: ${{ steps.compiler-cache.outputs.key }}
 
             # Fail early (and loudly) if vcpkg's Qt came out without the xcb
             # platform plugin (needs the `xcb` feature of qtbase in vcpkg.json
@@ -175,6 +206,45 @@ jobs:
                   path: ${{ runner.temp }}/vcpkg-binary-cache
                   key: ${{ steps.vcpkg-cache.outputs.key }}
 
+            # sccache (not ccache) on Windows: it supports MSVC. Pinned version, the
+            # archive is checked against the SHA-256 published with that release.
+            - name: Install sccache
+              shell: pwsh
+              run: |
+                  $ErrorActionPreference = 'Stop'
+                  if (-not (Get-Command sccache -ErrorAction SilentlyContinue)) {
+                      $version = '0.10.0'
+                      $sha256  = '6D8823B5C13E0DBA776D88C537229256ECB2F01A1D775B507FD141CB55D30578'
+                      $zip = Join-Path $env:RUNNER_TEMP 'sccache.zip'
+                      Invoke-WebRequest -UseBasicParsing -OutFile $zip `
+                          -Uri "https://github.com/mozilla/sccache/releases/download/v$version/sccache-v$version-x86_64-pc-windows-msvc.zip"
+                      if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $sha256) {
+                          throw "sccache $version archive does not match the expected SHA-256"
+                      }
+                      $dest = Join-Path $env:RUNNER_TEMP 'sccache'
+                      Expand-Archive -Path $zip -DestinationPath $dest
+                      $dir = (Get-ChildItem $dest -Directory | Select-Object -First 1).FullName
+                      Add-Content -Path $env:GITHUB_PATH -Value $dir
+                      $env:PATH = "$dir;$env:PATH"
+                  }
+                  sccache --version
+
+            # Compiler cache (object files) and Cargo cache (registry and the
+            # target dir that Corrosion builds the Rust `ffi` crate in, inside the
+            # build directory). Both are restored on every run and saved by the
+            # default branch only, like the vcpkg cache.
+            - name: Compiler cache
+              id: compiler-cache
+              uses: ./.github/actions/compiler-cache
+              with:
+                  tool: sccache
+
+            - name: Cargo cache
+              uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+              with:
+                  workspaces: ". -> build/windows-x64/cargo/build"
+                  save-if: ${{ github.ref_name == github.event.repository.default_branch }}
+
             # One step on purpose: the Windows presets use
             # `architecture.strategy = external`, i.e. they take the
             # compiler environment from the launching shell.
@@ -195,8 +265,17 @@ jobs:
                   cmake --build --preset windows-msvc-release
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+                  sccache --show-stats
+
                   ctest --preset windows-msvc-release-nogpu
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            - name: Save compiler cache
+              if: ${{ !cancelled() && steps.compiler-cache.outputs.hit != 'true' && github.ref_name == github.event.repository.default_branch }}
+              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+              with:
+                  path: ${{ runner.temp }}/compiler-cache
+                  key: ${{ steps.compiler-cache.outputs.key }}
 
     # This job is green and a required check: it builds the renderer's
     # Metal-surface path and the vcpkg arm64-osx dependencies for real.
@@ -253,7 +332,7 @@ jobs:
             - name: Install build tools (Homebrew)
               shell: bash
               run: |
-                  brew install ninja cbindgen pkg-config \
+                  brew install ninja cbindgen pkg-config ccache \
                       autoconf autoconf-archive automake libtool
                   # sed -n 1p rather than head -n1: with `pipefail` (the default
                   # for `shell: bash`) head closing the pipe early can fail the step.
@@ -261,6 +340,7 @@ jobs:
                   ninja --version
                   cbindgen --version
                   cargo --version
+                  ccache --version | sed -n 1p
                   aclocal --version | sed -n 1p
                   glibtoolize --version | sed -n 1p
                   echo "autoconf-archive macros: $(ls "$(brew --prefix)"/share/aclocal | grep -c '^ax_')"
@@ -308,6 +388,22 @@ jobs:
               id: vcpkg-cache
               uses: ./.github/actions/vcpkg-cache
 
+            # Compiler cache (object files) and Cargo cache (registry and the
+            # target dir that Corrosion builds the Rust `ffi` crate in, inside the
+            # build directory). Both are restored on every run and saved by the
+            # default branch only, like the vcpkg cache.
+            - name: Compiler cache
+              id: compiler-cache
+              uses: ./.github/actions/compiler-cache
+              with:
+                  tool: ccache
+
+            - name: Cargo cache
+              uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+              with:
+                  workspaces: ". -> build/macos-arm64-clang/cargo/build"
+                  save-if: ${{ github.ref_name == github.event.repository.default_branch }}
+
             # The vcpkg packages are installed by this configure step.
             - name: Configure (macos-arm64-clang)
               shell: bash
@@ -323,6 +419,18 @@ jobs:
             - name: Build (Release)
               shell: bash
               run: cmake --build --preset macos-arm64-release
+
+            - name: Compiler cache statistics
+              if: ${{ !cancelled() }}
+              shell: bash
+              run: ccache --show-stats
+
+            - name: Save compiler cache
+              if: ${{ !cancelled() && steps.compiler-cache.outputs.hit != 'true' && github.ref_name == github.event.repository.default_branch }}
+              uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+              with:
+                  path: ${{ runner.temp }}/compiler-cache
+                  key: ${{ steps.compiler-cache.outputs.key }}
 
             # No Vulkan ICD (MoltenVK) on the runner, so ffi tests only.
             - name: Test (Release, ffi tests only)

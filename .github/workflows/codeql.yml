@@ -42,6 +42,11 @@ jobs:
         needs: image
         runs-on: ubuntu-24.04
 
+        env:
+            # The image has ccache, but CodeQL has to SEE every compiler run: a
+            # compile that is a cache hit would be missing from the analysis.
+            COREVERSE_COMPILER_LAUNCHER: none
+
         # The same toolchain image as cpp.yml: no Bootstrap, no apt.
         container:
             image: ${{ needs.image.outputs.ref }}

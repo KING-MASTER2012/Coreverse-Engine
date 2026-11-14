@@ -1,0 +1,99 @@
+name: Compiler cache
+description: >-
+    Restores a ccache or sccache directory (a cache of compiled object files) and
+    switches the project's CMake on to it for the rest of the job
+    (COREVERSE_COMPILER_LAUNCHER, read by cmake/Ccache.cmake). Like the vcpkg
+    cache this only RESTORES: saving is a separate `actions/cache/save` step in
+    the calling job, after the build and on the default branch only, so pull
+    requests read the cache but never write it.
+
+inputs:
+    tool:
+        description: Which tool the job installed, ccache or sccache.
+        required: true
+    max-size:
+        description: Size limit of the cache directory; the tool evicts the oldest entries beyond it.
+        default: 300M
+    revision:
+        description: Bump it to throw away every existing cache entry.
+        default: "1"
+
+outputs:
+    key:
+        description: The exact cache key (pass it to `actions/cache/save`).
+        value: ${{ steps.key.outputs.key }}
+    hit:
+        description: "'true' when the exact key was restored (nothing new to save)."
+        value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+    using: composite
+    steps:
+        # One entry per OS/architecture/tool and DAY: an entry can never be
+        # overwritten, so a key per commit would pile up copies of nearly the same
+        # directory against the repository's cache quota. The first default-branch
+        # run of a day saves it (normally the nightly cache-warm run), every later
+        # run and every pull request restores the newest entry through the prefix.
+        # Entries that are not used for a week are deleted by GitHub anyway. The
+        # tools' own size limit bounds each entry, and a changed compiler only means
+        # misses (ccache is told to hash the compiler binary, see below).
+        - name: Compute the cache key
+          id: key
+          shell: bash
+          env:
+              TOOL: ${{ inputs.tool }}
+              REVISION: ${{ inputs.revision }}
+          run: |
+              set -euo pipefail
+              prefix="compiler-${TOOL}-v${REVISION}-${RUNNER_OS}-${RUNNER_ARCH}-"
+              echo "key=${prefix}$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+              echo "prefix=${prefix}" >> "$GITHUB_OUTPUT"
+
+        - name: Restore the compiler cache
+          id: restore
+          uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+          with:
+              path: ${{ runner.temp }}/compiler-cache
+              key: ${{ steps.key.outputs.key }}
+              restore-keys: ${{ steps.key.outputs.prefix }}
+
+        # COREVERSE_COMPILER_LAUNCHER makes cmake/Ccache.cmake use exactly this tool
+        # (and fail the configure if it is missing, instead of silently compiling
+        # without a cache). ccache: CCACHE_BASEDIR turns paths below the workspace
+        # into relative ones so the entries do not depend on where it is checked
+        # out; CCACHE_COMPILERCHECK=content hashes the compiler binary itself
+        # (the default, its mtime, is not stable across runner images).
+        - name: Configure the compiler cache
+          shell: bash
+          env:
+              TOOL: ${{ inputs.tool }}
+              MAX_SIZE: ${{ inputs.max-size }}
+              CACHE_DIR: ${{ runner.temp }}/compiler-cache
+              WORKSPACE: ${{ github.workspace }}
+          run: |
+              set -euo pipefail
+              mkdir -p "$CACHE_DIR"
+              {
+                echo "COREVERSE_COMPILER_LAUNCHER=$TOOL"
+                case "$TOOL" in
+                  ccache)
+                    echo "CCACHE_DIR=$CACHE_DIR"
+                    echo "CCACHE_MAXSIZE=$MAX_SIZE"
+                    echo "CCACHE_BASEDIR=$WORKSPACE"
+                    echo "CCACHE_COMPILERCHECK=content"
+                    ;;
+                  sccache)
+                    echo "SCCACHE_DIR=$CACHE_DIR"
+                    echo "SCCACHE_CACHE_SIZE=$MAX_SIZE"
+                    ;;
+                  *)
+                    echo "::error::compiler-cache: unknown tool '$TOOL' (use ccache or sccache)"
+                    exit 1
+                    ;;
+                esac
+              } >> "$GITHUB_ENV"
+              {
+                echo "### Compiler cache (${TOOL})"
+                echo "- key: \`${{ steps.key.outputs.key }}\`"
+                echo "- exact hit: ${{ steps.restore.outputs.cache-hit }}"
+              } >> "$GITHUB_STEP_SUMMARY"
