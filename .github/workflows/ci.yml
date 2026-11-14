@@ -17,26 +17,64 @@ concurrency:
     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+    # Which parts of CI this change needs (see changes.yml). Only pull requests
+    # are filtered; a push to main/develop runs everything.
+    changes:
+        uses: ./.github/workflows/changes.yml
+
     build:
+        needs: changes
+        if: ${{ needs.changes.outputs.rust == 'true' }}
         uses: ./.github/workflows/rust.yml
+        with:
+            platform: ${{ needs.changes.outputs.ffi == 'true' }}
 
     # Makes sure the Linux toolchain image for this revision exists (a lookup,
     # unless the Dockerfile or the minimum tool versions changed) and passes its
     # reference on. Needs write access to publish a new one.
     image:
+        needs: changes
+        if: ${{ needs.changes.outputs.cpp == 'true' }}
         uses: ./.github/workflows/image.yml
         permissions:
             contents: read
             packages: write
 
     cpp:
-        needs: image
+        needs: [changes, image]
+        if: ${{ needs.changes.outputs.cpp == 'true' }}
         uses: ./.github/workflows/cpp.yml
         with:
             image: ${{ needs.image.outputs.ref }}
 
     lint:
+        needs: changes
+        if: ${{ needs.changes.outputs.rust == 'true' }}
         uses: ./.github/workflows/lint.yml
 
     format:
+        needs: changes
+        if: ${{ needs.changes.outputs.format == 'true' }}
         uses: ./.github/workflows/formatting.yml
+
+    # THE required check. A job that is skipped by `if:` is fine here, a job that
+    # failed or was cancelled is not. Make `ci-ok` (and only `ci-ok`) the required
+    # status check in the branch protection / ruleset: the checks of the jobs
+    # above are not created at all when their area is skipped, so requiring them
+    # individually would block every pull request that does not touch them.
+    ci-ok:
+        name: ci-ok
+        if: ${{ always() }}
+        needs: [changes, build, image, cpp, lint, format]
+        runs-on: ubuntu-24.04
+        steps:
+            - name: All required jobs succeeded or were skipped
+              shell: bash
+              env:
+                  NEEDS: ${{ toJSON(needs) }}
+              run: |
+                  echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+                  if echo "$NEEDS" | jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' > /dev/null; then
+                    echo "::error::at least one job failed or was cancelled"
+                    exit 1
+                  fi

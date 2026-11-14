@@ -27,9 +27,13 @@ concurrency:
     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+    # Which areas a pull request touches (everything, for any other event).
+    changes:
+        uses: ./.github/workflows/changes.yml
+
     # The C++ analysis builds the whole engine (and traces it), so it runs on
     # pushes to main/develop and on the weekly schedule, not on pull requests.
-    # The Rust analysis is cheap and stays on pull requests.
+    # The Rust analysis is cheap and stays on pull requests that change Rust.
     image:
         if: github.event_name != 'pull_request'
         uses: ./.github/workflows/image.yml
@@ -91,6 +95,8 @@ jobs:
 
     analyze-rust:
         name: Analyze (rust)
+        needs: changes
+        if: ${{ needs.changes.outputs.rust == 'true' }}
         runs-on: ubuntu-24.04
 
         steps:
