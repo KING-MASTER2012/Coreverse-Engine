@@ -2,7 +2,7 @@
 #
 # Toolchain image for the Linux C++ CI jobs (cpp.yml, codeql.yml). It holds
 # everything that used to be installed by `bootstrap.sh` + two `apt-get` steps
-# on every run: compilers, CMake, Ninja, Rust, cbindgen, the Qt xcb build
+# on every run: compilers, ccache, CMake, Ninja, Rust, cbindgen, the Qt xcb build
 # libraries and the X11/Wayland/software-Vulkan test stack. Bootstrap is now a
 # developer tool; the CI never runs it.
 #
@@ -48,7 +48,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl git jq zip unzip tar xz-utils zstd \
-        build-essential pkg-config perl python3 python3-venv python3-pip \
+        build-essential ccache pkg-config perl python3 python3-venv python3-pip \
         autoconf autoconf-archive automake libtool \
         bison flex gperf nasm yasm libltdl-dev libssl-dev \
         libfontconfig1-dev libfreetype-dev libx11-dev libx11-xcb-dev libxext-dev \
@@ -65,7 +65,7 @@ RUN apt-get update \
         libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 \
         libxkbcommon-x11-0 \
     && rm -rf /var/lib/apt/lists/* \
-    # The job container runs as root on a workspace owned by another user. \
+    # The job container runs as root on a workspace owned by another user.\
     && git config --system --add safe.directory '*'
 
 # CMake and Ninja from PyPI (maintained by Kitware / the Ninja project): no
@@ -102,6 +102,7 @@ RUN { \
         echo "gcc: $(gcc --version | sed -n 1p)"; \
         echo "cmake: $(cmake --version | sed -n 1p)"; \
         echo "ninja: $(ninja --version)"; \
+        echo "ccache: $(ccache --version | sed -n 1p)"; \
         echo "cargo: $(cargo --version)"; \
         echo "rustc: $(rustc --version)"; \
         echo "cbindgen: $(cbindgen --version)"; \

@@ -362,7 +362,7 @@ The pipeline in [`.github/workflows/`](.github/workflows/) (entry point `ci.yml`
 | `codeql.yml`, `dependency-review.yml`                                                        | Security analysis (C++ on pushes and weekly) and dependency review                                                                                 |
 | `nightly.yml`, `release.yml`, `deploy.yml`, `deploy-docs.yml`, `benchmarks.yml`, `stale.yml` | Scheduled/manual/release automation (benchmarks: manual `cargo bench`; documentation: mdBook to GitHub Pages)                                      |
 
-The vcpkg version is the commit of the `third_party/vcpkg` submodule, the C++ jobs restore a vcpkg binary cache so Qt is not rebuilt on every run, and the Linux C++ jobs run in a prebuilt toolchain image (`devkit/ci/image/Dockerfile`). The bootstrap scripts are for developers; the CI does not run them on Linux (details in [`docs/src/ci.md`](docs/src/ci.md)).
+The vcpkg version is the commit of the `third_party/vcpkg` submodule, the C++ jobs restore a vcpkg binary cache so Qt is not rebuilt on every run, the Linux C++ jobs run in a prebuilt toolchain image (`devkit/ci/image/Dockerfile`), and all C++ jobs restore a compiler cache (ccache/sccache) and a Cargo cache. The bootstrap scripts are for developers; the CI does not run them on Linux (details in [`docs/src/ci.md`](docs/src/ci.md)).
 
 CI pipelines are used to verify:
 
