@@ -41,6 +41,7 @@ ignore .github/workflows/deploy-docs.yml
 ignore .github/workflows/deploy.yml
 ignore .github/workflows/benchmarks.yml
 ignore .github/workflows/dependency-review.yml
+ignore .github/workflows/bootstrap-smoke.yml
 
 # ---- how CI itself runs: everything ----------------------------------------
 all .github/workflows/*

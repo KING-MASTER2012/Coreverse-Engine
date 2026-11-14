@@ -35,3 +35,7 @@ jobs:
         uses: ./.github/workflows/cpp.yml
         with:
             image: ${{ needs.image.outputs.ref }}
+            # Warm the Cargo cache the pull requests use (they build the Rust ffi
+            # crate with the cheaper profile). Pushes to main/develop build and
+            # cache the full release profile themselves.
+            fast-rust: true

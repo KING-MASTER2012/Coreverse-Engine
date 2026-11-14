@@ -1,0 +1,148 @@
+name: Bootstrap smoke test
+
+# Bootstrap (devkit/scripts/setup) is a developer tool and the Linux CI does not
+# run it any more (the C++ jobs use the toolchain image; Windows still runs
+# Bootstrap inside cpp.yml). This workflow keeps it from rotting unnoticed:
+#
+#   * on a pull request that changes devkit/scripts/setup: every script still
+#     parses and `bootstrap.sh --dry-run` still walks through its task graph;
+#   * weekly (and on demand): a REAL bootstrap on a bare Ubuntu runner, the way a
+#     developer's fresh machine would run it, checked afterwards.
+#
+# It is not part of ci.yml and not a required check (hence `paths:` is fine
+# here). macOS is left out until bootstrap.sh runs on macOS's default bash 3.2
+# (parallel-runner.sh uses `declare -A`).
+
+on:
+    pull_request:
+        paths:
+            - "devkit/scripts/setup/**"
+            - ".github/workflows/bootstrap-smoke.yml"
+    schedule:
+        - cron: "41 4 * * 1"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: bootstrap-smoke-${{ github.event.pull_request.number || github.sha }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+    syntax:
+        name: Scripts parse, dry run
+        runs-on: ubuntu-24.04
+
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+            - name: Shell scripts parse
+              shell: bash
+              run: |
+                  status=0
+                  while IFS= read -r -d '' script; do
+                      bash -n "$script" || { echo "::error file=$script::syntax error"; status=1; }
+                  done < <(find devkit -name '*.sh' -print0)
+                  exit $status
+
+            - name: PowerShell scripts parse
+              shell: pwsh
+              run: |
+                  $failed = $false
+                  foreach ($file in Get-ChildItem devkit -Recurse -Filter *.ps1) {
+                      $tokens = $null
+                      $errors = $null
+                      [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
+                      foreach ($e in $errors) {
+                          Write-Host "::error file=$($file.FullName),line=$($e.Extent.StartLineNumber)::$($e.Message)"
+                          $failed = $true
+                      }
+                  }
+                  if ($failed) { exit 1 }
+
+            - name: bootstrap.sh --dry-run
+              shell: bash
+              run: bash devkit/scripts/setup/shell/bootstrap.sh --dry-run --yes
+
+    full:
+        name: Full bootstrap (Linux)
+        if: ${{ github.event_name != 'pull_request' }}
+        runs-on: ubuntu-24.04
+        timeout-minutes: 120
+
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+            # What the toolchain image has built in; a developer installs these
+            # first (Qt's xcb plugin is dropped silently without them, see
+            # devkit/ci/image/Dockerfile).
+            - name: Install Qt xcb build dependencies
+              shell: bash
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                      libfontconfig1-dev \
+                      libfreetype-dev \
+                      pkg-config \
+                      libx11-dev \
+                      libx11-xcb-dev \
+                      libxext-dev \
+                      libxfixes-dev \
+                      libxi-dev \
+                      libxrender-dev \
+                      libgl1-mesa-dev \
+                      libglu1-mesa-dev \
+                      libegl1-mesa-dev \
+                      libxcb1-dev \
+                      libxcb-cursor-dev \
+                      libxcb-xinput-dev \
+                      libxcb-glx0-dev \
+                      libxcb-icccm4-dev \
+                      libxcb-image0-dev \
+                      libxcb-keysyms1-dev \
+                      libxcb-randr0-dev \
+                      libxcb-render0-dev \
+                      libxcb-render-util0-dev \
+                      libxcb-shape0-dev \
+                      libxcb-shm0-dev \
+                      libxcb-sync-dev \
+                      libxcb-util-dev \
+                      libxcb-xfixes0-dev \
+                      libxcb-xinerama0-dev \
+                      libxcb-xkb-dev \
+                      libxkbcommon-dev \
+                      libxkbcommon-x11-dev
+
+            # Restore only (nothing here saves it): when the compiler matches the
+            # one cpp.yml saved the cache for, Qt is not built again; otherwise
+            # this run builds it, which is why the timeout is generous.
+            - name: vcpkg binary cache
+              uses: ./.github/actions/vcpkg-cache
+
+            - name: Bootstrap
+              shell: bash
+              run: bash devkit/scripts/setup/shell/bootstrap.sh --yes
+
+            # The same things the Linux CI relied on after Bootstrap, found the
+            # way a later shell of a developer would find them.
+            - name: Check the result
+              shell: bash
+              run: |
+                  export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+                  status=0
+                  for tool in cmake ninja cargo cbindgen; do
+                      if command -v "$tool" > /dev/null; then
+                          echo "ok: $tool -> $(command -v "$tool")"
+                      else
+                          echo "::error::$tool is not on PATH after Bootstrap"
+                          status=1
+                      fi
+                  done
+                  cmake --version | sed -n 1p
+                  test -x third_party/vcpkg/vcpkg || { echo "::error::vcpkg was not bootstrapped"; status=1; }
+                  test -d vcpkg_installed || { echo "::error::vcpkg_installed was not created"; status=1; }
+                  exit $status

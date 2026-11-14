@@ -7,6 +7,15 @@ on:
                 description: Toolchain image of the Linux job (output of image.yml)
                 type: string
                 required: true
+            fast-rust:
+                description: >-
+                    Build the Rust ffi crate without LTO and with 16 codegen
+                    units (still optimized) instead of the release profile's fat
+                    LTO and 1 codegen unit. ci.yml turns it on for pull requests;
+                    pushes to main/develop keep the full release profile, so
+                    release-only problems are still found there.
+                type: boolean
+                default: false
 
 permissions:
     contents: read
@@ -38,6 +47,8 @@ permissions:
 #                         (ccache; sccache on Windows) and a Cargo cache for
 #                         the Rust `ffi` crate. Same policy as the vcpkg cache:
 #                         restored everywhere, saved by the default branch only.
+#                         Pull requests use a cheaper Rust profile (no LTO), the
+#                         Cargo cache is kept per profile.
 #   4. Test             - `ctest --preset ...`. Tests are labelled `ffi` or
 #                         `gpu` (tests/cpp/CMakeLists.txt). Linux runs both
 #                         (software Vulkan + a virtual X server); Windows and
@@ -56,6 +67,17 @@ jobs:
 
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+            # Pull requests build the Rust ffi crate with a cheaper release profile
+            # (see the `fast-rust` input). Cargo reads these as overrides of the
+            # [profile.release] of Cargo.toml, and Corrosion builds Release with
+            # that profile.
+            - name: Cheaper Rust release profile
+              if: ${{ inputs.fast-rust }}
+              shell: bash
+              run: |
+                  echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"
+                  echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
 
             # Which tools this run used (the image is frozen, see its Dockerfile).
             - name: Toolchain image
@@ -106,6 +128,7 @@ jobs:
             - name: Cargo cache
               uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
               with:
+                  key: ${{ inputs.fast-rust && 'fast-rust' || 'full-lto' }}
                   workspaces: ". -> build/linux-x64-gcc/cargo/build"
                   save-if: ${{ github.ref_name == github.event.repository.default_branch }}
 
@@ -190,6 +213,17 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+            # Pull requests build the Rust ffi crate with a cheaper release profile
+            # (see the `fast-rust` input). Cargo reads these as overrides of the
+            # [profile.release] of Cargo.toml, and Corrosion builds Release with
+            # that profile.
+            - name: Cheaper Rust release profile
+              if: ${{ inputs.fast-rust }}
+              shell: bash
+              run: |
+                  echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"
+                  echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
+
             - name: vcpkg binary cache
               id: vcpkg-cache
               uses: ./.github/actions/vcpkg-cache
@@ -242,6 +276,7 @@ jobs:
             - name: Cargo cache
               uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
               with:
+                  key: ${{ inputs.fast-rust && 'fast-rust' || 'full-lto' }}
                   workspaces: ". -> build/windows-x64/cargo/build"
                   save-if: ${{ github.ref_name == github.event.repository.default_branch }}
 
@@ -293,6 +328,17 @@ jobs:
 
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+            # Pull requests build the Rust ffi crate with a cheaper release profile
+            # (see the `fast-rust` input). Cargo reads these as overrides of the
+            # [profile.release] of Cargo.toml, and Corrosion builds Release with
+            # that profile.
+            - name: Cheaper Rust release profile
+              if: ${{ inputs.fast-rust }}
+              shell: bash
+              run: |
+                  echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"
+                  echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
 
             # The default developer dir on the runner can pair a newer
             # Command Line Tools SDK (MacOSX27.0.sdk) with an older linker, so
@@ -401,6 +447,7 @@ jobs:
             - name: Cargo cache
               uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
               with:
+                  key: ${{ inputs.fast-rust && 'fast-rust' || 'full-lto' }}
                   workspaces: ". -> build/macos-arm64-clang/cargo/build"
                   save-if: ${{ github.ref_name == github.event.repository.default_branch }}
 

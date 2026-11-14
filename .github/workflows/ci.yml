@@ -46,6 +46,8 @@ jobs:
         uses: ./.github/workflows/cpp.yml
         with:
             image: ${{ needs.image.outputs.ref }}
+            # Pull requests: Rust ffi crate without fat LTO. Pushes: full profile.
+            fast-rust: ${{ github.event_name == 'pull_request' }}
 
     lint:
         needs: changes
