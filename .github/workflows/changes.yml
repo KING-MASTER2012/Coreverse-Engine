@@ -1,0 +1,52 @@
+name: Changes
+
+# Works out which parts of CI a pull request has to run, from the files it
+# changes (rules: .github/ci-areas.txt, logic: .github/scripts/changed-areas.py).
+# Everything is "true" for anything that is not a pull request, so pushes to
+# main/develop, the nightly run and manual runs always run all of CI.
+#
+# This is done with `if:` on jobs and NOT with `paths:` on the workflow on
+# purpose: a workflow that is skipped by `paths:` never reports its checks, and a
+# required check that never reports blocks the pull request forever. ci.yml ends
+# in the single job `ci-ok`, which is the only check that has to be required.
+
+on:
+    workflow_call:
+        outputs:
+            rust:
+                description: Rust workspace (cargo test, Clippy, cross-platform tests)
+                value: ${{ jobs.changes.outputs.rust }}
+            cpp:
+                description: C++ build and tests (and the toolchain image)
+                value: ${{ jobs.changes.outputs.cpp }}
+            format:
+                description: rustfmt / clang-format check
+                value: ${{ jobs.changes.outputs.format }}
+            ffi:
+                description: Mobile and window-system jobs (the ffi crate and what it depends on)
+                value: ${{ jobs.changes.outputs.ffi }}
+
+permissions:
+    contents: read
+
+jobs:
+    changes:
+        runs-on: ubuntu-24.04
+
+        outputs:
+            rust: ${{ steps.areas.outputs.rust }}
+            cpp: ${{ steps.areas.outputs.cpp }}
+            format: ${{ steps.areas.outputs.format }}
+            ffi: ${{ steps.areas.outputs.ffi }}
+
+        steps:
+            # Depth 2: on a pull request the checkout is the merge commit, and the
+            # script compares it with its first parent (the base branch tip).
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+              with:
+                  fetch-depth: 2
+
+            - name: Which areas changed
+              id: areas
+              shell: bash
+              run: python3 .github/scripts/changed-areas.py

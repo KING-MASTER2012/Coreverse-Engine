@@ -2,6 +2,14 @@ name: Rust
 
 on:
     workflow_call:
+        inputs:
+            platform:
+                description: >-
+                    Run the mobile cross-checks and the window-system smoke test.
+                    ci.yml turns this off for pull requests that touch neither the
+                    ffi crate nor anything it depends on.
+                type: boolean
+                default: true
 
 permissions:
     contents: read
@@ -67,6 +75,7 @@ jobs:
     # features that turn the backend on, so they cannot rot unnoticed; nothing links, so no NDK or Xcode
     # project is needed. Android needs the activity feature (winit refuses to compile without one).
     platform-mobile:
+        if: ${{ inputs.platform }}
         name: platform (${{ matrix.target }})
         runs-on: ${{ matrix.os }}
         strategy:
@@ -123,6 +132,7 @@ jobs:
     # the same code with `--all-features` but has no display, so the smoke test
     # skips itself there.
     platform-window-xvfb:
+        if: ${{ inputs.platform }}
         name: platform (winit on Xvfb)
         runs-on: ubuntu-24.04
 

@@ -1,0 +1,109 @@
+# Which parts of CI a pull request has to run, decided from the files it changes
+# (read by .github/scripts/changed-areas.py through .github/workflows/changes.yml).
+#
+# One rule per line:  <kind> <glob>
+#   The glob is matched against the repository-relative path with fnmatch, where
+#   `*` also matches `/` (so `docs/*` is everything below docs/).
+#
+# Kinds:
+#   ignore   the file needs no CI at all (documentation, repository metadata)
+#   all      everything runs (the CI itself changed)
+#   rust     the Rust workspace: cargo test, Clippy, rustdoc, cross-platform tests,
+#            the Rust CodeQL analysis
+#   cpp      the C++ build and tests on Linux, Windows and macOS (+ the toolchain image)
+#   format   the rustfmt / clang-format check
+#   ffi      the mobile and window-system jobs of rust.yml (they check the `ffi`
+#            crate and everything it depends on)
+#
+# A changed file may match several kinds. A file that matches NO rule at all (a
+# new top-level directory, an unknown file) makes everything run: a gap in this
+# list can only cost time, never hide a failure. Pushes to main/develop, the
+# nightly run and manual runs ignore this file and run everything.
+#
+# Not listed here on purpose: the crates `ffi` depends on. They are worked out
+# from the Cargo.toml files on every run (see changed-areas.py), so adding a
+# dependency to `ffi` needs no edit here.
+
+# ---- nothing to run -------------------------------------------------------
+ignore docs/*
+ignore *.md
+ignore LICENSE
+ignore assets/*
+ignore book.toml
+ignore .github/CODEOWNERS
+ignore .github/FUNDING.yml
+ignore .github/ISSUE_TEMPLATE/*
+ignore .github/PULL_REQUEST_TEMPLATE*
+ignore .github/dependabot.yml
+# Workflows that are not part of ci.yml's graph.
+ignore .github/workflows/stale.yml
+ignore .github/workflows/deploy-docs.yml
+ignore .github/workflows/deploy.yml
+ignore .github/workflows/benchmarks.yml
+ignore .github/workflows/dependency-review.yml
+
+# ---- how CI itself runs: everything ----------------------------------------
+all .github/workflows/*
+all .github/actions/*
+all .github/scripts/*
+all .github/ci-areas.txt
+
+# ---- Rust -------------------------------------------------------------------
+rust engine/rust/*
+rust tools/*
+rust tests/rust/*
+rust tests/common/*
+rust tests/math_golden/*
+rust benchmarks/*
+rust fuzz/*
+rust templates/*
+rust Cargo.toml
+rust Cargo.lock
+rust rust-toolchain
+rust rust-toolchain.toml
+rust .cargo/*
+rust clippy.toml
+rust .clippy.toml
+rust rustfmt.toml
+rust .rustfmt.toml
+rust deny.toml
+
+# ---- C++ (plus the Rust crates ffi depends on, added automatically) ----------
+cpp engine/cpp/*
+cpp tests/cpp/*
+cpp tests/math_golden/*
+cpp test_assets/*
+cpp CMakeLists.txt
+cpp CMakePresets.json
+cpp cmake/*
+cpp vcpkg.json
+cpp vcpkg-configuration.json
+cpp third_party/*
+cpp .clang-tidy
+cpp devkit/ci/*
+cpp devkit/scripts/setup/*
+cpp devkit/scripts/configure-windows.ps1
+# The workspace files decide how the Rust staticlib that C++ links is built.
+cpp Cargo.toml
+cpp Cargo.lock
+cpp rust-toolchain
+cpp rust-toolchain.toml
+cpp .cargo/*
+
+# ---- formatting ---------------------------------------------------------------
+format engine/*
+format tools/*
+format tests/*
+format .clang-format
+format .editorconfig
+format rustfmt.toml
+format .rustfmt.toml
+format Cargo.toml
+format devkit/scripts/setup/config/tool-versions.json
+
+# ---- mobile / window-system jobs ------------------------------------------------
+ffi Cargo.toml
+ffi Cargo.lock
+ffi rust-toolchain
+ffi rust-toolchain.toml
+ffi .cargo/*
